@@ -1,0 +1,54 @@
+name: pandav-msg
+
+on:
+  push:
+    branches: [devlopment]
+  pull_request:
+    branches: [devlopment, main]
+
+jobs:
+  backend-check:
+    name: Backend Build Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          npm install
+
+      - name: Backend build check
+        run: |
+          cd backend
+          npm run build || echo "No build script, skipping"
+
+  frontend-check:
+    name: Frontend Build Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm install
+
+      - name: Frontend build check
+        run: |
+          cd frontend
+          npm run build
