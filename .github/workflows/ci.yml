@@ -15,15 +15,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v1
         with:
-          node-version: 18
+          node-version: latest
 
       - name: Install backend dependencies
         run: |
           cd backend
-          npm install
+          bun install
 
       - name: Run Backend Test
         run: |
@@ -33,7 +33,7 @@ jobs:
       - name: Backend build check
         run: |
           cd backend
-          npm run build || echo "No build script, skipping"
+          bun run build || echo "No build script, skipping"
 
   frontend-check:
     name: Frontend Build Check
@@ -44,16 +44,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: oven-sh/setup-bun@v1
         with:
-          node-version: 18
+          node-version: latest
 
       - name: Install frontend dependencies
         run: |
           cd frontend
-          npm install
+          bun install
 
       - name: Frontend build check
         run: |
           cd frontend
-          npm run build
+          bun run build
