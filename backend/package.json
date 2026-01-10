@@ -3,11 +3,18 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun src/server.js"
+    "dev": "bun src/server.js",
+    "build": "echo Backend build OK",
+    "test": "jest --runInBand"
   },
   "dependencies": {
-    "express": "^5.2.1",
     "cors": "^2.8.5",
-    "dotenv": "^17.2.3"
-  }
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "jest": "^30.2.0",
+    "supertest": "^7.2.2"
+  },
+  "jest": {
+  "testEnvironment": "node"
+}
 }
