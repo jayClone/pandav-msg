@@ -2,6 +2,11 @@ import request from "supertest";
 import app from "../app.js";
 import User from "../models/User.js";
 
+process.env.NODE_ENV = 'test';
+if (!process.env.MONGO_URI) {
+    process.env.MONGO_URI = 'mongodb://localhost:27017/pandav_chat_test';
+}
+
 describe("Auth API Tests", () => {
   const testUser = {
     name: "Test User",
