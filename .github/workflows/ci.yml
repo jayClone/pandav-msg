@@ -11,6 +11,17 @@ jobs:
     name: Backend Build Check
     runs-on: ubuntu-latest
 
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd mongosh
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,6 +40,11 @@ jobs:
         run: |
           cd backend
           bun test
+        env:
+          NODE_ENV: test
+          MONGO_URI: mongodb://localhost:27017/pandav_chat_test
+          JWT_SECRET: test_secret_key
+          JWT_EXPIRE: 7d
 
       - name: Backend build check
         run: |
