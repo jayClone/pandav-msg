@@ -110,7 +110,7 @@ describe("LoginForm - Login Success Flow", () => {
 
     await waitFor(
       () => {
-        expect(screen.getByText(/login successful/i)).toBeInTheDocument()
+        expect(mockNavigate).toHaveBeenCalledWith("/chat")
       },
       { timeout: 3000 }
     )
