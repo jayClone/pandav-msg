@@ -11,6 +11,6 @@ const httpServer  = http.createServer(app)
 createSocketServer(httpServer);
 
 // start server
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

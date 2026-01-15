@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { MESSAGES } from '../constant/response.messages';
 
 export function socketAuthMiddleware(socket, next){
     try {
@@ -6,7 +7,7 @@ export function socketAuthMiddleware(socket, next){
     // socket.handshake.auth.token (recommended)
     // or header: Authorization: Bearer xxx
         const tokenFromAuth = socket.handshake?.auth?.token;
-        const authHeader = socket.handshake?.header?.authorization;
+        const authHeader = socket.handshake?.headers?.authorization;
 
         let token = tokenFromAuth;
 
@@ -15,7 +16,7 @@ export function socketAuthMiddleware(socket, next){
         }
 
         if(!token){
-            return next(new Error("AUTH_ERROR : Token is missing"));
+            return next(new Error(`AUTH_ERROR : ${MESSAGES.AUTH.TOKEN_MISSING}`));
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET)
@@ -28,6 +29,6 @@ export function socketAuthMiddleware(socket, next){
 
         return next();
     } catch (error) {
-        return next(new Error("AUTH_ERROR : Token is missing"))
+        return next(new Error(`AUTH_ERROR : ${MESSAGES.AUTH.TOKEN_INVALID}`))
     }
 }

@@ -1,7 +1,7 @@
 # Socket.IO Setup Guide
 
 ## Overview
-This guide explains how we set up Socket.IO for real-time messaging with JWT authentication in the Pandav MSG application.
+This guide explains how Socket.IO is configured for real-time messaging with JWT authentication in the Pandav MSG application.
 
 ## Architecture
 
@@ -16,24 +16,13 @@ This guide explains how we set up Socket.IO for real-time messaging with JWT aut
 
 ## Installation
 
-### Step 1: Install Dependencies
+Install Socket.IO:
 
 ```bash
 cd backend
 npm install socket.io
 # or
 bun add socket.io
-```
-
-### Step 2: Verify Installation
-
-Check `package.json`:
-```json
-{
-  "dependencies": {
-    "socket.io": "^4.x.x"
-  }
-}
 ```
 
 ---
@@ -45,342 +34,233 @@ Check `package.json`:
 The main entry point that creates HTTP server and attaches Socket.IO:
 
 ```javascript
-import http from 'http';
+import http from 'http'
 import app from "./app";
 import { createSocketServer } from './socket/socket.server.js';
 
 const PORT = process.env.PORT || 5000;
 
-// Create HTTP server from Express app
-const httpServer = http.createServer(app);
-
-// Attach Socket.IO to same server
+const httpServer = http.createServer(app)
 createSocketServer(httpServer);
 
-// Start server (use httpServer, not app)
 httpServer.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
 ```
 
-**Important:** Use `httpServer.listen()` instead of `app.listen()` to support WebSocket connections!
+**Key Point:** Use `httpServer.listen()` not `app.listen()` to support WebSocket connections.
 
 ---
 
-### 2. Socket Server Configuration (`src/socket/socket.server.js`)
+### 2. Socket Server Setup (`src/socket/socket.server.js`)
 
-Creates and configures Socket.IO instance with CORS settings:
+Creates Socket.IO server with CORS and authentication:
 
 ```javascript
-import { Server } from 'socket.io';
-import { socketAuthMiddleware } from './socket.auth.js';
-import { registerSocketEvents } from './socket.event.js';
+import { Server } from 'socket.io'
+import { socketAuthMiddleware } from './socket.auth.js'
+import { registerSocketEvents } from './socket.event.js'
 
-export function createSocketServer(httpServer) {
-    // Create Socket.IO server attached to HTTP server
+export function createSocketServer(httpServer){
     const io = new Server(httpServer, {
         cors: {
-            origin: process.env.CLIENT_URL,  // Allow frontend to connect
+            origin: process.env.CLIENT_URL,
             credentials: true
         }
     });
 
-    // Apply JWT middleware for authentication
-    io.use(socketAuthMiddleware);
-
-    // Listen for new connections
+    io.use(socketAuthMiddleware)
+    
     io.on("connection", (socket) => {
-        registerSocketEvents(io, socket);
+        registerSocketEvents(io, socket)
     });
 
-    console.log("[SOCKET] Socket.io Initialized");
-    return io;
+    console.log("[SOCKET] Socket.io Initialized")
+
+    return io
 }
 ```
-
-**What it does:**
-- Creates Socket.IO server attached to HTTP server
-- Enables CORS to allow frontend connections
-- Applies authentication middleware
-- Registers event handlers for each connection
 
 ---
 
 ### 3. Authentication Middleware (`src/socket/socket.auth.js`)
 
-Validates JWT tokens before allowing socket connection:
+Validates JWT tokens on connection:
 
-```javascript
-import jwt from 'jsonwebtoken';
-
-export function socketAuthMiddleware(socket, next) {
-    try {
-        // Token sources (in order of priority):
-        // 1. socket.handshake.auth.token (recommended)
-        // 2. Authorization header: Bearer xxx
-        
-        const tokenFromAuth = socket.handshake?.auth?.token;
-        const authHeader = socket.handshake?.header?.authorization;
-
-        let token = tokenFromAuth;
-
-        // Extract token from Bearer header if not in auth
-        if (!token && authHeader?.startsWith("Bearer ")) {
-            token = authHeader.split(" ")[1];
-        }
-
-        if (!token) {
-            return next(new Error("AUTH_ERROR : Token is missing"));
-        }
-
-        // Verify JWT token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-        // Attach user info to socket for later use
-        socket.user = {
-            userId: decoded.id,
-            email: decoded.email
-        };
-
-        return next();
-    } catch (error) {
-        return next(new Error("AUTH_ERROR : Invalid token"));
-    }
-}
-```
-
-**What it does:**
-- Extracts JWT from connection handshake
-- Verifies token validity
+- Extracts token from `socket.handshake.auth.token` or `Authorization` header
+- Verifies JWT validity
 - Blocks unauthenticated connections
-- Attaches user data to socket object
+- Attaches user data to socket
+
+**Token Sources (in priority order):**
+1. `socket.handshake.auth.token` (recommended)
+2. `Authorization: Bearer <token>` header
 
 ---
 
-### 4. Event Handlers (`src/socket/socket.event.js`)
+### 4. Response Messages (`src/constant/response.messages.js`)
 
-Manages real-time events like online status and messaging:
+Standardized error messages:
 
 ```javascript
-const onlineUsers = new Map();  // userId -> socketId
+export const MESSAGES = {
+  AUTH: {
+    TOKEN_MISSING: "Invalid or expired token",
+    TOKEN_INVALID: "Invalid token",
+  },
+  SOCKET: {
+    TO_USER_REQUIRED: "toUserId is required",
+    MESSAGE_EMPTY: "message cannot be empty",
+    SOMETHING_WENT_WRONG: "Something went wrong",
+  },
+};
 
-export function registerSocketEvents(io, socket) {
-    const { userId, email } = socket.user;
-
-    // 1. Mark user as online
-    onlineUsers.set(userId, socket.id);
-    
-    // 2. Broadcast online users to all clients
-    io.emit("online_users", Array.from(onlineUsers.keys()));
-    console.log(`[SOCKET] Connected: ${email} (${userId}) -> ${socket.id}`);
-
-    // 3. Handle incoming private messages
-    socket.on("private_message", (payload) => {
-        try {
-            const { toUserId, message } = payload || {};
-
-            // Validation
-            if (!toUserId || typeof toUserId !== "string") {
-                socket.emit("error_message", { message: "toUserId is required" });
-                return;
-            }
-            if (!message || typeof message !== "string" || message.trim().length === 0) {
-                socket.emit("error_message", { message: "message cannot be empty" });
-                return;
-            }
-
-            const receiverSocketId = onlineUsers.get(toUserId);
-
-            // Check if receiver is online
-            if (!receiverSocketId) {
-                socket.emit("user_offline", { toUserId });
-                return;
-            }
-
-            // Send message to receiver only
-            io.to(receiverSocketId).emit("private_message", {
-                fromUserId: userId,
-                message: message.trim(),
-                time: new Date().toISOString(),
-            });
-
-            // Confirm to sender
-            socket.emit("message_sent", {
-                toUserId,
-                message: message.trim(),
-                time: new Date().toISOString(),
-            });
-        } catch (error) {
-            socket.emit("error_message", { message: "Something went wrong" });
-        }
-    });
-
-    // 4. Handle disconnection
-    socket.on("disconnect", () => {
-        onlineUsers.delete(userId);
-        io.emit("online_users", Array.from(onlineUsers.keys()));
-        console.log(`[SOCKET] Disconnected: ${email} (${userId})`);
-    });
-}
+export const SOCKET_EVENTS = {
+  ONLINE_USERS: "online_users",
+  PRIVATE_MESSAGE: "private_message",
+  MESSAGE_SENT: "message_sent",
+  USER_OFFLINE: "user_offline",
+  ERROR_MESSAGE: "error_message",
+};
 ```
-
-**What it does:**
-- Tracks online users in a Map
-- Broadcasts online user list to all clients
-- Handles private message routing
-- Validates message format
-- Checks if receiver is online
-- Cleans up on disconnect
 
 ---
 
-## Message Flow
+### 5. Event Handlers (`src/socket/socket.event.js`)
 
-```
-CLIENT                          SERVER
-  │                              │
-  ├─ Connect with JWT ─────────►│
-  │                              │ (Verify token)
-  │◄─ Connection accepted ──────┤
-  │                              │
-  ├─ Send message ─────────────►│
-  │  {toUserId, message}         │ (Validate & route)
-  │                              ├─► Send to receiver
-  │                              │
-  │◄─ Message delivered ────────┤
-  │                              │
-  └─ Disconnect ───────────────►│
-                                 │ (Clean up)
+Manages real-time messaging using centralized constants from `src/constant/response.messages.js`:
+
+**Features:**
+- Tracks online users in in-memory Map
+- Broadcasts online user list to all clients
+- Routes private messages between authenticated users
+- Validates message format and sender/receiver using `MESSAGES` constants
+- Handles disconnection cleanup
+- Uses `SOCKET_EVENTS` constants for event names
+
+**Message Flow:**
+1. User connects → Added to online users Map
+2. Online users list broadcasted via `SOCKET_EVENTS.ONLINE_USERS` event
+3. Sender emits `SOCKET_EVENTS.PRIVATE_MESSAGE` event
+4. System validates message using `MESSAGES.SOCKET` constants
+5. If receiver online → Message routed to receiver socket
+6. Confirmation sent back to sender via `SOCKET_EVENTS.MESSAGE_SENT`
+7. If receiver offline → Error sent via `SOCKET_EVENTS.USER_OFFLINE`
+8. On disconnect → User removed from Map, online users list updated
+
+**Error Handling:**
+- `MESSAGES.SOCKET.TO_USER_REQUIRED` - When toUserId is missing
+- `MESSAGES.SOCKET.MESSAGE_EMPTY` - When message is empty or whitespace
+- `MESSAGES.SOCKET.SOMETHING_WENT_WRONG` - For unexpected errors
+- `MESSAGES.AUTH.TOKEN_INVALID` - For authentication failures
+
+**Usage Example:**
+```javascript
+import { SOCKET_EVENTS, MESSAGES } from '../constant/response.messages.js';
+
+// Event validation uses MESSAGES constants
+if (!toUserId) {
+  socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+    message: MESSAGES.SOCKET.TO_USER_REQUIRED 
+  });
+}
+
+if (!message?.trim()) {
+  socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+    message: MESSAGES.SOCKET.MESSAGE_EMPTY 
+  });
+}
 ```
 
 ---
 
 ## Environment Variables
 
-Add to `.env`:
+Required in `.env`:
 
 ```
-PORT=5000
 CLIENT_URL=http://localhost:3000
-JWT_SECRET=your_secret_key
+JWT_SECRET=your_jwt_secret
 JWT_EXPIRE=7d
-MONGO_URI=mongodb://localhost:27017/<name>
 ```
 
 ---
 
-## Frontend Implementation
-
-### Install Socket.IO Client
-
-```bash
-cd frontend
-npm install socket.io-client
-```
-
-### Example Usage in React
+## Frontend Integration Example
 
 ```javascript
 import io from 'socket.io-client';
-import { useEffect, useState } from 'react';
 
-export function Chat() {
-    const [socket, setSocket] = useState(null);
-    const [onlineUsers, setOnlineUsers] = useState([]);
+const socket = io('http://localhost:5000', {
+    auth: {
+        token: localStorage.getItem('token')
+    }
+});
 
-    useEffect(() => {
-        // Connect with JWT token
-        const newSocket = io('http://localhost:5000', {
-            auth: {
-                token: localStorage.getItem('token')  // Send JWT
-            }
-        });
+// Listen for online users
+socket.on('online_users', (users) => {
+    console.log('Online users:', users);
+});
 
-        // Listen for online users
-        newSocket.on('online_users', (users) => {
-            setOnlineUsers(users);
-        });
+// Send private message
+socket.emit('private_message', {
+    toUserId: 'user123',
+    message: 'Hello!'
+});
 
-        // Listen for incoming messages
-        newSocket.on('private_message', (data) => {
-            console.log(`Message from ${data.fromUserId}:`, data.message);
-        });
+// Receive message
+socket.on('private_message', (data) => {
+    console.log(`${data.fromUserId}: ${data.message}`);
+});
 
-        setSocket(newSocket);
-
-        return () => newSocket.close();
-    }, []);
-
-    const sendMessage = (toUserId, message) => {
-        socket?.emit('private_message', {
-            toUserId,
-            message
-        });
-    };
-
-    return (
-        <div>
-            <h2>Online Users: {onlineUsers.length}</h2>
-            <button onClick={() => sendMessage('userId123', 'Hello!')}>
-                Send Message
-            </button>
-        </div>
-    );
-}
+// Handle errors
+socket.on('error_message', (data) => {
+    console.error(data.message);
+});
 ```
 
 ---
 
-## Testing Socket.IO
+## Testing with Thunderclient
 
-### Using Thunder Client or Postman
-
-1. Connect to WebSocket: `ws://localhost:5000/socket.io/?token=<your_jwt_token>`
-2. Send test events
-3. Monitor real-time responses
-
-### Using Socket.IO Dev Tools
-
-Install extension or use browser DevTools to monitor socket events.
+1. **Connect:** Create WebSocket connection with Bearer token in auth
+2. **Send Message:** Emit `private_message` event with payload
+3. **Monitor:** Listen to incoming events on connected socket
 
 ---
 
-## Common Issues & Solutions
+## Current Limitations (Development)
 
-### Issue: Connection Refused
-**Solution:** Ensure server is running with `bun run dev` or `npm run dev`
-
-### Issue: JWT Token Invalid
-**Solution:** Verify token in localStorage and check JWT_SECRET in .env
-
-### Issue: CORS Error
-**Solution:** Check CLIENT_URL in .env matches your frontend origin
-
-### Issue: Messages Not Delivering
-**Solution:** Verify receiverSocketId exists in onlineUsers Map
+- ⚠️ In-memory storage (lost on server restart)
+- ⚠️ Single server only (no scaling)
+- ⚠️ No message persistence
 
 ---
 
-## Key Takeaways
+## Future Improvements
 
-✅ **Security**: JWT authentication on every connection
-✅ **Real-time**: WebSocket bidirectional communication
-✅ **Scalability**: In-memory Map (upgrade to Redis for production)
-✅ **Error Handling**: Proper validation before routing messages
-✅ **Clean Code**: Separation of concerns (auth, events, server)
-
----
-
-## Next Steps (Future Improvements)
-
-1. **Persistent Storage**: Store messages in MongoDB
-2. **Redis Integration**: Replace in-memory Map for distributed systems
-3. **Message History**: Query past conversations on connect
-4. **Typing Indicators**: Real-time "typing..." status
-5. **Read Receipts**: Track message delivery & read status
-6. **Group Chats**: Implement room-based messaging
-7. **File Sharing**: Support image/file transfers
+- [ ] Redis for distributed online user tracking
+- [ ] MongoDB for message persistence
+- [ ] Typing indicator events
+- [ ] Read receipts
+- [ ] Message history on connect
+- [ ] Chat room/namespace support
+- [ ] File sharing capability
 
 ---
+
+## Troubleshooting
+
+**Connection refused:**
+- Verify server is running on correct port
+- Check CORS origin in `.env`
+
+**Token invalid:**
+- Ensure valid JWT in auth payload
+- Check JWT_SECRET matches between auth and socket
+
+**Messages not delivering:**
+- Verify receiver is in online users list
+- Check socket IDs are correctly mapped
 
 **Last Updated:** January 15, 2026
