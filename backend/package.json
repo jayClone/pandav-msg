@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun src/server.js",
     "build": "echo Backend build OK",
-    "test": "jest --runInBand"
+    "test": "bun test"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

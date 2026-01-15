@@ -31,10 +31,12 @@ export function LoginForm({ className, ...props }) {
     setError("")
 
     try {
-      const data = await login(form)
-      localStorage.setItem("token", data.token)
-      setMsg("Login successful")
-      setTimeout(() => navigate("/chat"), 1500)
+      const response = await login(form);
+      
+      // Store token
+      localStorage.setItem("token", response.token);
+      
+      navigate("/chat");
     } catch (err) {
       setError(err?.response?.data?.message || "Login failed")
     } finally {
