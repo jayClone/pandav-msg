@@ -2,45 +2,46 @@ import User from "../models/User.js";
 import jwt from 'jsonwebtoken'
 
 // generate Token
-const generateToken = (id) => {
-    return jwt.sign({id}, process.env.JWT_SECRET,{
+const generateToken = (user) => {
+    return jwt.sign({
+        userId: user._id.toString(),
+        email: user.email,
+        name: user.name 
+    }, process.env.JWT_SECRET, {
         expiresIn: process.env.JWT_EXPIRE
     });
 };
 
 // registration
-export const register = async (req,res) =>{
+export const register = async (req, res) => {
     try {
-        const {name, email, password} = req.body;
+        const { name, email, password } = req.body;
 
-        //check for user if he exist
-        const userExist = await User.findOne({email});
-        if (userExist){
+        const userExist = await User.findOne({ email });
+        if (userExist) {
             return res.status(409).json({
                 success: false,
                 message: 'user already exist'
             });
         }
 
-        //create user
         const user = await User.create({
             name,
             email,
             password,
         });
 
-        // const token = generateToken(user._id)
+        const token = generateToken(user);
 
-        if (user){
-            res.status(201).json({
-                success: true,
-                data: {
-                    _id: user._id,
-                    name: user.name,
-                    email: user.email
-                }
-            })
-        }
+        res.status(201).json({
+            success: true,
+            data: {
+                _id: user._id,
+                name: user.name,
+                email: user.email
+            },
+            token
+        });
     } catch (error) {
         res.status(400).json({
             success: false,
@@ -49,8 +50,7 @@ export const register = async (req,res) =>{
     }
 };
 
-//login
-
+// login
 export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -78,7 +78,7 @@ export const login = async (req, res) => {
             });
         }
 
-        const token = generateToken(user._id);
+        const token = generateToken(user);
 
         res.json({
             success: true,
@@ -97,14 +97,14 @@ export const login = async (req, res) => {
     }
 };
 
-// get single user
-export const getCurrentUser = async (req, res) =>{
+// get current user
+export const getCurrentUser = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id)
+        const user = await User.findById(req.user._id);
         res.json({
             success: true,
             data: user
-        })
+        });
     } catch (error) {
         res.status(400).json({
             success: false,

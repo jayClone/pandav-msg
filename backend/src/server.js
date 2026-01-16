@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();  // ✅ Must be at top
+
 import http from 'http'
 import app from "./app";
 import { createSocketServer } from './socket/socket.server.js';

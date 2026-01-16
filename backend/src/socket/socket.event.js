@@ -1,65 +1,91 @@
 import { MESSAGES, SOCKET_EVENTS } from "../constant/response.messages.js";
-// In-memory online users store (Day-3 only) to learn yeye
-const onlineUsers =  new Map();
-// userId -> websocket
+
+const onlineUsers = new Map();
 
 export function registerSocketEvents(io, socket){
-    const{userId, email} = socket.user;
+    const { userId, email, name } = socket.user;
 
-    //1. mark user online
-    onlineUsers.set(userId, socket.id)
+    // Store full user object
+    onlineUsers.set(userId, {
+        socketId: socket.id,
+        name: name,
+        email: email,
+        userId: userId
+    });
     
-    //2. tell all guys whose online rn
-    io.emit(SOCKET_EVENTS.ONLINE_USERS, Array.from(onlineUsers.keys()));
+    // Broadcast online users
+    const onlineUsersList = Array.from(onlineUsers.values()).map(user => ({
+        userId: user.userId,
+        name: user.name,
+        email: user.email
+    }));
+    io.emit(SOCKET_EVENTS.ONLINE_USERS, onlineUsersList);
 
-    console.log(`[SOCKET] Connected: ${email} (${userId}) -> ${socket.id}`);
+    console.log(`[SOCKET] Connected: ${name} (${userId}) -> ${socket.id}`);
 
-    //3. recive message from sender
-    socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, (payload) =>{
+    socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, (payload) => {
         try {
-            const {toUserId, message} = payload || {};
+            const { toUserId, message } = payload || {};
 
-            if (!toUserId || typeof toUserId !== "string"){
-                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {message: MESSAGES.SOCKET.TO_USER_REQUIRED});
+            if (!toUserId || typeof toUserId !== "string") {
+                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                    message: MESSAGES.SOCKET.TO_USER_REQUIRED 
+                });
                 return;
             }
-            if (!message || typeof message !== "string" || message.trim().length === 0){
-                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {message: MESSAGES.SOCKET.MESSAGE_EMPTY});
-                return;
-            }
-
-            const reciverSocketId = onlineUsers.get(toUserId);
-
-            //if reciver offline
-            if(!reciverSocketId){
-                socket.emit(SOCKET_EVENTS.USER_OFFLINE,{toUserId});
+            
+            if (!message || typeof message !== "string" || message.trim().length === 0) {
+                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                    message: MESSAGES.SOCKET.MESSAGE_EMPTY 
+                });
                 return;
             }
 
-            // send message to reciver only
-            io.to(reciverSocketId).emit(SOCKET_EVENTS.PRIVATE_MESSAGE,{
+            const receiverUser = onlineUsers.get(toUserId);
+            const messagePayload = {
                 fromUserId: userId,
+                fromUserName: name,
                 message: message.trim(),
                 time: new Date().toISOString(),
+            };
+
+            // If receiver is offline
+            if (!receiverUser) {
+                socket.emit(SOCKET_EVENTS.USER_OFFLINE, { toUserId });
+                return;
+            }
+
+            // Send to receiver
+            io.to(receiverUser.socketId).emit(SOCKET_EVENTS.PRIVATE_MESSAGE, messagePayload);
+
+            // ✅ IMPORTANT: Also send back to sender (so they see their own message)
+            socket.emit(SOCKET_EVENTS.MESSAGE_SENT, {
+                toUserId,
+                toUserName: receiverUser.name,
+                message: message.trim(),
+                time: messagePayload.time,
             });
 
-            // confirm back to seder
-            socket.emit(SOCKET_EVENTS.MESSAGE_SENT,{
-                toUserId,
-                message: message.trim(),
-                time: new Date().toISOString(),
-            });
+            console.log(`[MSG] ${name} → ${receiverUser.name}: ${message.substring(0, 30)}...`);
+
         } catch (error) {
-            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE,{message: MESSAGES.SOCKET.SOMETHING_WENT_WRONG})
+            console.error('[ERROR] Message sending failed:', error.message);
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                message: MESSAGES.SOCKET.SOMETHING_WENT_WRONG 
+            });
         }
     });
 
-    //4. handle dissconnect
-    socket.on("disconnect",() =>{
+    socket.on("disconnect", () => {
         onlineUsers.delete(userId);
 
-        io.emit(SOCKET_EVENTS.ONLINE_USERS, Array.from(onlineUsers.keys()));
+        const onlineUsersList = Array.from(onlineUsers.values()).map(user => ({
+            userId: user.userId,
+            name: user.name,
+            email: user.email
+        }));
+        io.emit(SOCKET_EVENTS.ONLINE_USERS, onlineUsersList);
 
-        console.log(`[SOCKET] Disconnected: ${email} (${userId})`)
+        console.log(`[SOCKET] Disconnected: ${name} (${userId})`);
     });
 }

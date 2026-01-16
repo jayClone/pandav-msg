@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { connectSocket } from "@/socket/socketClient.js"
+
 
 export function LoginForm({ className, ...props }) {
   const navigate = useNavigate()
@@ -35,6 +37,9 @@ export function LoginForm({ className, ...props }) {
       
       // Store token
       localStorage.setItem("token", response.token);
+
+      // were gonna add socket connection here so it connect only for logged in user
+      connectSocket(response.data.token)
       
       navigate("/chat");
     } catch (err) {

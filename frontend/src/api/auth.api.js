@@ -11,6 +11,6 @@ export const login = async (credentials) =>{
 };
 
 export const getCurrentUser = async () =>{
-    const res = await API.get("auth/me")
+    const res = await API.get("/auth/me")
     return res.data
 }

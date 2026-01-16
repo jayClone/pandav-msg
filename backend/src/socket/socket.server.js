@@ -3,10 +3,20 @@ import {socketAuthMiddleware} from './socket.auth.js'
 import { registerSocketEvents } from './socket.event.js'
 
 export function createSocketServer(httpServer){
+    // Get CORS origin based on environment
+    const getOrigin = () => {
+        const isDevelopment = process.env.NODE_ENV === 'development';
+        
+        if (isDevelopment) {
+            return ['http://localhost:3000', 'http://localhost:5173'];
+        }
+        return process.env.CLIENT_URL;
+    };
+
     // Create Socket.IO server attached to HTTP server
     const io = new Server(httpServer, {
-        cors:{
-            origin: process.env.CLIENT_URL, // Allow frontend to connect
+        cors: {
+            origin: getOrigin(),  // ✅ Dynamic origin
             credentials: true
         }
     });
