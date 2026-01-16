@@ -408,7 +408,7 @@ socket.on('private_message', (data) => {
 
 **Test with cURL (Backend):**
 ```bash
-curl -X GET http://localhost:5000/api/auth/me \
+curl -X GET http://localhost:5000/api/auth/current \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 

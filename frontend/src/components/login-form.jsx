@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { login } from "@/api/auth.api"
+import { connectSocket } from "@/socket/socketClient"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -12,7 +13,6 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { connectSocket } from "@/socket/socketClient.js"
 
 export function LoginForm({ className, ...props }) {
   const navigate = useNavigate()
@@ -34,14 +34,10 @@ export function LoginForm({ className, ...props }) {
     try {
       const response = await login(form)
       
-      // Store token
       localStorage.setItem("token", response.token)
-
-      // ✅ FIX: Use response.token not response.data.token
       connectSocket(response.token)
-  
-      // ✅ Navigate to chat
       navigate("/chat")
+      
     } catch (err) {
       setError(err?.response?.data?.message || "Login failed")
     } finally {

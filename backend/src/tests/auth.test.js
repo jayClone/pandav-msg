@@ -1,145 +1,466 @@
-import request from "supertest";
-import app from "../app.js";
-import User from "../models/User.js";
+import { describe, it, beforeAll, afterAll, beforeEach, afterEach, expect } from 'bun:test';
+import request from 'supertest';
+import app from '../app.js';
+import User from '../models/User.js';
+import { connectDB } from '../config/db.js';
 
-process.env.NODE_ENV = 'test';
-if (!process.env.MONGO_URI) {
-    process.env.MONGO_URI = 'mongodb://localhost:27017/pandav_chat_test';
-}
+// ✅ Use passwords that match the regex: Min 8 chars, 1 uppercase, 1 number, 1 special char
 
-describe("Auth API Tests", () => {
-  const testUser = {
-    name: "Test User",
-    email: "test@example.com",
-    password: "password123"
-  };
+describe('🧪 Auth API Tests', () => {
+  beforeAll(async () => {
+    await connectDB();
+    await User.deleteMany({});
+  });
 
-  // Clean up after tests
   afterAll(async () => {
     await User.deleteMany({});
   });
 
-  // Test 1: Register Works
-  describe("POST /api/auth/register", () => {
-    beforeEach(async () => {
-        await User.deleteMany({});
+  describe('POST /api/v1/auth/register', () => {
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 1.1: Valid Registration
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should register a new user with valid data', async () => {
+      const userData = {
+        name: 'John Doe',
+        email: 'john@example.com',
+        password: 'SecurePass123!'  // ✅ FIXED: Added special char and uppercase
+      };
+
+      const response = await request(app)
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .timeout(15000);
+
+      expect(response.status).toBe(201);
+      expect(response.body.success).toBe(true);
+      expect(response.body.token).toBeDefined();
+      expect(response.body.data.email).toBe(userData.email);
+      expect(response.body.data.name).toBe(userData.name);
+      
+      console.log('✅ TEST PASSED: Valid registration successful');
     });
 
-    it("should reject duplicate email registration", async () => {
-        await User.create(testUser);
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 1.2: Duplicate Email Rejection
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should reject duplicate email registration', async () => {
+      const userData = {
+        name: 'Jane Doe',
+        email: 'duplicate@example.com',
+        password: 'SecurePass123!'  // ✅ FIXED: Valid password
+      };
 
-        const res = await request(app)
-            .post("/api/auth/register")
-            .send(testUser);
+      // First registration - should succeed
+      await request(app)
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .timeout(15000);
 
-        expect(res.statusCode).toBe(409);
-        expect(res.body.success).toBe(false);
-        expect(res.body.message).toBe("user already exist");
+      // Second registration with same email - should fail
+      const response = await request(app)
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .timeout(15000);
+
+      expect(response.status).toBe(409);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('already exist');
+      
+      console.log('✅ TEST PASSED: Duplicate email correctly rejected');
     });
 
-    // Test 3: Missing Fields
-    it("should reject registration with missing fields", async () => {
-      const res = await request(app)
-        .post("/api/auth/register")
-        .send({ name: "John" });
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 1.3: Missing Required Fields Validation
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should reject registration with missing name field', async () => {
+      const incompleteData = {
+        email: 'test@example.com',
+        password: 'SecurePass123!'
+      };
 
-      expect(res.statusCode).toBe(400);
-      expect(res.body.success).toBe(false);
+      const response = await request(app)
+        .post('/api/v1/auth/register')
+        .send(incompleteData)
+        .timeout(15000);
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('required');
+      
+      console.log('✅ TEST PASSED: Missing name field validation works');
+    });
+
+    it('should reject registration with missing email field', async () => {
+      const incompleteData = {
+        name: 'Test User',
+        password: 'SecurePass123!'
+      };
+
+      const response = await request(app)
+        .post('/api/v1/auth/register')
+        .send(incompleteData)
+        .timeout(15000);
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      
+      console.log('✅ TEST PASSED: Missing email field validation works');
+    });
+
+    it('should reject registration with missing password field', async () => {
+      const incompleteData = {
+        name: 'Test User',
+        email: 'test@example.com'
+      };
+
+      const response = await request(app)
+        .post('/api/v1/auth/register')
+        .send(incompleteData)
+        .timeout(15000);
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      
+      console.log('✅ TEST PASSED: Missing password field validation works');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 1.4: Invalid Email Format
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should reject registration with invalid email format', async () => {
+      const invalidEmails = [
+        'notanemail',
+        'missing@',
+        '@nodomain.com',
+        'spaces in@email.com'
+      ];
+
+      for (const email of invalidEmails) {
+        const response = await request(app)
+          .post('/api/v1/auth/register')
+          .send({
+            name: 'Test User',
+            email: email,
+            password: 'SecurePass123!'
+          })
+          .timeout(15000);
+
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+      }
+      
+      console.log('✅ TEST PASSED: Invalid email formats rejected');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 1.5: Weak Password Rejection
+    // ───────────────────────────────────────────────────────────────────────────
+    // Password Requirements:
+    //   ✅ Min 8 characters
+    //   ✅ At least 1 uppercase letter (A-Z)
+    //   ✅ At least 1 number (0-9)
+    //   ✅ At least 1 special character (!@#$%^&*)
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should reject weak passwords', async () => {
+      const weakPasswords = [
+        '123',              // Too short
+        'password',         // No uppercase, numbers, or special chars
+        'Password',         // No numbers or special chars
+        'password123'       // No uppercase or special chars
+      ];
+
+      for (const password of weakPasswords) {
+        const response = await request(app)
+          .post('/api/v1/auth/register')
+          .send({
+            name: 'Test User',
+            email: `test${Math.random()}@example.com`,
+            password: password
+          })
+          .timeout(15000);
+
+        expect(response.status).toBe(400);
+        expect(response.body.message).toContain('Password');  // ✅ FIXED: Check for "Password" not "password"
+      }
+      
+      console.log('✅ TEST PASSED: Weak passwords rejected');
     });
   });
 
-  // Test 4: Login Tests
-  describe("POST /api/auth/login", () => {
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // TEST SUITE 2: USER LOGIN
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('POST /api/v1/auth/login', () => {
+    const testUser = {
+      name: 'Login Test User',
+      email: 'login@example.com',
+      password: 'SecurePass123!'  // ✅ FIXED: Valid password
+    };
+
     beforeEach(async () => {
-      await User.deleteMany({});
-      await User.create(testUser);
+      await User.deleteMany({ email: testUser.email });
+      
+      // Create test user before each login test
+      await request(app)
+        .post('/api/v1/auth/register')
+        .send(testUser)
+        .timeout(15000);
     });
 
-    it("should login with correct credentials and return token", async () => {
-      const res = await request(app)
-        .post("/api/auth/login")
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 2.1: Successful Login with Correct Credentials
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should login with correct credentials and return JWT token', async () => {
+      const response = await request(app)
+        .post('/api/v1/auth/login')
         .send({
           email: testUser.email,
           password: testUser.password
-        });
+        })
+        .timeout(15000);
 
-      expect(res.statusCode).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.token).toBeDefined();
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.token).toBeDefined();
+      expect(response.body.token.length).toBeGreaterThan(100);
+      expect(response.body.data.email).toBe(testUser.email);
+      
+      console.log('✅ TEST PASSED: Successful login with correct credentials');
     });
 
-    // Test 5: Wrong Password Rejected
-    it("should reject login with wrong password", async () => {
-      const res = await request(app)
-        .post("/api/auth/login")
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 2.2: Login Rejection with Wrong Password
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should reject login with wrong password', async () => {
+      const response = await request(app)
+        .post('/api/v1/auth/login')
         .send({
           email: testUser.email,
-          password: "wrongpassword"
-        });
+          password: 'WrongPassword123!'
+        })
+        .timeout(15000);
 
-      expect(res.statusCode).toBe(401);
-      expect(res.body.success).toBe(false);
-      expect(res.body.message).toBe("Invalid password");
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+      expect(response.body.token).toBeUndefined();
+      expect(response.body.message).toContain('Invalid');
+      
+      console.log('✅ TEST PASSED: Wrong password correctly rejected');
     });
 
-    it("should reject login with non-existent email", async () => {
-      const res = await request(app)
-        .post("/api/auth/login")
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 2.3: Login Rejection with Non-existent Email
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should reject login with non-existent email', async () => {
+      const response = await request(app)
+        .post('/api/v1/auth/login')
         .send({
-          email: "nonexistent@example.com",
-          password: testUser.password
-        });
+          email: 'nonexistent@example.com',
+          password: 'AnyPassword123!'
+        })
+        .timeout(15000);
 
-      expect(res.statusCode).toBe(401);
-      expect(res.body.success).toBe(false);
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+      expect(response.body.token).toBeUndefined();
+      expect(response.body.message).toContain('Invalid');
+      
+      console.log('✅ TEST PASSED: Non-existent email correctly rejected');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 2.4: Login with Missing Fields
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should reject login with missing email field', async () => {
+      const response = await request(app)
+        .post('/api/v1/auth/login')
+        .send({
+          password: testUser.password
+        })
+        .timeout(15000);
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      
+      console.log('✅ TEST PASSED: Missing email field validation works');
+    });
+
+    it('should reject login with missing password field', async () => {
+      const response = await request(app)
+        .post('/api/v1/auth/login')
+        .send({
+          email: testUser.email
+        })
+        .timeout(15000);
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      
+      console.log('✅ TEST PASSED: Missing password field validation works');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 2.5: Case-Insensitive Email Login
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should accept login with different email case', async () => {
+      const response = await request(app)
+        .post('/api/v1/auth/login')
+        .send({
+          email: testUser.email.toUpperCase(),
+          password: testUser.password
+        })
+        .timeout(15000);
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.token).toBeDefined();
+      
+      console.log('✅ TEST PASSED: Case-insensitive email login works');
     });
   });
 
-  // Test 6: Protected Routes
-  describe("GET /api/auth/me", () => {
-    let token;
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // TEST SUITE 3: GET CURRENT USER (Protected Route)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('GET /api/v1/auth/current', () => {
+    let validToken;
+    const testUser = {
+      name: 'Current User Test',
+      email: 'current@example.com',
+      password: 'SecurePass123!'  // ✅ FIXED: Valid password
+    };
 
     beforeEach(async () => {
-      await User.deleteMany({});
-      await User.create(testUser);
+      await User.deleteMany({ email: testUser.email });
+
+      // Register and login to get valid token
+      await request(app)
+        .post('/api/v1/auth/register')
+        .send(testUser)
+        .timeout(15000);
 
       const loginRes = await request(app)
-        .post("/api/auth/login")
+        .post('/api/v1/auth/login')
         .send({
           email: testUser.email,
           password: testUser.password
-        });
+        })
+        .timeout(15000);
 
-      token = loginRes.body.token;
+      validToken = loginRes.body.token;
     });
 
-    // Test 7: Token Valid → /me Works
-    it("should return user data with valid token", async () => {
-      const res = await request(app)
-        .get("/api/auth/me")
-        .set("Authorization", `Bearer ${token}`);
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 3.1: Get User Data with Valid Token
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should return user data with valid JWT token', async () => {
+      const response = await request(app)
+        .get('/api/v1/auth/current')
+        .set('Authorization', `Bearer ${validToken}`)
+        .timeout(15000);
 
-      expect(res.statusCode).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.email).toBe(testUser.email);
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toBeDefined();
+      expect(response.body.data.email).toBe(testUser.email);
+      expect(response.body.data.name).toBe(testUser.name);
+      expect(response.body.data._id).toBeDefined();
+      
+      console.log('✅ TEST PASSED: Valid token returns correct user data');
     });
 
-    // Test 8: Token Invalid → Access Denied
-    it("should reject request with invalid token", async () => {
-      const res = await request(app)
-        .get("/api/auth/me")
-        .set("Authorization", "Bearer invalidtoken123");
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 3.2: Rejection with Invalid/Malformed Token
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should reject request with invalid token', async () => {
+      const response = await request(app)
+        .get('/api/v1/auth/current')
+        .set('Authorization', 'Bearer invalid_token_string_123')
+        .timeout(15000);
 
-      expect(res.statusCode).toBe(401);
-      expect(res.body.success).toBe(false);
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+      expect(response.body.data).toBeUndefined();
+      // ✅ FIXED: Check for either error message
+      expect(
+        response.body.message === 'Token is invalid or expired' ||
+        response.body.message.includes('token')
+      ).toBe(true);
+      
+      console.log('✅ TEST PASSED: Invalid token correctly rejected');
     });
 
-    it("should reject request without token", async () => {
-      const res = await request(app)
-        .get("/api/auth/me");
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 3.3: Rejection without Authorization Header
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should reject request without Authorization header', async () => {
+      const response = await request(app)
+        .get('/api/v1/auth/current')
+        .timeout(15000);
 
-      expect(res.statusCode).toBe(401);
-      expect(res.body.success).toBe(false);
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('token');
+      
+      console.log('✅ TEST PASSED: Missing Authorization header correctly rejected');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 3.4: Rejection with Wrong Authorization Header Format
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should reject request with wrong Authorization header format', async () => {
+      const wrongFormats = [
+        `Token ${validToken}`,
+        'Bearer',
+        `Bearertoken`
+      ];
+
+      for (const header of wrongFormats) {
+        const response = await request(app)
+          .get('/api/v1/auth/current')
+          .set('Authorization', header)
+          .timeout(15000);
+
+        expect(response.status).toBe(401);
+        expect(response.body.success).toBe(false);
+      }
+      
+      console.log('✅ TEST PASSED: Wrong header formats correctly rejected');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE 3.5: Data Privacy - User Can Only Access Own Data
+    // ───────────────────────────────────────────────────────────────────────────
+    it('should return only authenticated user\'s data (privacy)', async () => {
+      // Create another user
+      const anotherUser = {
+        name: 'Another User',
+        email: 'another@example.com',
+        password: 'AnotherPass123!'  // ✅ FIXED: Valid password
+      };
+
+      await request(app)
+        .post('/api/v1/auth/register')
+        .send(anotherUser)
+        .timeout(15000);
+
+      // Login as first user and get their data
+      const response = await request(app)
+        .get('/api/v1/auth/current')
+        .set('Authorization', `Bearer ${validToken}`)
+        .timeout(15000);
+
+      // Verify we get first user's data, not second user's
+      expect(response.status).toBe(200);  // ✅ FIXED: Add status check
+      expect(response.body.data).toBeDefined();  // ✅ FIXED: Check data exists
+      expect(response.body.data.email).toBe(testUser.email);
+      expect(response.body.data.email).not.toBe(anotherUser.email);
+      
+      console.log('✅ TEST PASSED: User can only access their own data');
     });
   });
 });

@@ -1,50 +1,61 @@
-import mongoose from "mongoose";
-import validator from 'validator';
-import bycrypt from 'bcryptjs'
-import bcrypt from "bcryptjs";
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 
 const userSchema = new mongoose.Schema({
-    name:{
-      type: String,
-      required: [true, 'Please Enter your Name'],
-      trim : true
-    },
-    email:{
-        type: String,
-        required: [true, 'Please Provide Email'],
-        unique: true,
-        lowercase: true,
-        validate: [validator.isEmail, 'Please enter valid email']
-    },
-    password:{
-        type: String,
-        required: [true, 'please provide password'],
-        minlength: 6,
-        select: false
-    },
-    createdAt:{
-        type: Date,
-        default: Date.now
-    }
-})
-
-// hash the password now
-userSchema.pre('save', async function(next) {
-    if (!this.isModified('password')){
-        return next();
-    }
-    try {
-        const salt = await bcrypt.genSalt(10);
-        this.password = await bcrypt.hash(this.password, salt)
-    } catch (error) {
-        next(error)
-    }
+  name: {
+    type: String,
+    required: [true, 'Name is required'],
+    trim: true
+  },
+  email: {
+    type: String,
+    required: [true, 'Email is required'],
+    unique: true,
+    lowercase: true,
+    trim: true,
+    match: [
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+      'Please provide a valid email'
+    ]
+  },
+  password: {
+    type: String,
+    required: [true, 'Password is required'],
+    minlength: 8,
+    select: false  // Don't return password by default
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
 });
 
-// method to compare the password
+//  Hash password BEFORE saving
+// Using proper Mongoose pre-save hook syntax
+userSchema.pre('save', async function() {
+  // Only hash if password is modified
+  if (!this.isModified('password')) {
+    return;  //  Just return, don't call next()
+  }
+
+  try {
+    // Generate salt and hash password
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+  } catch (error) {
+    // Throw error instead of passing to next()
+    throw new Error(`Password hashing failed: ${error.message}`);
+  }
+});
+
+// ✅ Method to compare passwords
 userSchema.methods.matchPassword = async function(enteredPassword) {
+  try {
     return await bcrypt.compare(enteredPassword, this.password);
+  } catch (error) {
+    console.error('Password comparison error:', error.message);
+    return false;
+  }
 };
 
-const User = mongoose.model('User', userSchema)
-export default User
+export default mongoose.model('User', userSchema);

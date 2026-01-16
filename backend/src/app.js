@@ -1,46 +1,54 @@
 import express from 'express';
 import cors from 'cors';
-import connectDB from './config/db.js';
-import authRoutes from './routes/auth.routes.js';
-import healthRoutes from './routes/health.routes.js';
+import apiRoutes from './routes/index.js';
 
 const app = express();
 
-//Contect mongodb
-connectDB();
+// Middleware
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ limit: '10kb', extended: true }));
 
-// Dynamic CORS Configuration
-const getCorsOptions = () => {
-    const isDevelopment = process.env.NODE_ENV === 'development';
-    const isTest = process.env.NODE_ENV === 'test';
+// CORS Configuration
+app.use(cors({
+    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    credentials: true
+}));
 
-    if (isTest) {
-        return {
-            origin: '*',
-            credentials: false,
-        };
-    }
+// ✅ API Routes - CRITICAL: Must be /api
+app.use('/api', apiRoutes);
 
-    return {
-        origin: isDevelopment 
-            ? ['http://localhost:3000', 'http://localhost:5173']
-            : process.env.CLIENT_URL,
-        credentials: true,
-        optionsSuccessStatus: 200,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization'],
-        maxAge: 86400, // 24 hours
-    };
-};
+// Health check root endpoint
+app.get('/health', (req, res) => {
+    res.json({
+        success: true,
+        message: 'Server is running',
+        timestamp: new Date().toISOString(),
+        version: 'v1'
+    });
+});
 
-app.use(cors(getCorsOptions()));
-app.use(express.json());
+// 404 Handler
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        message: `Route ${req.originalUrl} not found`,
+        availableRoutes: [
+            'GET /health',
+            'POST /api/v1/auth/register',
+            'POST /api/v1/auth/login',
+            'GET /api/v1/auth/current'
+        ]
+    });
+});
 
-// Routes
-app.use('/api/auth', authRoutes);
-
-app.get("/api/health", (req, res) => {
-  res.status(200).json({ status: "ok" });
+// Error Handler
+app.use((err, req, res, next) => {
+    console.error('Error:', err.message);
+    res.status(err.status || 500).json({
+        success: false,
+        message: err.message || 'Internal Server Error',
+        version: 'v1'
+    });
 });
 
 export default app;
