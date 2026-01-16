@@ -5,14 +5,15 @@ import { LoginForm } from "../login-form"
 import { login } from "@/api/auth.api"
 import { vi } from "vitest"
 
+// ✅ Define mockNavigate BEFORE vi.mock()
+const mockNavigate = vi.fn()
+
 // Mock the auth API
 vi.mock("@/api/auth.api", () => ({
   login: vi.fn(),
 }))
 
-// Mock useNavigate
-const mockNavigate = vi.fn()
-
+// ✅ Mock react-router-dom with pre-defined mockNavigate
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom")
   return {
@@ -61,15 +62,15 @@ describe("LoginForm - UI Render Tests", () => {
 
 describe("LoginForm - Login Success Flow", () => {
   beforeEach(() => {
-    login.mockClear()
-    mockNavigate.mockClear()  // ✅ Clear mock before each test
+    mockNavigate.mockClear()
+    vi.mocked(login).mockClear()
     localStorage.clear()
   })
 
   test("should save token to localStorage when login succeeds", async () => {
-    const user = userEvent.setup({ delay: null })
+    const user = userEvent.setup()
 
-    login.mockResolvedValueOnce({
+    vi.mocked(login).mockResolvedValueOnce({
       token: "fake-jwt-token",
     })
 
@@ -91,10 +92,10 @@ describe("LoginForm - Login Success Flow", () => {
     )
   })
 
-  test("should show success message on successful login", async () => {
-    const user = userEvent.setup({ delay: null })
+  test("should navigate to /chat after successful login", async () => {
+    const user = userEvent.setup()
 
-    login.mockResolvedValueOnce({
+    vi.mocked(login).mockResolvedValueOnce({
       token: "fake-jwt-token",
     })
 
@@ -108,18 +109,22 @@ describe("LoginForm - Login Success Flow", () => {
     await user.type(screen.getByPlaceholderText(/••••••••/i), "password123")
     await user.click(screen.getByRole("button", { name: /login/i }))
 
+    // ✅ Debug: Check if navigate was called at all
+    console.log("Navigate calls:", mockNavigate.mock.calls)
+
     await waitFor(
       () => {
+        console.log("Checking navigate - calls:", mockNavigate.mock.calls)
         expect(mockNavigate).toHaveBeenCalledWith("/chat")
       },
-      { timeout: 3000 }
+      { timeout: 5000 }
     )
   })
 
-  test("should navigate to /chat after successful login", async () => {
-    const user = userEvent.setup({ delay: null })
+  test("should show success message on successful login", async () => {
+    const user = userEvent.setup()
 
-    login.mockResolvedValueOnce({
+    vi.mocked(login).mockResolvedValueOnce({
       token: "fake-jwt-token",
     })
 
@@ -133,8 +138,17 @@ describe("LoginForm - Login Success Flow", () => {
     await user.type(screen.getByPlaceholderText(/••••••••/i), "password123")
     await user.click(screen.getByRole("button", { name: /login/i }))
 
+    // ✅ Wait for token first, then check navigate
     await waitFor(
       () => {
+        expect(localStorage.getItem("token")).toBe("fake-jwt-token")
+      },
+      { timeout: 3000 }
+    )
+
+    await waitFor(
+      () => {
+        console.log("Navigate calls after token saved:", mockNavigate.mock.calls)
         expect(mockNavigate).toHaveBeenCalledWith("/chat")
       },
       { timeout: 3000 }
@@ -144,15 +158,15 @@ describe("LoginForm - Login Success Flow", () => {
 
 describe("LoginForm - Login Fail Flow", () => {
   beforeEach(() => {
-    login.mockClear()
-    mockNavigate.mockClear()  // ✅ Clear mock before each test
+    mockNavigate.mockClear()
+    vi.mocked(login).mockClear()
     localStorage.clear()
   })
 
   test("should show error message when login fails", async () => {
-    const user = userEvent.setup({ delay: null })
+    const user = userEvent.setup()
 
-    login.mockRejectedValueOnce({
+    vi.mocked(login).mockRejectedValueOnce({
       response: {
         data: {
           message: "Invalid credentials",
@@ -179,9 +193,9 @@ describe("LoginForm - Login Fail Flow", () => {
   })
 
   test("should NOT save token when login fails", async () => {
-    const user = userEvent.setup({ delay: null })
+    const user = userEvent.setup()
 
-    login.mockRejectedValueOnce({
+    vi.mocked(login).mockRejectedValueOnce({
       response: {
         data: {
           message: "Invalid credentials",
@@ -210,12 +224,9 @@ describe("LoginForm - Login Fail Flow", () => {
   })
 
   test("should not navigate when login fails", async () => {
-    const user = userEvent.setup({ delay: null })
+    const user = userEvent.setup()
 
-    // ✅ Reset mock BEFORE this test runs
-    mockNavigate.mockClear()
-
-    login.mockRejectedValueOnce({
+    vi.mocked(login).mockRejectedValueOnce({
       response: {
         data: {
           message: "Invalid credentials",
@@ -233,7 +244,6 @@ describe("LoginForm - Login Fail Flow", () => {
     await user.type(screen.getByPlaceholderText(/••••••••/i), "wrongpassword")
     await user.click(screen.getByRole("button", { name: /login/i }))
 
-    // Wait for error message
     await waitFor(
       () => {
         expect(screen.getByText(/invalid credentials/i)).toBeInTheDocument()
@@ -241,8 +251,7 @@ describe("LoginForm - Login Fail Flow", () => {
       { timeout: 3000 }
     )
 
-    // ✅ Now check that mockNavigate was NOT called
-    // (it should have 0 calls from this test)
+    // ✅ Navigate should not be called
     expect(mockNavigate).not.toHaveBeenCalled()
   })
 })

@@ -14,7 +14,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { connectSocket } from "@/socket/socketClient.js"
 
-
 export function LoginForm({ className, ...props }) {
   const navigate = useNavigate()
   const [form, setForm] = useState({ email: "", password: "" })
@@ -33,15 +32,16 @@ export function LoginForm({ className, ...props }) {
     setError("")
 
     try {
-      const response = await login(form);
+      const response = await login(form)
       
       // Store token
-      localStorage.setItem("token", response.token);
+      localStorage.setItem("token", response.token)
 
-      // were gonna add socket connection here so it connect only for logged in user
-      connectSocket(response.data.token)
-      
-      navigate("/chat");
+      // ✅ FIX: Use response.token not response.data.token
+      connectSocket(response.token)
+  
+      // ✅ Navigate to chat
+      navigate("/chat")
     } catch (err) {
       setError(err?.response?.data?.message || "Login failed")
     } finally {
