@@ -1,15 +1,19 @@
 import { MESSAGES, SOCKET_EVENTS } from "../constant/response.messages.js";
-import Message from '../models/Message.js'
+import Message from '../models/Message.js';
+import User from '../models/User.js';
+
 const onlineUsers = new Map();
 
 /**
  * Register all socket events
  * Handles: messaging, online status, disconnection
  */
-export function registerSocketEvents(io, socket){
+export function registerSocketEvents(io, socket) {
     const { userId, email, name } = socket.user;
 
-    // Store full user object
+    console.log(`[SOCKET] User connected: ${name} (${userId})`);
+
+    // Store user in online users map
     onlineUsers.set(userId, {
         socketId: socket.id,
         name: name,
@@ -33,7 +37,7 @@ export function registerSocketEvents(io, socket){
         try {
             const { toUserId, message } = payload || {};
 
-            // ✅ Validation Layer
+            // Validation Layer
             if (!toUserId || typeof toUserId !== "string") {
                 socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
                     message: MESSAGES.SOCKET.TO_USER_REQUIRED 
@@ -87,17 +91,27 @@ export function registerSocketEvents(io, socket){
             else{
                 // If receiver is OFFLINE: Still saved in DB, will show in history
                 console.log(`[MSG-QUEUED] ${name} → ${toUserId} (offline): ${trimmedMessage.substring(0, 30)}...`);
+                
+                // Send offline notification if receiver not online
+                socket.emit('user_offline', {
+                    toUserId: toUserId,
+                    message: 'User is offline. Message queued for delivery.'
+                });
+                console.log(`[OFFLINE] ${toUserId} is offline`);
             }
 
             // send confirmation back to sender
-            socket.emit(SOCKET_EVENTS.MESSAGE_SENT<{
+            socket.emit(SOCKET_EVENTS.MESSAGE_SENT,{
                 messageId: savedMessage._id,
                 toUserId,
-                toUserName: receiverUser?.name || "Unknown User",
+                toUserName: receiverUser?.name || 'Unknown User',
+                message: trimmedMessage,
                 time: savedMessage.createdAt.toISOString(),
                 delivered: !!receiverUser, // tell sender if delivered is live
                 saved: true
             });
+
+            console.log(`[CONFIRM] Sent confirmation to ${name}`);
 
         } catch (error) {
             console.error('[ERROR] Message sending failed:', error.message);
@@ -118,9 +132,11 @@ export function registerSocketEvents(io, socket){
     });
 }
 
-// Helper: Broadcast online users to all connected clients
-function broadcastOnlineUsers(io){
-        const onlineUsersList = Array.from(onlineUsers.values()).map(user => ({
+/**
+ * Helper: Broadcast online users to all connected clients
+ */
+function broadcastOnlineUsers(io) {
+    const onlineUsersList = Array.from(onlineUsers.values()).map(user => ({
         userId: user.userId,
         name: user.name,
         email: user.email,
