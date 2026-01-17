@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { login } from "@/api/auth.api"
+import { connectSocket } from "@/socket/socketClient"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -31,12 +32,12 @@ export function LoginForm({ className, ...props }) {
     setError("")
 
     try {
-      const response = await login(form);
+      const response = await login(form)
       
-      // Store token
-      localStorage.setItem("token", response.token);
+      localStorage.setItem("token", response.token)
+      connectSocket(response.token)
+      navigate("/chat")
       
-      navigate("/chat");
     } catch (err) {
       setError(err?.response?.data?.message || "Login failed")
     } finally {

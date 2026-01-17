@@ -1,16 +1,7 @@
-import API from "./axios";
+import authService from '../services/auth.service.js';
 
-export const registerUser = async (userData) =>{
-    const res = await API.post("/auth/register", userData);
-    return res.data;
-};
+// Export service methods
+export const { register: registerUser, login, getCurrentUser, logoutUser } = authService;
 
-export const login = async (credentials) =>{
-    const res = await API.post("/auth/login", credentials);
-    return res.data;
-};
-
-export const getCurrentUser = async () =>{
-    const res = await API.get("auth/me")
-    return res.data
-}
+// Or export the whole service
+export default authService;
