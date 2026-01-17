@@ -13,8 +13,11 @@ describe('🧪 Auth API Tests', () => {
   });
 
   afterAll(async () => {
-    await User.deleteMany({});
-  });
+      console.log('🧹 Cleaning up test data...');
+      await User.deleteMany({});
+      await Message.deleteMany({});  // ✅ ADD THIS LINE
+      console.log('✅ Cleanup complete');
+    });
 
   describe('POST /api/v1/auth/register', () => {
 

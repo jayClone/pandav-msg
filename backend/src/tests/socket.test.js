@@ -111,6 +111,12 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
         await disconnectDB();
         console.log('✅ MongoDB disconnected');
 
+        // Clean up test data
+        console.log('🧹 Cleaning up test data...');
+        await User.deleteMany({});
+        await Message.deleteMany({});
+        console.log('✅ Cleanup complete');
+
         setTimeout(resolve, 1000);
       } catch (error) {
         console.error('⚠️ Cleanup error:', error.message);
