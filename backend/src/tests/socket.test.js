@@ -115,6 +115,8 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
         console.log('✅ Cleanup complete');
 
         setTimeout(resolve, 1000);
+        console.log('✅ Cleanup complete');
+        
       } catch (error) {
         console.error('⚠️ Cleanup error:', error.message);
         resolve();
