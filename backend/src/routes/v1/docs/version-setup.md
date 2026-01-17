@@ -60,7 +60,7 @@ backend/src/
 │           └── changelog.md     (V2 changes)
 │
 ├── controllers/
-│   ├── authController.js        (Shared auth logic)
+│   ├── auth.Controller.js        (Shared auth logic)
 │   └── health.controller.js     (Shared health logic)
 │
 └── middlewares/
@@ -133,7 +133,7 @@ Defines endpoints for a specific feature:
 
 ```javascript
 import express from 'express';
-import { register, login, getCurrentUser } from '../../controllers/authController.js';
+import { register, login, getCurrentUser } from '../../controllers/auth.Controller.js';
 import { protect } from '../../middlewares/auth.js';
 
 const router = express.Router();
@@ -214,7 +214,7 @@ import {
   login, 
   getCurrentUser,
   refreshToken  // NEW in v2
-} from '../../controllers/authController.js';
+} from '../../controllers/auth.Controller.js';
 import { protect } from '../../middlewares/auth.js';
 
 const router = express.Router();
@@ -260,7 +260,7 @@ export default router;
 Add new functions to existing controllers:
 
 ```javascript
-// authController.js
+// auth.Controller.js
 export const refreshToken = async (req, res) => {
   try {
     // V2 specific logic

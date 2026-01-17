@@ -1,7 +1,11 @@
 import { MESSAGES, SOCKET_EVENTS } from "../constant/response.messages.js";
-
+import Message from '../models/Message.js'
 const onlineUsers = new Map();
 
+/**
+ * Register all socket events
+ * Handles: messaging, online status, disconnection
+ */
 export function registerSocketEvents(io, socket){
     const { userId, email, name } = socket.user;
 
@@ -13,20 +17,23 @@ export function registerSocketEvents(io, socket){
         userId: userId
     });
     
-    // Broadcast online users
-    const onlineUsersList = Array.from(onlineUsers.values()).map(user => ({
-        userId: user.userId,
-        name: user.name,
-        email: user.email
-    }));
-    io.emit(SOCKET_EVENTS.ONLINE_USERS, onlineUsersList);
-
+    // Broadcast updated online users list
+    broadcastOnlineUsers(io);
     console.log(`[SOCKET] Connected: ${name} (${userId}) -> ${socket.id}`);
 
-    socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, (payload) => {
+    /**
+     * PRIVATE_MESSAGE Event Handler
+     * 1. Validate input
+     * 2. Save to DB
+     * 3. Send real-time notification
+     * 4. Send confirmation to sender
+     */
+
+    socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, async (payload) => {
         try {
             const { toUserId, message } = payload || {};
 
+            // ✅ Validation Layer
             if (!toUserId || typeof toUserId !== "string") {
                 socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
                     message: MESSAGES.SOCKET.TO_USER_REQUIRED 
@@ -41,32 +48,56 @@ export function registerSocketEvents(io, socket){
                 return;
             }
 
+            const trimmedMessage = message.trim();
             const receiverUser = onlineUsers.get(toUserId);
+
+            // now were gonna save message here for mongo
+            let savedMessage;
+            try {
+                savedMessage = await Message.create({
+                    senderId: userId,
+                    receiverId: toUserId,
+                    message: trimmedMessage
+                });
+                console.log(`[DB] Message saved: ${savedMessage._id}`);
+            } catch (dbError) {
+                console.error('[DB ERROR] Failed to save message:', dbError.message);
+                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                    message: 'Failed to save message'
+            });
+            return;
+        }
             const messagePayload = {
+                _id: savedMessage._id,
                 fromUserId: userId,
                 fromUserName: name,
-                message: message.trim(),
-                time: new Date().toISOString(),
+                message: trimmedMessage,
+                time: savedMessage.createdAt.toISOString(),
+                delivered: false // stay  false as message is not delivered
             };
 
-            // If receiver is offline
-            if (!receiverUser) {
-                socket.emit(SOCKET_EVENTS.USER_OFFLINE, { toUserId });
-                return;
+            // if reciver is online : send real-time notification
+            if (receiverUser) {
+                io.to(receiverUser.socketId).emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
+                    ...messagePayload,
+                    delivered: true // status get true as message is delivered
+                });
+                console.log(`[MSG-LIVE] ${name} → ${receiverUser.name}: ${trimmedMessage.substring(0, 30)}...`);
+            }
+            else{
+                // If receiver is OFFLINE: Still saved in DB, will show in history
+                console.log(`[MSG-QUEUED] ${name} → ${toUserId} (offline): ${trimmedMessage.substring(0, 30)}...`);
             }
 
-            // Send to receiver
-            io.to(receiverUser.socketId).emit(SOCKET_EVENTS.PRIVATE_MESSAGE, messagePayload);
-
-            // ✅ IMPORTANT: Also send back to sender (so they see their own message)
-            socket.emit(SOCKET_EVENTS.MESSAGE_SENT, {
+            // send confirmation back to sender
+            socket.emit(SOCKET_EVENTS.MESSAGE_SENT<{
+                messageId: savedMessage._id,
                 toUserId,
-                toUserName: receiverUser.name,
-                message: message.trim(),
-                time: messagePayload.time,
+                toUserName: receiverUser?.name || "Unknown User",
+                time: savedMessage.createdAt.toISOString(),
+                delivered: !!receiverUser, // tell sender if delivered is live
+                saved: true
             });
-
-            console.log(`[MSG] ${name} → ${receiverUser.name}: ${message.substring(0, 30)}...`);
 
         } catch (error) {
             console.error('[ERROR] Message sending failed:', error.message);
@@ -76,16 +107,25 @@ export function registerSocketEvents(io, socket){
         }
     });
 
+    /**
+     * DISCONNECT Event Handler
+     * Clean up user from online map
+     */
     socket.on("disconnect", () => {
         onlineUsers.delete(userId);
-
-        const onlineUsersList = Array.from(onlineUsers.values()).map(user => ({
-            userId: user.userId,
-            name: user.name,
-            email: user.email
-        }));
-        io.emit(SOCKET_EVENTS.ONLINE_USERS, onlineUsersList);
-
+        broadcastOnlineUsers(io);
         console.log(`[SOCKET] Disconnected: ${name} (${userId})`);
     });
+}
+
+// Helper: Broadcast online users to all connected clients
+function broadcastOnlineUsers(io){
+        const onlineUsersList = Array.from(onlineUsers.values()).map(user => ({
+        userId: user.userId,
+        name: user.name,
+        email: user.email,
+        status: 'online'
+    }));
+    io.emit(SOCKET_EVENTS.ONLINE_USERS, onlineUsersList);
+    console.log(`[BROADCAST] Online users: ${onlineUsersList.length}`)
 }

@@ -151,7 +151,7 @@ console.log('🔑 JWT_SECRET:', process.env.JWT_SECRET ? 'Set' : 'NOT SET');
 
 **2B: Include name in JWT payload**
 ```javascript
-// authController.js
+// auth.Controller.js
 const generateToken = (user) => {
     return jwt.sign({
         userId: user._id.toString(),
