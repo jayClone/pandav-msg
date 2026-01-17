@@ -24,6 +24,23 @@ export const getChatHistory = async(req, res) =>{
             });
         }
 
+        //  Check if otherUserId is valid before DB query
+        if (!otherUserId || otherUserId === 'null' || otherUserId.length < 10) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID format"
+            });
+        }
+
+        //  Validate ObjectId format (24 hex chars)
+        const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(otherUserId);
+        if (!isValidObjectId) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID format. Must be a valid MongoDB ID"
+            });
+        }
+
         // check if there are any other users
         const otherUser = await User.findById(otherUserId);
         if(!otherUser){
@@ -41,7 +58,7 @@ export const getChatHistory = async(req, res) =>{
             ]
         })
             .sort({createdAt: 1}) // Oldest first
-            .limit(50)
+            .limit(150)
             .lean(); //lean() for better performance
 
         await Message.updateMany(
@@ -66,10 +83,20 @@ export const getChatHistory = async(req, res) =>{
 
     } catch (error) {
         console.error("getChatHistory error", error);
+        
+        // ✅ FIX 4: Handle CastError specifically
+        if (error.name === 'CastError') {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID format",
+                error: error.message
+            });
+        }
+
         return res.status(500).json({
             success: false,
             message: "server Error retriving chat history",
-            error: error.Message
+            error: error.message
         });
     }
 };  
