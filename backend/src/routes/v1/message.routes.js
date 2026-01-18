@@ -1,6 +1,6 @@
 import express from 'express';
-import { getChatHistory, getConversations,markAsRead,deleteMessage } from '../../controllers/message.controller.js';
-import { protect } from '../../middlewares/auth.js';
+import { getChatHistory, getConversations,markAsRead,deleteMessage } from '@controllers/message.controller.js';
+import { protect } from '@middlewares/auth.js';
 
 const router = express.Router();
 

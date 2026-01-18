@@ -1,9 +1,9 @@
 import { describe, it, beforeAll, afterAll, beforeEach, afterEach, expect } from 'bun:test';
 import request from 'supertest';
 import app from '../app.js';
-import User from '../models/User.js';
-import { connectDB } from '../config/db.js';
-import Message from '../models/Message.js';
+import User from '@models/User.js';
+import { connectDB } from '@config/db.js';
+import Message from '@models/Message.js';
 
 // ✅ Use passwords that match the regex: Min 8 chars, 1 uppercase, 1 number, 1 special char
 

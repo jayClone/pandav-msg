@@ -1,6 +1,6 @@
 import { MESSAGES, SOCKET_EVENTS } from "../constant/response.messages.js";
-import Message from '../models/Message.js';
-import User from '../models/User.js';
+import Message from '@models/Message.js';
+import User from '@models/User.js';
 
 const onlineUsers = new Map();
 
@@ -33,10 +33,10 @@ export function registerSocketEvents(io, socket) {
      * 4. Send confirmation to sender
      */
 
-    socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, async (payload) => {
-        try {
-            const { toUserId, message } = payload || {};
+    socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, async (data) => {
+        const { toUserId, message } = data; // ✅ No need for tempId
 
+        try {
             // Validation Layer
             if (!toUserId || typeof toUserId !== "string") {
                 socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
@@ -74,6 +74,7 @@ export function registerSocketEvents(io, socket) {
             const messagePayload = {
                 _id: savedMessage._id,
                 fromUserId: userId,
+                toUserId: toUserId,
                 fromUserName: name,
                 message: trimmedMessage,
                 time: savedMessage.createdAt.toISOString(),
@@ -102,13 +103,15 @@ export function registerSocketEvents(io, socket) {
 
             // send confirmation back to sender
             socket.emit(SOCKET_EVENTS.MESSAGE_SENT,{
-                messageId: savedMessage._id,
-                toUserId,
-                toUserName: receiverUser?.name || 'Unknown User',
-                message: trimmedMessage,
-                time: savedMessage.createdAt.toISOString(),
-                delivered: !!receiverUser, // tell sender if delivered is live
-                saved: true
+            _id: savedMessage._id,  // ✅ Add _id
+            fromUserId: userId,     // ✅ Add fromUserId
+            toUserId: toUserId,     // ✅ Keep toUserId
+            fromUserName: name,     // ✅ Add fromUserName
+            message: trimmedMessage,
+            time: savedMessage.createdAt.toISOString(),
+            tempId: tempId,  // ✅ Send back tempId
+            delivered: !!receiverUser,
+            saved: true
             });
 
             console.log(`[CONFIRM] Sent confirmation to ${name}`);
@@ -121,6 +124,27 @@ export function registerSocketEvents(io, socket) {
         }
     });
 
+    // ✅ Handle message deletion
+    socket.on(SOCKET_EVENTS.MESSAGE_DELETED, (data) => {
+      console.log("📥 [SOCKET] Received MESSAGE_DELETED event:", data)
+      console.log("📥 [SOCKET] Current userId:", userId)
+      console.log("📥 [SOCKET] Online users map:", Array.from(onlineUsers.entries()))
+      
+      const receiverUser = onlineUsers.get(data.toUserId)
+      console.log("📥 [SOCKET] Receiver user found:", receiverUser)
+      
+      if (receiverUser) {
+        console.log(`📤 [SOCKET] Sending to receiver ${receiverUser.name} (socket: ${receiverUser.socketId})`)
+        io.to(receiverUser.socketId).emit(SOCKET_EVENTS.MESSAGE_DELETED, {
+          messageId: data.messageId,
+          fromUserId: userId,
+          toUserId: data.toUserId
+        })
+      } else {
+        console.log(`⚠️ [SOCKET] Receiver ${data.toUserId} NOT found in online users`)
+      }
+    })
+
     /**
      * DISCONNECT Event Handler
      * Clean up user from online map
@@ -130,6 +154,12 @@ export function registerSocketEvents(io, socket) {
         broadcastOnlineUsers(io);
         console.log(`[SOCKET] Disconnected: ${name} (${userId})`);
     });
+
+    console.log("⚠️ [SOCKET EVENTS REGISTERED]:", Object.keys({
+      [SOCKET_EVENTS.PRIVATE_MESSAGE]: true,
+      [SOCKET_EVENTS.MESSAGE_DELETED]: true,
+      [SOCKET_EVENTS.DISCONNECT]: true
+    }))
 }
 
 /**

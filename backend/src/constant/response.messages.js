@@ -17,4 +17,5 @@ export const SOCKET_EVENTS = {
   MESSAGE_SENT: "message_sent",
   USER_OFFLINE: "user_offline",
   ERROR_MESSAGE: "error_message",
+  MESSAGE_DELETED: "message_deleted"
 };

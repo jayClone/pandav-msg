@@ -1,0 +1,11 @@
+# Path aliases for Bun runtime
+[alias]
+@controllers = "./src/controllers"
+@models = "./src/models"
+@routes = "./src/routes"
+@middlewares = "./src/middlewares"
+@config = "./src/config"
+@socket = "./src/socket"
+@constants = "./src/constant"
+@utils = "./src/utils"
+@tests = "./src/tests"
