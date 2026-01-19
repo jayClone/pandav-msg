@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react"
-import { SOCKET_EVENTS } from "../constants/socketEvents"
-import { connectSocket, disconnectSocket, getSocket } from "../socket/socketClient"
+import { SOCKET_EVENTS } from "@constants/socketEvents.js"
+import { connectSocket, disconnectSocket, getSocket } from "@socket/socketClient.js"
 import { useNavigate } from "react-router-dom"
 import { jwtDecode } from "jwt-decode"
-import messageService from "../services/message.service"
+import messageService from "@services/message.service.js"
 
 export default function Chat() {
   const navigate = useNavigate()

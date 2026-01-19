@@ -1,4 +1,4 @@
-import API from '../api/axios.js';
+import API from '@api/axios.js';
 
 const authService = {
     /**

@@ -1,5 +1,5 @@
-import authApi from "./auth.api.js"
-import messageApi from "./message.api.js"
+import authApi from "@api/auth.api.js"
+import messageApi from "@api/message.api.js"
 
 export { authApi, messageApi }
 

@@ -1,6 +1,6 @@
 import {Server} from 'socket.io'
-import {socketAuthMiddleware} from './socket.auth.js'
-import { registerSocketEvents } from './socket.event.js'
+import {socketAuthMiddleware} from '@socket/socket.auth.js'
+import { registerSocketEvents } from '@socket/socket.event.js'
 
 export function createSocketServer(httpServer){
     // Get CORS origin based on environment

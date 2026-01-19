@@ -1,4 +1,4 @@
-import messageApi from "../api/message.api.js"
+import messageApi from "@api/message.api.js"
 
 class MessageService {
   // Fetch chat history with error handling

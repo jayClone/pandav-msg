@@ -9,3 +9,5 @@
 @constants = "./src/constant"
 @utils = "./src/utils"
 @tests = "./src/tests"
+@v1 = "./src/routes/v1"
+@app = "./src"

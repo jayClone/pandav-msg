@@ -1,4 +1,4 @@
-import API from "./axios.js"
+import API from "@api/axios.js"
 
 const messageApi = {
   // Get all messages with a user

@@ -1,6 +1,5 @@
-import { MESSAGES, SOCKET_EVENTS } from "../constant/response.messages.js";
+import { MESSAGES, SOCKET_EVENTS } from "@constants/response.messages.js";
 import Message from '@models/Message.js';
-import User from '@models/User.js';
 
 const onlineUsers = new Map();
 
