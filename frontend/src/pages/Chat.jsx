@@ -1,146 +1,255 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { SOCKET_EVENTS } from "../constants/socketEvents";
-import { connectSocket, disconnectSocket, getSocket } from "../socket/socketClient";
-import { useNavigate } from "react-router-dom";
-import { jwtDecode } from "jwt-decode";
+import React, { useEffect, useMemo, useState } from "react"
+import { SOCKET_EVENTS } from "@constants/socketEvents.js"
+import { connectSocket, disconnectSocket, getSocket } from "@socket/socketClient.js"
+import { useNavigate } from "react-router-dom"
+import { jwtDecode } from "jwt-decode"
+import messageService from "@services/message.service.js"
 
 export default function Chat() {
-  const navigate = useNavigate();
+  const navigate = useNavigate()
 
-  const [onlineUsers, setOnlineUsers] = useState([]);
-  const [selectedUserId, setSelectedUserId] = useState("");
-  const [messageInput, setMessageInput] = useState("");
-  const [messages, setMessages] = useState([]);
+  const [onlineUsers, setOnlineUsers] = useState([])
+  const [selectedUserId, setSelectedUserId] = useState("")
+  const [messageInput, setMessageInput] = useState("")
+  const [messages, setMessages] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
 
   const token = useMemo(() => {
-    return localStorage.getItem("token");
-  }, []);
+    return localStorage.getItem("token")
+  }, [])
 
   const authState = useMemo(() => {
-    if (!token) return { currentUserName: "", currentUserId: "" };
+    if (!token) return { currentUserName: "", currentUserId: "" }
 
     try {
-      const decoded = jwtDecode(token);
+      const decoded = jwtDecode(token)
       return {
         currentUserName: decoded.name,
         currentUserId: decoded.userId,
-      };
+      }
     } catch {
-      // ✅ Removed unused 'error' parameter
-      return { currentUserName: "", currentUserId: "" };
+      return { currentUserName: "", currentUserId: "" }
     }
-  }, [token]);
+  }, [token])
 
-  const { currentUserName, currentUserId } = authState;
+  const { currentUserName, currentUserId } = authState
 
+  // Socket connection effect
   useEffect(() => {
     if (!token) {
-      navigate("/login");
-      return;
+      navigate("/login")
+      return
     }
 
-    let socket = connectSocket(token);
+    let socket = connectSocket(token)
 
     if (!socket) {
-      return;
+      return
     }
 
     const handleOnlineUsers = (users) => {
-      setOnlineUsers(users || []);
-    };
+      setOnlineUsers(users || [])
+    }
 
+    // ✅ When receiving a message from someone else
     const handlePrivateMessage = (data) => {
+      // ✅ Don't filter here - add message from ANY user
+      console.log("📨 Received message:", data)
+      
       setMessages((prev) => [
         ...prev,
         {
+          _id: data._id || `temp_${Date.now()}`,
+          fromUserId: data.fromUserId,
+          fromUserName: data.fromUserName || "Unknown",
+          toUserId: data.toUserId,  // ✅ Use toUserId from socket
+          message: data.message,
+          time: data.time || new Date().toISOString(),
+        },
+      ])
+    }
+
+    // ✅ Confirmation that YOUR message was sent (don't add it again!)
+    const handleMessageSent = (data) => {
+      console.log("💾 Message sent confirmation:", data)
+      
+      // ✅ Add the confirmed message to UI with real ID
+      setMessages((prev) => [
+        ...prev,
+        {
+          _id: data._id,  // ✅ Real MongoDB ID
           fromUserId: data.fromUserId,
           fromUserName: data.fromUserName,
-          toUserId: "me",
-          message: data.message,
-          time: data.time,
-        },
-      ]);
-    };
-
-    const handleMessageSent = (data) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          fromUserId: currentUserId,
-          fromUserName: currentUserName,
           toUserId: data.toUserId,
-          toUserName: data.toUserName,
           message: data.message,
           time: data.time,
-        },
-      ]);
-    };
+        }
+      ])
+    }
 
-    // ✅ FIXED: Use callback pattern to avoid dependency on onlineUsers
     const handleUserOffline = ({ toUserId }) => {
-      // Get latest onlineUsers from state when needed
       setOnlineUsers((prevUsers) => {
-        const user = prevUsers.find(u => u.userId === toUserId);
-        const userName = user?.name || toUserId;
-        alert(`User ${userName} is offline. Message not delivered.`);
-        return prevUsers; // Return unchanged
-      });
-    };
+        const user = prevUsers.find((u) => u.userId === toUserId)
+        const userName = user?.name || toUserId
+        alert(`User ${userName} is offline. Message not delivered.`)
+        return prevUsers
+      })
+    }
 
     const handleErrorMessage = ({ message }) => {
-      alert(message || "Error");
-    };
+      alert(message || "Error")
+    }
 
-    socket.on(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers);
-    socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage);
-    socket.on(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent);
-    socket.on(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline);
-    socket.on(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage);
+    // ✅ ADD THIS LISTENER
+    const handleMessageDeleted = (data) => {
+      console.log("🔔 [MESSAGE_DELETED EVENT] Received:", data)
+      setMessages((prev) => {
+        const before = prev.length
+        const updated = prev.filter((m) => m._id !== data.messageId) 
+        console.log(`🔔 Messages: before=${before}, after=${updated.length}`)
+        return updated
+      })
+    }
 
+    // Register socket event listeners
+    socket.on(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers)
+    socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage)
+    socket.on(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent)
+    socket.on(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline)
+    socket.on(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage)
+    socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted)
+
+    // Cleanup on unmount
     return () => {
-      socket.off(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers);
-      socket.off(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage);
-      socket.off(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent);
-      socket.off(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline);
-      socket.off(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage);
-    };
-  }, [token, navigate, currentUserId, currentUserName]);
+      socket.off(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers)
+      socket.off(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage)
+      socket.off(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent)
+      socket.off(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline)
+      socket.off(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage)
+      socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted)  // ✅ Add cleanup
+    }
+  }, [token, navigate, currentUserId, currentUserName])
 
+  // Fetch chat history when user is selected
+  useEffect(() => {
+    if (selectedUserId) {
+      fetchChatHistory(selectedUserId)
+      markAsRead(selectedUserId)
+    }
+  }, [selectedUserId])
+
+  const fetchChatHistory = async (userId) => {
+    setLoading(true)
+    setError("")
+    setMessages([])
+
+    try {
+      const data = await messageService.fetchChatHistory(userId)
+      console.log("✅ Fetched messages:", data.messages)
+
+      // ✅ Map backend fields to frontend fields
+      const messagesWithIds = data.messages.map(msg => ({
+        _id: msg._id,
+        fromUserId: msg.fromUserId,  // ✅ Use senderId from backend
+        toUserId: msg.toUserId,  // ✅ Use receiverId from backend
+        fromUserName: msg.senderName || "Unknown",
+        message: msg.message,
+        time: msg.createdAt,
+        read: msg.read
+      }))
+
+      setMessages(messagesWithIds)
+    } catch (err) {
+      console.error("Failed to fetch chat history:", err)
+      setError(err.message)
+      setMessages([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const markAsRead = async (userId) => {
+    try {
+      await messageService.markMessagesAsRead(userId)
+    } catch (err) {
+      console.error("Failed to mark as read:", err)
+    }
+  }
+
+  const handleDeleteMessage = async (messageId) => {
+    // ✅ If it's a temporary message (not saved yet), just remove from UI
+    if (messageId.toString().startsWith('temp_')) {
+      console.log("🗑️ [DELETE TEMP] Removing unsent message:", messageId)
+      setMessages((prev) => prev.filter((m) => m._id !== messageId))
+      return
+    }
+
+    try {
+      console.log("🗑️ [DELETE] Attempting to delete:", messageId)
+      
+      // ✅ Delete from DB first
+      await messageService.deleteMessage(messageId)
+      console.log("✅ [DELETE DB] Message deleted from database")
+      
+      // ✅ Remove from UI
+      setMessages((prev) => prev.filter((m) => m._id !== messageId))
+      
+      // ✅ Notify other user via socket
+      const socket = getSocket()
+      if (socket) {
+        console.log("📤 [DELETE SOCKET] Emitting MESSAGE_DELETED:", {
+          messageId: messageId,
+          toUserId: selectedUserId
+        })
+        socket.emit(SOCKET_EVENTS.MESSAGE_DELETED, {
+          messageId: messageId,
+          toUserId: selectedUserId
+        })
+      }
+    } catch (err) {
+      console.error("❌ [DELETE FAILED]:", err.message)
+      setError(err.message)
+    }
+  }
+
+  // ✅ FIXED: Don't add message here - let socket event handle it
   const handleSendMessage = () => {
-    const socket = getSocket();
+    const socket = getSocket()
     if (!socket) {
-      alert("Socket not connected");
-      return;
+      alert("Socket not connected")
+      return
     }
 
     if (!selectedUserId) {
-      alert("Select a user first");
-      return;
+      alert("Select a user first")
+      return
     }
 
     if (!messageInput.trim()) {
-      alert("Message cannot be empty");
-      return;
+      alert("Message cannot be empty")
+      return
     }
 
+    // ✅ Send via socket WITHOUT adding to UI yet
     socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
       toUserId: selectedUserId,
       message: messageInput.trim(),
-    });
+    })
 
-    setMessageInput("");
-  };
+    setMessageInput("")
+  }
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    disconnectSocket();
-    navigate("/login");
-  };
+    localStorage.removeItem("token")
+    disconnectSocket()
+    navigate("/login")
+  }
 
   const getDisplayName = (userId) => {
-    const user = onlineUsers.find(u => u.userId === userId);
-    return user?.name || userId;
-  };
+    const user = onlineUsers.find((u) => u.userId === userId)
+    return user?.name || userId
+  }
 
   return (
     <div style={{ display: "flex", height: "100vh", padding: 12, gap: 12 }}>
@@ -163,7 +272,7 @@ export default function Chat() {
           <p>No users online</p>
         ) : (
           onlineUsers
-            .filter(user => user.userId !== currentUserId)
+            .filter((user) => user.userId !== currentUserId)
             .map((user) => (
               <div
                 key={user.userId}
@@ -171,7 +280,10 @@ export default function Chat() {
                 style={{
                   padding: 10,
                   borderRadius: 6,
-                  border: selectedUserId === user.userId ? "2px solid #00ff99" : "1px solid #666",
+                  border:
+                    selectedUserId === user.userId
+                      ? "2px solid #00ff99"
+                      : "1px solid #666",
                   marginBottom: 8,
                   cursor: "pointer",
                 }}
@@ -184,7 +296,7 @@ export default function Chat() {
                 </div>
               </div>
             ))
-        )}
+       )}
       </div>
 
       {/* Right: Chat Area */}
@@ -205,6 +317,9 @@ export default function Chat() {
           </span>
         </h3>
 
+        {loading && <p style={{ color: "#00ff99" }}>Loading messages...</p>}
+        {error && <p style={{ color: "#ff0000" }}>Error: {error}</p>}
+
         {/* Messages */}
         <div
           style={{
@@ -221,19 +336,23 @@ export default function Chat() {
           ) : (
             messages
               .filter((m) => {
-                if (!selectedUserId) return true;
-                return m.fromUserId === selectedUserId || m.toUserId === selectedUserId;
+                if (!selectedUserId) return true
+                // Show messages between currentUser and selectedUser
+                return (
+                  (m.fromUserId === currentUserId && m.toUserId === selectedUserId) ||
+                  (m.fromUserId === selectedUserId && m.toUserId === currentUserId)
+                )
               })
               .map((m, index) => (
                 <div
-                  key={index}
+                  key={m._id || index}
                   style={{
                     marginBottom: 10,
-                    textAlign: m.fromUserId === "me" ? "right" : "left",
+                    textAlign: m.fromUserId === currentUserId ? "right" : "left",
                   }}
                 >
                   <div style={{ fontSize: 12, opacity: 0.7 }}>
-                    {m.fromUserId === "me" ? currentUserName : m.fromUserName}
+                    {m.fromUserId === currentUserId ? currentUserName : m.fromUserName}
                   </div>
                   <div
                     style={{
@@ -243,9 +362,23 @@ export default function Chat() {
                       border: "1px solid #777",
                       maxWidth: "70%",
                       wordBreak: "break-word",
+                      position: "relative",
                     }}
                   >
                     {m.message}
+                    {m.fromUserId === currentUserId && (
+                      <button
+                        onClick={() => handleDeleteMessage(m._id)}
+                        style={{
+                          marginLeft: "8px",
+                          fontSize: "10px",
+                          padding: "2px 4px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               ))
@@ -265,7 +398,7 @@ export default function Chat() {
               border: "1px solid #666",
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleSendMessage();
+              if (e.key === "Enter") handleSendMessage()
             }}
           />
           <button onClick={handleSendMessage} style={{ padding: "10px 14px" }}>
@@ -274,5 +407,5 @@ export default function Chat() {
         </div>
       </div>
     </div>
-  );
+  )
 }

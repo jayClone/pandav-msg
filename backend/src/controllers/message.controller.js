@@ -1,5 +1,6 @@
-import Message from '../models/Message.js'
-import User from '../models/User.js'
+import mongoose from 'mongoose';
+import Message from '@models/Message.js'
+import User from '@models/User.js'
 
 /**
  * Get chat history between two users
@@ -57,6 +58,7 @@ export const getChatHistory = async(req, res) =>{
                 {senderId: otherUserId, receiverId: myId}
             ]
         })
+            .populate('senderId', 'name')  // ✅ Add this to get sender name
             .sort({createdAt: 1}) // Oldest first
             .limit(150)
             .lean(); //lean() for better performance
@@ -70,11 +72,23 @@ export const getChatHistory = async(req, res) =>{
             {read: true}
         );
 
+        // ✅ Map backend fields to frontend field names
+        const formattedMessages = messages.map(msg => ({
+            _id: msg._id,
+            fromUserId: msg.senderId._id,  
+            senderName: msg.senderId.name,  
+            toUserId: msg.receiverId,
+            message: msg.message,
+            time: msg.createdAt,
+            read: msg.read,
+            createdAt: msg.createdAt
+        }))
+
         return res.status(200).json({
-            success:true,
-            data: messages,
-            count: messages.length,
-            otherUser:{
+            success: true,
+            data: formattedMessages,  // ✅ Use formatted messages
+            count: formattedMessages.length,
+            otherUser: {
                 _id: otherUser._id,
                 name: otherUser.name,
                 email: otherUser.email
@@ -224,38 +238,43 @@ export const markAsRead = async (req, res) =>{
  */
 
 export const deleteMessage = async (req, res) => {
-    try {
-        const messageId = req.params.messageId;
-        const myId = req.user?._id || req.user?.userId
+  try {
+    const messageId = req.params.messageId;
+    const myId = req.user?._id || req.user?.userId
+    const message = await Message.findById(messageId);
 
-        const message = await Message.findById(messageId);
-
-        if(!message){
-            return res.status(404).json({
-                success: false,
-                message: "Message not found"
-            })
-        }
-
-        // only sender can delete thier own messages
-        if (message.senderId.toString() !== myId.toString()){
-            return res.status(403).json({
-                success: false,
-                message: 'you can only delete your own message'
-            });
-        }
-
-        await Message.findByIdAndDelete(messageId)
-
-        return res.status(200).json({
-            success:true,
-            message: 'message deleted'
-        })
-    } catch (error) {
-        console.error('deleteMessage error:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });        
+    if (!mongoose.Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid message ID format"
+      })
     }
+
+    if(!message){
+      return res.status(404).json({
+        success: false,
+        message: "Message not found"
+      })
+    }
+
+    if (message.senderId.toString() !== myId.toString()){
+      return res.status(403).json({
+        success: false,
+        message: 'you can only delete your own message'
+      });
+    }
+
+    await Message.findByIdAndDelete(messageId)
+
+    return res.status(200).json({
+      success:true,
+      message: 'message deleted'
+    })
+  } catch (error) {
+    console.error('deleteMessage error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });        
+  }
 }

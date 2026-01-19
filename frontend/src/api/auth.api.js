@@ -1,4 +1,4 @@
-import authService from '../services/auth.service.js';
+import authService from '@services/auth.service.js';
 
 // Export service methods
 export const { register: registerUser, login, getCurrentUser, logoutUser } = authService;

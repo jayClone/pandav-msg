@@ -1,4 +1,4 @@
-import API, { API_VERSION } from '../api/axios.js';
+import API, { API_VERSION } from '@api/axios.js';
 
 /**
  * API Service Wrapper

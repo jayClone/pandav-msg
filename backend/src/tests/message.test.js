@@ -1,9 +1,9 @@
 import { describe, it, beforeAll, afterAll, beforeEach, afterEach, expect } from 'bun:test';
 import request from 'supertest';
 import app from '../app.js';
-import User from '../models/User.js';
-import Message from '../models/Message.js';
-import { connectDB } from '../config/db.js';
+import User from '@models/User.js';
+import Message from '@models/Message.js';
+import { connectDB } from '@config/db.js';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════

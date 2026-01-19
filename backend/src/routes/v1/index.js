@@ -1,7 +1,7 @@
 import express from 'express';
-import healthRoutes from './health.routes.js';
-import authRoutes from './auth.routes.js';
-import messageRoutes from './message.routes.js'
+import healthRoutes from '@v1/health.routes.js';
+import authRoutes from '@v1/auth.routes.js';
+import messageRoutes from '@v1/message.routes.js'
 
 const router = express.Router();
 

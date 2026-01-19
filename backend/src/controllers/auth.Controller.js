@@ -1,4 +1,4 @@
-import User from '../models/User.js';
+import User from '@models/User.js';
 import jwt from 'jsonwebtoken';
 
 // ✅ Email validation regex (RFC 5322 standard)

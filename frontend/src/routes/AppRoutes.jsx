@@ -1,9 +1,8 @@
-import React from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Register from "../pages/Register";
-import Login from "../pages/Login";
-import Chat from "../pages/Chat";
-import { ProtectedRoute } from "./ProtectedRoute";
+import Register from "@pages/Register";
+import Login from "@pages/Login";
+import Chat from "@pages/Chat";
+import { ProtectedRoute } from "@routes/ProtectedRoute";
 
 export default function AppRoutes() {
   return (
