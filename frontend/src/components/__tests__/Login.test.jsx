@@ -2,16 +2,24 @@ import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { LoginForm } from "../login-form"
-import { login } from "@/api/auth.api"
 import { vi } from "vitest"
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MOCK SETUP
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Mock the auth API to prevent actual HTTP calls during testing
-vi.mock("@/api/auth.api", () => ({
-  login: vi.fn(),
+// Mock the apiService to prevent actual HTTP calls during testing
+vi.mock("@/services/api", () => ({
+  default: {
+    auth: {
+      login: vi.fn(),
+    },
+  },
+}))
+
+// Mock the socket client
+vi.mock("@/socket/socketClient", () => ({
+  connectSocket: vi.fn(),
 }))
 
 // Mock useNavigate hook to track navigation calls without actually navigating
@@ -48,7 +56,7 @@ describe("LoginForm - UI Render Tests", () => {
   // ───────────────────────────────────────────────────────────────────────────
   // Description: LoginForm component should display email input field
   // Issue Testing: Component structure - verifies email field is present
-  // Expected Behavior: Email placeholder "m@example.com" appears on screen
+  // Expected Behavior: Email placeholder "name@example.com" appears on screen
   // Why It Matters: UX - users need to know where to enter email
   // ───────────────────────────────────────────────────────────────────────────
   test("should render login heading", () => {
@@ -58,7 +66,7 @@ describe("LoginForm - UI Render Tests", () => {
       </MemoryRouter>
     )
 
-    expect(screen.getByPlaceholderText(/m@example.com/i)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/name@example.com/i)).toBeInTheDocument()
   })
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -67,7 +75,7 @@ describe("LoginForm - UI Render Tests", () => {
   // Description: Both email and password input fields should be rendered
   // Issue Testing: Form completeness - verifies all required inputs exist
   // Expected Elements:
-  //   - Email input with placeholder "m@example.com"
+  //   - Email input with placeholder "name@example.com"
   //   - Password input with placeholder "••••••••" (dots for security)
   // Why It Matters: Core UX - users can't login without input fields
   // ───────────────────────────────────────────────────────────────────────────
@@ -79,7 +87,7 @@ describe("LoginForm - UI Render Tests", () => {
     )
 
     // Verify email field exists
-    expect(screen.getByPlaceholderText(/m@example.com/i)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/name@example.com/i)).toBeInTheDocument()
     
     // Verify password field exists and is hidden (dots instead of text)
     expect(screen.getByPlaceholderText(/••••••••/i)).toBeInTheDocument()
@@ -119,8 +127,9 @@ describe("LoginForm - Login Success Flow", () => {
   // - Clear localStorage to start fresh
   // Why: Prevents previous test's mock calls from affecting these tests
   // ───────────────────────────────────────────────────────────────────────────
-  beforeEach(() => {
-    login.mockClear()
+  beforeEach(async () => {
+    const apiService = await import("@/services/api")
+    apiService.default.auth.login.mockClear()
     mockNavigate.mockClear()  // ✅ Clear mock before each test
     localStorage.clear()
   })
@@ -140,10 +149,14 @@ describe("LoginForm - Login Success Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should save token to localStorage when login succeeds", async () => {
     const user = userEvent.setup({ delay: null })
+    const apiService = await import("@/services/api")
 
     // Mock the login API to return a successful response with token
-    login.mockResolvedValueOnce({
-      token: "fake-jwt-token",
+    apiService.default.auth.login.mockResolvedValueOnce({
+      data: {
+        token: "fake-jwt-token",
+        message: "Login successful",
+      },
     })
 
     render(
@@ -153,7 +166,7 @@ describe("LoginForm - Login Success Flow", () => {
     )
 
     // User enters email
-    await user.type(screen.getByPlaceholderText(/m@example.com/i), "test@example.com")
+    await user.type(screen.getByPlaceholderText(/name@example.com/i), "test@example.com")
     
     // User enters password
     await user.type(screen.getByPlaceholderText(/••••••••/i), "password123")
@@ -184,10 +197,14 @@ describe("LoginForm - Login Success Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should show success message on successful login", async () => {
     const user = userEvent.setup({ delay: null })
+    const apiService = await import("@/services/api")
 
     // Mock successful API response
-    login.mockResolvedValueOnce({
-      token: "fake-jwt-token",
+    apiService.default.auth.login.mockResolvedValueOnce({
+      data: {
+        token: "fake-jwt-token",
+        message: "Login successful! Redirecting...",
+      },
     })
 
     render(
@@ -197,7 +214,7 @@ describe("LoginForm - Login Success Flow", () => {
     )
 
     // Fill in login credentials
-    await user.type(screen.getByPlaceholderText(/m@example.com/i), "test@example.com")
+    await user.type(screen.getByPlaceholderText(/name@example.com/i), "test@example.com")
     await user.type(screen.getByPlaceholderText(/••••••••/i), "password123")
     
     // Submit login form
@@ -228,10 +245,14 @@ describe("LoginForm - Login Success Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should navigate to /chat after successful login", async () => {
     const user = userEvent.setup({ delay: null })
+    const apiService = await import("@/services/api")
 
     // Mock successful login response with token
-    login.mockResolvedValueOnce({
-      token: "fake-jwt-token",
+    apiService.default.auth.login.mockResolvedValueOnce({
+      data: {
+        token: "fake-jwt-token",
+        message: "Login successful",
+      },
     })
 
     render(
@@ -241,7 +262,7 @@ describe("LoginForm - Login Success Flow", () => {
     )
 
     // User enters credentials
-    await user.type(screen.getByPlaceholderText(/m@example.com/i), "test@example.com")
+    await user.type(screen.getByPlaceholderText(/name@example.com/i), "test@example.com")
     await user.type(screen.getByPlaceholderText(/••••••••/i), "password123")
     
     // User submits form
@@ -271,8 +292,9 @@ describe("LoginForm - Login Fail Flow", () => {
   // - Clear localStorage to start fresh
   // Why: Failure tests should not be affected by previous test's state
   // ───────────────────────────────────────────────────────────────────────────
-  beforeEach(() => {
-    login.mockClear()
+  beforeEach(async () => {
+    const apiService = await import("@/services/api")
+    apiService.default.auth.login.mockClear()
     mockNavigate.mockClear()  // ✅ Clear mock before each test
     localStorage.clear()
   })
@@ -296,9 +318,10 @@ describe("LoginForm - Login Fail Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should show error message when login fails", async () => {
     const user = userEvent.setup({ delay: null })
+    const apiService = await import("@/services/api")
 
     // Mock API to return error response (simulating server rejection)
-    login.mockRejectedValueOnce({
+    apiService.default.auth.login.mockRejectedValueOnce({
       response: {
         data: {
           message: "Invalid credentials",
@@ -313,7 +336,7 @@ describe("LoginForm - Login Fail Flow", () => {
     )
 
     // User enters email
-    await user.type(screen.getByPlaceholderText(/m@example.com/i), "test@example.com")
+    await user.type(screen.getByPlaceholderText(/name@example.com/i), "test@example.com")
     
     // User enters wrong password
     await user.type(screen.getByPlaceholderText(/••••••••/i), "wrongpassword")
@@ -348,9 +371,10 @@ describe("LoginForm - Login Fail Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should NOT save token when login fails", async () => {
     const user = userEvent.setup({ delay: null })
+    const apiService = await import("@/services/api")
 
     // Mock API to return error (authentication failed)
-    login.mockRejectedValueOnce({
+    apiService.default.auth.login.mockRejectedValueOnce({
       response: {
         data: {
           message: "Invalid credentials",
@@ -365,7 +389,7 @@ describe("LoginForm - Login Fail Flow", () => {
     )
 
     // User enters credentials
-    await user.type(screen.getByPlaceholderText(/m@example.com/i), "test@example.com")
+    await user.type(screen.getByPlaceholderText(/name@example.com/i), "test@example.com")
     await user.type(screen.getByPlaceholderText(/••••••••/i), "wrongpassword")
     
     // User submits
@@ -401,13 +425,14 @@ describe("LoginForm - Login Fail Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should not navigate when login fails", async () => {
     const user = userEvent.setup({ delay: null })
+    const apiService = await import("@/services/api")
 
     // ✅ Reset mock BEFORE this test runs
     // (Important: ensures we only track navigation from this specific test)
     mockNavigate.mockClear()
 
     // Mock login API to return error
-    login.mockRejectedValueOnce({
+    apiService.default.auth.login.mockRejectedValueOnce({
       response: {
         data: {
           message: "Invalid credentials",
@@ -422,7 +447,7 @@ describe("LoginForm - Login Fail Flow", () => {
     )
 
     // User enters wrong credentials
-    await user.type(screen.getByPlaceholderText(/m@example.com/i), "test@example.com")
+    await user.type(screen.getByPlaceholderText(/name@example.com/i), "test@example.com")
     await user.type(screen.getByPlaceholderText(/••••••••/i), "wrongpassword")
     
     // User tries to login
