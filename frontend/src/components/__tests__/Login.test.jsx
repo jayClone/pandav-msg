@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { LoginForm } from "../login-form"
 import { vi } from "vitest"
+import apiService from "@/services/api"
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MOCK SETUP
@@ -33,6 +34,12 @@ vi.mock("react-router-dom", async () => {
   }
 })
 
+// Import after mocking
+import { connectSocket } from "@/socket/socketClient"
+
+// Get references using vi.mocked()
+const mockConnectSocket = vi.mocked(connectSocket)
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TEST SUITE 1: UI RENDERING
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -47,7 +54,9 @@ describe("LoginForm - UI Render Tests", () => {
   // Why: Ensures tests are isolated and don't affect each other
   // ───────────────────────────────────────────────────────────────────────────
   beforeEach(() => {
+    vi.clearAllMocks()
     mockNavigate.mockClear()
+    mockConnectSocket.mockClear()
     localStorage.clear()
   })
 
@@ -127,10 +136,10 @@ describe("LoginForm - Login Success Flow", () => {
   // - Clear localStorage to start fresh
   // Why: Prevents previous test's mock calls from affecting these tests
   // ───────────────────────────────────────────────────────────────────────────
-  beforeEach(async () => {
-    const apiService = await import("@/services/api")
-    apiService.default.auth.login.mockClear()
-    mockNavigate.mockClear()  // ✅ Clear mock before each test
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockNavigate.mockClear()
+    mockConnectSocket.mockClear()
     localStorage.clear()
   })
 
@@ -149,10 +158,10 @@ describe("LoginForm - Login Success Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should save token to localStorage when login succeeds", async () => {
     const user = userEvent.setup({ delay: null })
-    const apiService = await import("@/services/api")
+    const loginApiService = vi.mocked(apiService.auth.login)
 
     // Mock the login API to return a successful response with token
-    apiService.default.auth.login.mockResolvedValueOnce({
+    loginApiService.mockResolvedValueOnce({
       data: {
         token: "fake-jwt-token",
         message: "Login successful",
@@ -197,10 +206,10 @@ describe("LoginForm - Login Success Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should show success message on successful login", async () => {
     const user = userEvent.setup({ delay: null })
-    const apiService = await import("@/services/api")
+    const loginApiService = vi.mocked(apiService.auth.login)
 
     // Mock successful API response
-    apiService.default.auth.login.mockResolvedValueOnce({
+    loginApiService.mockResolvedValueOnce({
       data: {
         token: "fake-jwt-token",
         message: "Login successful! Redirecting...",
@@ -245,10 +254,10 @@ describe("LoginForm - Login Success Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should navigate to /chat after successful login", async () => {
     const user = userEvent.setup({ delay: null })
-    const apiService = await import("@/services/api")
+    const loginApiService = vi.mocked(apiService.auth.login)
 
     // Mock successful login response with token
-    apiService.default.auth.login.mockResolvedValueOnce({
+    loginApiService.mockResolvedValueOnce({
       data: {
         token: "fake-jwt-token",
         message: "Login successful",
@@ -276,6 +285,54 @@ describe("LoginForm - Login Success Flow", () => {
       { timeout: 3000 }
     )
   })
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // TEST CASE 2.4: Socket Connection After Login Success
+  // ───────────────────────────────────────────────────────────────────────────
+  // Description: WebSocket should connect with token after successful login
+  // Issue Testing: Real-time connection - verifies socket is initialized with auth
+  // Test Flow:
+  //   1. Mock successful login with token
+  //   2. User submits credentials
+  //   3. Wait for connectSocket to be called with token
+  // Expected Behavior: connectSocket(token) is called
+  // Why It Matters: Real-time features - user needs WebSocket connection for chat
+  // Connection Flow: Login → Success → Connect Socket → Enable Real-time Chat
+  // ───────────────────────────────────────────────────────────────────────────
+  test("should connect socket with token after successful login", async () => {
+    const user = userEvent.setup({ delay: null })
+    const loginApiService = vi.mocked(apiService.auth.login)
+    const testToken = "test-socket-token-abc"
+
+    // Mock successful login response with token
+    loginApiService.mockResolvedValueOnce({
+      data: {
+        token: testToken,
+        message: "Login successful",
+      },
+    })
+
+    render(
+      <MemoryRouter>
+        <LoginForm />
+      </MemoryRouter>
+    )
+
+    // User enters credentials
+    await user.type(screen.getByPlaceholderText(/name@example.com/i), "test@example.com")
+    await user.type(screen.getByPlaceholderText(/••••••••/i), "password123")
+    
+    // User submits form
+    await user.click(screen.getByRole("button", { name: /login/i }))
+
+    // Verify socket connection is established with the token
+    await waitFor(
+      () => {
+        expect(mockConnectSocket).toHaveBeenCalledWith(testToken)
+      },
+      { timeout: 3000 }
+    )
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -292,10 +349,10 @@ describe("LoginForm - Login Fail Flow", () => {
   // - Clear localStorage to start fresh
   // Why: Failure tests should not be affected by previous test's state
   // ───────────────────────────────────────────────────────────────────────────
-  beforeEach(async () => {
-    const apiService = await import("@/services/api")
-    apiService.default.auth.login.mockClear()
-    mockNavigate.mockClear()  // ✅ Clear mock before each test
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockNavigate.mockClear()
+    mockConnectSocket.mockClear()
     localStorage.clear()
   })
 
@@ -318,10 +375,10 @@ describe("LoginForm - Login Fail Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should show error message when login fails", async () => {
     const user = userEvent.setup({ delay: null })
-    const apiService = await import("@/services/api")
+    const loginApiService = vi.mocked(apiService.auth.login)
 
     // Mock API to return error response (simulating server rejection)
-    apiService.default.auth.login.mockRejectedValueOnce({
+    loginApiService.mockRejectedValueOnce({
       response: {
         data: {
           message: "Invalid credentials",
@@ -371,10 +428,10 @@ describe("LoginForm - Login Fail Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should NOT save token when login fails", async () => {
     const user = userEvent.setup({ delay: null })
-    const apiService = await import("@/services/api")
+    const loginApiService = vi.mocked(apiService.auth.login)
 
     // Mock API to return error (authentication failed)
-    apiService.default.auth.login.mockRejectedValueOnce({
+    loginApiService.mockRejectedValueOnce({
       response: {
         data: {
           message: "Invalid credentials",
@@ -425,14 +482,14 @@ describe("LoginForm - Login Fail Flow", () => {
   // ───────────────────────────────────────────────────────────────────────────
   test("should not navigate when login fails", async () => {
     const user = userEvent.setup({ delay: null })
-    const apiService = await import("@/services/api")
+    const loginApiService = vi.mocked(apiService.auth.login)
 
     // ✅ Reset mock BEFORE this test runs
     // (Important: ensures we only track navigation from this specific test)
     mockNavigate.mockClear()
 
     // Mock login API to return error
-    apiService.default.auth.login.mockRejectedValueOnce({
+    loginApiService.mockRejectedValueOnce({
       response: {
         data: {
           message: "Invalid credentials",
@@ -464,5 +521,57 @@ describe("LoginForm - Login Fail Flow", () => {
     // ✅ Now check that mockNavigate was NOT called
     // (it should have 0 calls from this test - no redirect on failure)
     expect(mockNavigate).not.toHaveBeenCalled()
+  })
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // TEST CASE 3.4: Socket NOT Connected on Failed Login
+  // ───────────────────────────────────────────────────────────────────────────
+  // Description: WebSocket should NOT connect if login fails
+  // Issue Testing: Security - prevents unauthorized socket connections
+  // Test Flow:
+  //   1. Mock failed login
+  //   2. User submits incorrect credentials
+  //   3. Wait for error message
+  //   4. Verify connectSocket was NOT called
+  // Expected Behavior: connectSocket is not called
+  // Why It Matters: Security - only authenticated users should connect to WebSocket
+  // Security Impact: Prevents unauthorized users from accessing real-time features
+  // ───────────────────────────────────────────────────────────────────────────
+  test("should not connect socket when login fails", async () => {
+    const user = userEvent.setup({ delay: null })
+    const loginApiService = vi.mocked(apiService.auth.login)
+
+    // Mock login API to return error
+    loginApiService.mockRejectedValueOnce({
+      response: {
+        data: {
+          message: "Invalid credentials",
+        },
+      },
+    })
+
+    render(
+      <MemoryRouter>
+        <LoginForm />
+      </MemoryRouter>
+    )
+
+    // User enters wrong credentials
+    await user.type(screen.getByPlaceholderText(/name@example.com/i), "test@example.com")
+    await user.type(screen.getByPlaceholderText(/••••••••/i), "wrongpassword")
+    
+    // User tries to login
+    await user.click(screen.getByRole("button", { name: /login/i }))
+
+    // Wait for error message to appear
+    await waitFor(
+      () => {
+        expect(screen.getByText(/invalid credentials/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 }
+    )
+
+    // ✅ Verify socket connection was NOT established
+    expect(mockConnectSocket).not.toHaveBeenCalled()
   })
 })

@@ -227,6 +227,13 @@
   }
 
   /* Scrollbar styling */
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) var(--background);
+  }
+
+  /* Chromium and Safari */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
