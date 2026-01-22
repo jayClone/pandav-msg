@@ -1,5 +1,7 @@
 import { MESSAGES, SOCKET_EVENTS } from "@constants/response.messages.js";
 import Message from '@models/Message.js';
+import Group from "@models/Group";
+import User from "app/models/User";
 
 const onlineUsers = new Map();
 
@@ -11,6 +13,14 @@ export function registerSocketEvents(io, socket) {
     const { userId, email, name } = socket.user;
 
     console.log(`[SOCKET] User connected: ${name} (${userId})`);
+
+    // set user user online in db
+    User.findByIdAndUpdate(userId,{
+        isOnline: true,
+        lastSeen: Date.now()
+    }).catch(err => console.error('Failed to update user online status:', err))
+
+
 
     // Store user in online users map
     onlineUsers.set(userId, {
@@ -60,7 +70,8 @@ export function registerSocketEvents(io, socket) {
                 savedMessage = await Message.create({
                     senderId: userId,
                     receiverId: toUserId,
-                    message: trimmedMessage
+                    message: trimmedMessage,
+                    chatType: 'private'
                 });
                 console.log(`[DB] Message saved: ${savedMessage._id}`);
             } catch (dbError) {
@@ -123,6 +134,122 @@ export function registerSocketEvents(io, socket) {
         }
     });
 
+    // join group room
+    socket.on('join_group', async (payload) => {
+        try {
+            const {groupId} = payload  || {};
+
+            if (!groupId) {
+                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+                    message: 'Group ID is Reuqired'
+                });
+                return;
+            }
+
+            // varify user is member
+            const group = await Group.findById(groupId);
+            if (!group) {
+                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                    message: 'Group not found' 
+                });
+                return;
+            }
+
+            //join socket room
+            socket.join(groupId);
+            console.log(`[GROUP] ${name} joined group ${groupId}`)
+
+            //notify group members
+            io.to(groupId).emit('user_joined_group', {
+                groupId: groupId,
+                userId: userId,
+                userName: name,
+                message: `${name} joined the group`
+            });
+        } catch (error) {
+            console.error('[ERROR] Join group failed:', error.message);
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                message: 'Failed to join group' 
+            });
+        }
+    });
+
+        // ✅ NEW: Group message handler
+    socket.on('group_message', async (payload) => {
+        try {
+            const { groupId, message } = payload || {};
+
+            if (!groupId) {
+                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                    message: 'Group ID is required' 
+                });
+                return;
+            }
+
+            if (!message || typeof message !== "string" || message.trim().length === 0) {
+                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                    message: "Message cannot be empty" 
+                });
+                return;
+            }
+
+            // ✅ Verify user is member
+            const group = await Group.findById(groupId);
+            if (!group) {
+                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                    message: 'Group not found' 
+                });
+                return;
+            }
+
+            if (!group.participants.includes(userId)) {
+                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                    message: 'You are not a member of this group' 
+                });
+                return;
+            }
+
+            const trimmedMessage = message.trim();
+
+            // ✅ Save to DB
+            const savedMessage = await Message.create({
+                senderId: userId,
+                groupId: groupId,
+                message: trimmedMessage,
+                chatType: 'group'
+            });
+
+            console.log(`[GROUP-MSG] ${name} → ${groupId}: ${trimmedMessage.substring(0, 30)}`);
+
+            const messagePayload = {
+                _id: savedMessage._id,
+                groupId: groupId,
+                fromUserId: userId,
+                fromUserName: name,
+                message: trimmedMessage,
+                time: savedMessage.createdAt.toISOString()
+            };
+
+            // ✅ Send to all group members
+            io.to(groupId).emit('group_message', messagePayload);
+
+            // ✅ Send confirmation to sender
+            socket.emit(SOCKET_EVENTS.MESSAGE_SENT, {
+                messageId: savedMessage._id,
+                groupId: groupId,
+                message: trimmedMessage,
+                time: savedMessage.createdAt.toISOString(),
+                saved: true
+            });
+
+        } catch (error) {
+            console.error('[ERROR] Group message failed:', error.message);
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                message: 'Failed to send group message' 
+            });
+        }
+    });
+
     // ✅ Handle message deletion
     socket.on(SOCKET_EVENTS.MESSAGE_DELETED, (data) => {
       console.log("📥 [SOCKET] Received MESSAGE_DELETED event:", data)
@@ -148,17 +275,18 @@ export function registerSocketEvents(io, socket) {
      * DISCONNECT Event Handler
      * Clean up user from online map
      */
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
         onlineUsers.delete(userId);
+        
+        // ✅ NEW: Set user offline in DB
+        await User.findByIdAndUpdate(userId, { 
+            isOnline: false,
+            lastSeen: Date.now()
+        }).catch(err => console.error('Failed to update user offline status:', err));
+        
         broadcastOnlineUsers(io);
         console.log(`[SOCKET] Disconnected: ${name} (${userId})`);
     });
-
-    console.log("⚠️ [SOCKET EVENTS REGISTERED]:", Object.keys({
-      [SOCKET_EVENTS.PRIVATE_MESSAGE]: true,
-      [SOCKET_EVENTS.MESSAGE_DELETED]: true,
-      [SOCKET_EVENTS.DISCONNECT]: true
-    }))
 }
 
 /**

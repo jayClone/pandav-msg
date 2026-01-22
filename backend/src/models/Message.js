@@ -14,6 +14,16 @@ const messageSchema = new mongoose.Schema(
       required: true,
       index: true
     },
+    groupId:{
+      type : mongoose.Schema.Types.ObjectId,
+      ref: "Group",
+      default: null
+    },
+    chatType:{
+      type: String,
+      enum: ['private', 'group'],
+      default: 'private'
+    },
     message: {
       type: String,
       required: true,
@@ -31,5 +41,6 @@ const messageSchema = new mongoose.Schema(
 
 // index for faster chat retrieval
 messageSchema.index({senderId:1, receiverId:1, createdAt: -1})
+messageSchema.index({ senderId: 1, groupId: 1 });
 
 export default mongoose.model("Message", messageSchema);
