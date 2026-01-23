@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
-import { login } from "@/api/auth.api"
+import { useNavigate, Link } from "react-router-dom"
+import apiService from "@/services/api"
 import { connectSocket } from "@/socket/socketClient"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -32,14 +32,17 @@ export function LoginForm({ className, ...props }) {
     setError("")
 
     try {
-      const response = await login(form)
+      const response = await apiService.auth.login(form)
+      const { token, message } = response.data
       
-      localStorage.setItem("token", response.token)
-      connectSocket(response.token)
-      navigate("/chat")
+      localStorage.setItem("token", token)
+      connectSocket(token)
+      setMsg(message || "Login successful! Redirecting...")
+      
+      setTimeout(() => navigate("/chat"), 1000)
       
     } catch (err) {
-      setError(err?.response?.data?.message || "Login failed")
+      setError(err?.response?.data?.message || err?.message || "Login failed")
     } finally {
       setLoading(false)
     }
@@ -47,57 +50,90 @@ export function LoginForm({ className, ...props }) {
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <Card>
-        <CardHeader>
-          <CardTitle>Login to your account</CardTitle>
-          <CardDescription>
-            Enter your email below to login to your account
+      <Card className="w-full max-w-sm mx-auto shadow-2xl border-t-4 border-t-primary bg-card/50 backdrop-blur-sm">
+        <CardHeader className="space-y-1 pb-6">
+          <CardTitle className="text-3xl font-black tracking-tighter text-center bg-linear-to-br from-primary to-primary/60 bg-clip-text text-transparent">
+            Welcome back
+          </CardTitle>
+          <CardDescription className="text-center font-medium">
+            {msg ? "Redirecting to chat..." : "Enter your credentials to access your account"}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="grid gap-4">
           {msg && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6 text-sm">
-              {msg}
+            <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-4 py-3 rounded-xl text-sm flex items-center gap-3 animate-in fade-in zoom-in-95 duration-300">
+              <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <p className="font-medium">{msg}</p>
             </div>
           )}
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 text-sm">
-              {error}
+            <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-xl text-sm flex items-center gap-3 animate-in fade-in zoom-in-95 duration-300">
+              <div className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
+              <p className="font-medium">{error}</p>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="m@example.com"
-                value={form.email}
-                onChange={handleChange}
-                required
-              />
-            </div>
+          {!msg && (
+            <>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid gap-2 transform transition-all duration-200 focus-within:translate-x-1">
+                  <Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Email</Label>
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    placeholder="name@example.com"
+                    value={form.email}
+                    onChange={handleChange}
+                    required
+                    className="h-11 bg-background/50 focus:bg-background transition-all border-muted-foreground/20 rounded-xl"
+                  />
+                </div>
 
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                placeholder="••••••••"
-                value={form.password}
-                onChange={handleChange}
-                required
-              />
-            </div>
+                <div className="grid gap-2 transform transition-all duration-200 focus-within:translate-x-1">
+                  <Label htmlFor="password" title="Enter your password" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Password</Label>
+                  <Input
+                    id="password"
+                    name="password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={form.password}
+                    onChange={handleChange}
+                    required
+                    className="h-11 bg-background/50 focus:bg-background transition-all border-muted-foreground/20 rounded-xl"
+                  />
+                </div>
 
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? "Logging in..." : "Login"}
-            </Button>
-          </form>
+                <Button 
+                  type="submit" 
+                  disabled={loading} 
+                  className="w-full h-11 mt-4 font-bold rounded-xl transition-all hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98] disabled:opacity-70 disabled:pointer-events-none"
+                >
+                  {loading ? "Logging in..." : "Login"}
+                </Button>
+              </form>
+
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-muted" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">Or</span>
+                </div>
+              </div>
+
+              <p className="text-center text-sm text-muted-foreground font-medium">
+                Don&apos;t have an account?{" "}
+                <Link 
+                  to="/register" 
+                  className="text-primary hover:underline underline-offset-4 font-bold decoration-2 transition-all hover:tracking-tight"
+                >
+                  Sign up
+                </Link>
+              </p>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
