@@ -32,7 +32,7 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
             return;
         }
 
-        if (!group.participants.includes(userId)) {
+        if ( !Array.isArray(group.participants) || !group.participants.some(p => p && p.toString() === userId.toString())) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
                 message: 'You are not a member of this group' 
             });

@@ -1,7 +1,7 @@
 import Group from "@models/Group";
 import User from "@models/User"
 import Message from '@models/Message.js';
-import { MESSAGES } from "@constants/response.messages";
+import { MESSAGES } from "@constants/response.messages.js";
 import mongoose from 'mongoose';  // ✅ ADD THIS
 
 // HELPER: Validate MongoDB ObjectId (handles both string and ObjectId)
@@ -289,7 +289,19 @@ export const removeMember = async(req, res) => {
         // Convert to ObjectId for comparison
         const memberObjId = toObjectId(memberToRemove);
 
-        // Remove member
+        // ✅ ADD: Check if member actually exists in group
+        const memberExists = group.participants.some(
+            p => p.toString() === memberObjId.toString()
+        );
+
+        if (!memberExists) {
+            return res.status(400).json({
+                success: false,
+                message: 'User is not a member of this group'
+            });
+        }
+
+        // Remove member (now we know they exist)
         group.participants = group.participants.filter(
             p => p.toString() !== memberObjId.toString()
         );

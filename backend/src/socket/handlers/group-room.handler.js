@@ -24,6 +24,19 @@ export async function handleJoinGroup(socket, io, payload, userId, name) {
             return;
         }
 
+        // Check that the requesting user is a member of the group
+        const isMember = Array.isArray(group.participants) && group.participants.some((participant) => {
+            const participantId = typeof participant === 'object' && participant !== null && typeof participant.toString === 'function'
+                ? participant.toString()
+                : String(participant);
+            return participantId === String(userId);
+        });
+        if (!isMember) {
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+                message: 'User is not a member of this group'
+            });
+            return;
+        }
         // Join socket room
         socket.join(groupId);
         console.log(`[GROUP] ${name} joined group ${groupId}`);

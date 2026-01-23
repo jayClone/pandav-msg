@@ -24,7 +24,7 @@ import { connectDB, disconnectDB } from '@config/db.js';
 describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
   let userA, userB, userC, userD;
   let tokenA, tokenB, tokenC, tokenD;
-  let groupId1, groupId2;
+  let groupId1;
 
   const testUsers = {
     A: { name: 'Alice', email: 'alice@example.com', password: 'SecurePass123!' },
