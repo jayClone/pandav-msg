@@ -12,10 +12,12 @@ export const MESSAGES = {
 };
 
 export const SOCKET_EVENTS = {
-  ONLINE_USERS: "online_users",
-  PRIVATE_MESSAGE: "private_message",
-  MESSAGE_SENT: "message_sent",
-  USER_OFFLINE: "user_offline",
-  ERROR_MESSAGE: "error_message",
-  MESSAGE_DELETED: "message_deleted"
+  PRIVATE_MESSAGE: 'private_message',
+  GROUP_MESSAGE: 'group_message',
+  MESSAGE_SENT: 'message_sent',
+  MESSAGE_DELETED: 'message_deleted',
+  ERROR_MESSAGE: 'error_message',
+  ONLINE_USERS: 'online_users',
+  USER_JOINED_GROUP: 'user_joined_group',
+  USER_LEFT_GROUP: 'user_left_group'
 };

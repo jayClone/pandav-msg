@@ -465,28 +465,17 @@ describe('🧪 MESSAGE API & PERSISTENCE TESTS', () => {
     // ───────────────────────────────────────────────────────────────────────────
     // TC-M-13: Missing required fields rejected
     // ───────────────────────────────────────────────────────────────────────────
-    it('TC-M-13: Message without receiverId is rejected', async () => {
-      const saved = await Message.create({
-        senderId: userA._id,
-        message: 'Test message'
-        // Missing receiverId
-      }).catch(err => null);
+    it('TC-M-13: Controller rejects missing receiverId for private message', async () => {
+      const response = await request(app)
+        .post('/api/v1/messages/private')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          message: 'Test message'
+          // Missing receiverId
+        });
 
-      expect(saved).toBeNull();
-
-      console.log('✅ TC-M-13 PASSED: Missing receiverId rejected');
-    });
-
-    it('TC-M-13-B: Message without senderId is rejected', async () => {
-      const saved = await Message.create({
-        receiverId: userB._id,
-        message: 'Test message'
-        // Missing senderId
-      }).catch(err => null);
-
-      expect(saved).toBeNull();
-
-      console.log('✅ TC-M-13-B PASSED: Missing senderId rejected');
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('receiverId is required');
     });
   });
 

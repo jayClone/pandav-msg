@@ -1,8 +1,11 @@
 import express from 'express';
-import { getChatHistory, getConversations,markAsRead,deleteMessage } from '@controllers/message.controller.js';
+import {sendPrivateMessage, getChatHistory, getConversations,markAsRead,deleteMessage } from '@controllers/message.controller.js';
 import { protect } from '@middlewares/auth.js';
 
 const router = express.Router();
+
+// ✅ ADD: Private message endpoint
+router.post('/private', protect, sendPrivateMessage);
 
 /**
  * @route GET /api/v1/messages/:userId

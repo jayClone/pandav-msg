@@ -67,8 +67,14 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    // Attach user to request for next middleware
-    req.user = user;
+    // Attach user data with userId property (string)
+    req.user = {
+      userId: user._id.toString(),  
+      _id: user._id,               
+      email: user.email,
+      name: user.name
+    };
+    
     next();
     
   } catch (error) {
