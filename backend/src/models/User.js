@@ -24,6 +24,16 @@ const userSchema = new mongoose.Schema({
     minlength: 8,
     select: false  // Don't return password by default
   },
+
+  isOnline: {
+      type: Boolean,
+      default: false
+    },
+    
+  lastSeen: {
+      type: Date,
+      default: Date.now
+    },
   createdAt: {
     type: Date,
     default: Date.now

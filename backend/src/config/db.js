@@ -12,7 +12,6 @@ export const connectDB = async () => {
             w: 'majority'
         });
 
-        console.log('✅ MongoDB Connected');
         return mongoose.connection;
     } catch (error) {
         console.error('❌ MongoDB Connection Error:', error.message);

@@ -1,35 +1,45 @@
-import mongoose from "mongoose"
+import mongoose from 'mongoose';
 
 const messageSchema = new mongoose.Schema(
   {
     senderId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true // fast queries 
+      ref: 'User',
+      required: [true, 'Sender ID is required']
     },
+
     receiverId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true
+      ref: 'User'
     },
+
+    groupId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Group'
+    },
+
+    chatType: {
+      type: String,
+      enum: ['private', 'group'],
+      default: 'private'
+    },
+
     message: {
       type: String,
-      required: true,
-      trim: true,
-      minlength: 1,
-      maxlength: 5000
+      required: [true, 'Message cannot be empty'],
+      trim: true 
     },
-    read:{
+
+    read: {
       type: Boolean,
       default: false
     }
   },
-  { timestamps: true } // creates createdAt + updatedAt automatically
+  { timestamps: true }
 );
 
-// index for faster chat retrieval
-messageSchema.index({senderId:1, receiverId:1, createdAt: -1})
+// Indexes only
+messageSchema.index({ groupId: 1, createdAt: 1 });
+messageSchema.index({ senderId: 1, receiverId: 1 });
 
-export default mongoose.model("Message", messageSchema);
+export default mongoose.model('Message', messageSchema);

@@ -58,7 +58,7 @@ export const getChatHistory = async(req, res) =>{
                 {senderId: otherUserId, receiverId: myId}
             ]
         })
-            .populate('senderId', 'name')  // ✅ Add this to get sender name
+            .populate('senderId', 'name')  // Add this to get sender name
             .sort({createdAt: 1}) // Oldest first
             .limit(150)
             .lean(); //lean() for better performance
@@ -72,7 +72,7 @@ export const getChatHistory = async(req, res) =>{
             {read: true}
         );
 
-        // ✅ Map backend fields to frontend field names
+        //  Map backend fields to frontend field names
         const formattedMessages = messages.map(msg => ({
             _id: msg._id,
             fromUserId: msg.senderId._id,  
@@ -86,7 +86,7 @@ export const getChatHistory = async(req, res) =>{
 
         return res.status(200).json({
             success: true,
-            data: formattedMessages,  // ✅ Use formatted messages
+            data: formattedMessages, 
             count: formattedMessages.length,
             otherUser: {
                 _id: otherUser._id,
@@ -98,7 +98,7 @@ export const getChatHistory = async(req, res) =>{
     } catch (error) {
         console.error("getChatHistory error", error);
         
-        // ✅ FIX 4: Handle CastError specifically
+        //  Handle CastError specifically
         if (error.name === 'CastError') {
             return res.status(400).json({
                 success: false,
@@ -126,7 +126,7 @@ export const getConversations = async (req, res) => {
     try {
         const myId = req.user?._id || req.user?.userId;
 
-        // ✅ Get unique conversations
+        // Get unique conversations
         const conversations = await Message.aggregate([
             {
                 $match: {
@@ -277,4 +277,88 @@ export const deleteMessage = async (req, res) => {
       message: error.message
     });        
   }
-}
+};
+
+export const sendPrivateMessage = async (req, res) => {
+  try {
+    const { receiverId, message } = req.body;
+    const senderId = req.user.userId;
+
+    // VALIDATION IN CONTROLLER (cleaner, reusable, testable)
+    if (!receiverId) {
+      return res.status(400).json({
+        success: false,
+        message: 'receiverId is required for private messages'
+      });
+    }
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message cannot be empty'
+      });
+    }
+
+    // Save to DB (schema only checks required fields)
+    const savedMsg = await Message.create({
+      senderId,
+      receiverId,
+      message: message.trim(),
+      chatType: 'private'
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: savedMsg
+    });
+
+  } catch (error) {
+    console.error('Send message error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send message'
+    });
+  }
+};
+
+export const sendGroupMessage = async (req, res) => {
+  try {
+    const { groupId, message } = req.body;
+    const senderId = req.user.userId;
+
+    // VALIDATION IN CONTROLLER
+    if (!groupId) {
+      return res.status(400).json({
+        success: false,
+        message: 'groupId is required for group messages'
+      });
+    }
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message cannot be empty'
+      });
+    }
+
+    // Save to DB
+    const savedMsg = await Message.create({
+      senderId,
+      groupId,
+      message: message.trim(),
+      chatType: 'group'
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: savedMsg
+    });
+
+  } catch (error) {
+    console.error('Send message error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send message'
+    });
+  }
+};
