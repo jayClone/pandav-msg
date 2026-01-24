@@ -528,6 +528,20 @@ export default function Chat() {
               className="w-full pl-10 pr-4 py-2.5 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-500/50 focus:border-transparent transition-all"
             />
           </div>
+
+          {/* Navigation Tabs */}
+          <div className="flex gap-2 mt-3 px-4 items-center">
+            <button className="flex-1 px-4 py-2 bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-lg font-medium text-sm transition-all hover:from-green-500 hover:to-emerald-600 shadow-md glow-green">
+              Chat
+            </button>
+            <button
+              onClick={() => navigate("/groupchat")}
+              className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium text-sm transition-all shadow-md"
+              title="Go to Group Chat"
+            >
+              Groups
+            </button>
+          </div>
         </div>
 
         {/* Users List */}
