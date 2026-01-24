@@ -3,6 +3,7 @@ import healthRoutes from '@v1/health.routes.js';
 import authRoutes from '@v1/auth.routes.js';
 import messageRoutes from '@v1/message.routes.js'
 import groupRoutes from '@v1/group.routes.js'
+import userRoutes from '@v1/user.routes.js'
 
 const router = express.Router();
 
@@ -22,6 +23,16 @@ router.use('/health', healthRoutes);
  * GET  /me - Current authenticated user details
  */
 router.use('/auth', authRoutes);
+
+/**
+ * User Routes
+ * @route /api/v1/users
+ * GET    / - Get all users
+ * GET    /:userId - Get user profile
+ * GET    /search - Search users
+ */
+router.use('/users', userRoutes);  // ✅ ADD THIS
+
 
 /**
  * Message Routes
