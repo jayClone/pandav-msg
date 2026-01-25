@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import groupService from '@services/group.service'
 import messageService from '@services/message.service'
 import API from '@api/axios.js'
@@ -93,7 +93,7 @@ const GroupChat = () => {
     }
   }, [selectedGroup])
 
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     try {
       setLoadingGroups(true)
       setError(null)
@@ -105,9 +105,9 @@ const GroupChat = () => {
     } finally {
       setLoadingGroups(false)
     }
-  }
+  }, [])
 
-  const fetchAvailableUsers = async () => {
+  const fetchAvailableUsers = useCallback(async () => {
     try {
       setLoadingUsers(true)
       setError(null)
@@ -116,7 +116,7 @@ const GroupChat = () => {
 
       // Filter out already added members
       const memberIds = new Set(members.map((m) => m._id))
-      const currentUserId = localStorage.getItem('userId') // Assuming userId is stored in localStorage
+      const currentUserId = localStorage.getItem('userId')
 
       const availableForAdd = allUsers.filter(
         (user) => !memberIds.has(user._id) && user._id !== currentUserId
@@ -130,9 +130,9 @@ const GroupChat = () => {
     } finally {
       setLoadingUsers(false)
     }
-  }
+  }, [members])
 
-  const fetchGroupMessages = async (groupId) => {
+  const fetchGroupMessages = useCallback(async (groupId) => {
     try {
       setLoadingMessages(true)
       setError(null)
@@ -144,7 +144,7 @@ const GroupChat = () => {
     } finally {
       setLoadingMessages(false)
     }
-  }
+  }, [])
 
   const fetchAllUsersForCreation = async () => {
     try {
@@ -167,7 +167,7 @@ const GroupChat = () => {
     }
   }
 
-  const handleSelectGroup = async (group) => {
+  const handleSelectGroup = useCallback(async (group) => {
     try {
       setLoading(true)
       setError(null)
@@ -182,9 +182,9 @@ const GroupChat = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const handleAddMember = async () => {
+  const handleAddMember = useCallback(async () => {
     if (!selectedGroup || !selectedUserId) {
       setError('Please select a member to add')
       return
@@ -203,11 +203,9 @@ const GroupChat = () => {
       setSearchQuery('')
       setSelectedUserId(null)
       setShowAddMember(false)
-      // Refresh group details to update members list
       const updatedGroup = await groupService.getGroup(selectedGroup._id)
       setSelectedGroup(updatedGroup)
       setMembers(updatedGroup.members || [])
-      // Refresh available users list
       await fetchAvailableUsers()
     } catch (err) {
       setError(err.message || 'Failed to add member')
@@ -215,20 +213,18 @@ const GroupChat = () => {
     } finally {
       setLoadingAddMember(false)
     }
-  }
+  }, [selectedGroup, selectedUserId, availableUsers, fetchAvailableUsers])
 
-  const handleRemoveMember = async (memberId) => {
+  const handleRemoveMember = useCallback(async (memberId) => {
     if (!selectedGroup) return
 
     try {
       setLoadingRemoveMember(memberId)
       setError(null)
       await groupService.removeMember(selectedGroup._id, memberId)
-      // Refresh group details to update members list
       const updatedGroup = await groupService.getGroup(selectedGroup._id)
       setSelectedGroup(updatedGroup)
       setMembers(updatedGroup.members || [])
-      // Refresh available users list
       await fetchAvailableUsers()
     } catch (err) {
       setError(err.message || 'Failed to remove member')
@@ -236,9 +232,9 @@ const GroupChat = () => {
     } finally {
       setLoadingRemoveMember(null)
     }
-  }
+  }, [selectedGroup, fetchAvailableUsers])
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = useCallback(async () => {
     if (!newMessage.trim() || !selectedGroup) return
 
     try {
@@ -246,7 +242,6 @@ const GroupChat = () => {
       setError(null)
       await messageService.sendGroupMessage(selectedGroup._id, newMessage.trim())
       setNewMessage('')
-      // Refresh messages
       await fetchGroupMessages(selectedGroup._id)
     } catch (err) {
       setError(err.message || 'Failed to send message')
@@ -254,16 +249,16 @@ const GroupChat = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [newMessage, selectedGroup, fetchGroupMessages])
 
-  const closeAddMemberForm = () => {
+  const closeAddMemberForm = useCallback(() => {
     setShowAddMember(false)
     setSearchQuery('')
     setSelectedUserId(null)
     setError(null)
-  }
+  }, [])
 
-  const handleCreateGroup = async () => {
+  const handleCreateGroup = useCallback(async () => {
     if (!groupName.trim()) {
       setError('Group name is required')
       return
@@ -277,16 +272,14 @@ const GroupChat = () => {
     try {
       setLoadingCreateGroup(true)
       setError(null)
-      
+
       await groupService.createGroup(groupName.trim(), selectedMemberIds)
-      
-      // Reset form
+
       setGroupName('')
       setSelectedMemberIds([])
       setCreateGroupSearch('')
       setShowCreateGroup(false)
-      
-      // Refresh groups list
+
       await fetchGroups()
     } catch (err) {
       setError(err.message || 'Failed to create group')
@@ -294,21 +287,21 @@ const GroupChat = () => {
     } finally {
       setLoadingCreateGroup(false)
     }
-  }
+  }, [groupName, selectedMemberIds, fetchGroups])
 
-  const toggleMemberSelection = (userId) => {
+  const toggleMemberSelection = useCallback((userId) => {
     setSelectedMemberIds((prev) =>
       prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
     )
-  }
+  }, [])
 
-  const closeCreateGroupForm = () => {
+  const closeCreateGroupForm = useCallback(() => {
     setShowCreateGroup(false)
     setGroupName('')
     setSelectedMemberIds([])
     setCreateGroupSearch('')
     setError(null)
-  }
+  }, [])
 
   return (
     <div className="flex h-screen bg-gray-100">

@@ -19,5 +19,8 @@ export const SOCKET_EVENTS = {
   ONLINE_USERS: 'online_users',
   PRIVATE_MESSAGE: 'private_message',
   USER_JOINED_GROUP: 'user_joined_group',
-  USER_LEFT_GROUP: 'user_left_group'
+  USER_LEFT_GROUP: 'user_left_group',
+  MESSAGE_READ: 'message_read',
+  READ_RECEIPT: 'read_receipt',
+  TYPING: 'typing'
 };

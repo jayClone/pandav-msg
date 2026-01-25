@@ -2,8 +2,40 @@ import io from 'socket.io-client';
 
 let socket = null;
 
+// Helper to check if socket is connected
+export const isSocketConnected = () => {
+    return socket?.connected ?? false;
+};
+
+// Helper to wait for socket to be ready
+export const waitForSocket = () => {
+  return new Promise((resolve, reject) => {
+    if (socket?.connected) {
+      resolve(socket);
+      return;
+    }
+    
+    if (socket) {
+      const checkConnection = setInterval(() => {
+        if (socket?.connected) {
+          clearInterval(checkConnection);
+          resolve(socket);
+        }
+      }, 100);
+      
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        clearInterval(checkConnection);
+        reject(new Error('Socket connection timeout'));
+      }, 5000);
+    } else {
+      reject(new Error('Socket not initialized'));
+    }
+  });
+};
+
 export const connectSocket = (token) => {
-    // ✅ Disconnect old socket if exists
+    // Disconnect old socket if exists
     if (socket) {
         console.log('🔄 Disconnecting old socket...');
         socket.disconnect();
@@ -16,8 +48,9 @@ export const connectSocket = (token) => {
         },
         reconnection: true,
         reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        reconnectionAttempts: 5
+        reconnectionDelayMax: 10000,
+        reconnectionAttempts: 10,
+        transports: ['websocket', 'polling']
     });
 
     socket.on('connect', () => {
@@ -28,8 +61,8 @@ export const connectSocket = (token) => {
         console.error('🔴 Socket connection error:', error.message);
     });
 
-    socket.on('disconnect', () => {
-        console.log('🔌 Socket disconnected');
+    socket.on('disconnect', (reason) => {
+        console.log('🔌 Socket disconnected:', reason);
     });
 
     return socket;

@@ -5,4 +5,7 @@ export const SOCKET_EVENTS = {
   USER_OFFLINE: "user_offline",
   ERROR_MESSAGE: "error_message",
   MESSAGE_DELETED: "message_deleted",
+  MESSAGE_READ: "message_read",
+  READ_RECEIPT: "read_receipt",
+  TYPING: "typing",
 };
