@@ -126,23 +126,51 @@ export default function Chat() {
     }
 
     const handlePrivateMessage = (data) => {
-      console.log("📨 Received message:", data)
+      console.log("📨 Received message from:", data.fromUserName, "ID:", data._id)
+      console.log("   Total messages before:", messages.length)
       
-      setMessages((prev) => [
-        ...prev,
-        {
-          _id: data._id || `temp_${Date.now()}`,
+      // Validate message data
+      if (!data._id || !data.fromUserId || !data.message) {
+        console.error("❌ Invalid message data:", data)
+        return
+      }
+      
+      // Prevent duplicate messages: check if message already exists
+      setMessages((prev) => {
+        // Check by _id (database ID - most reliable)
+        const messageExists = prev.some(m => m._id === data._id)
+        
+        if (messageExists) {
+          console.log("⏭️ Message already exists (by _id), skipping duplicate. Total messages:", prev.length)
+          return prev
+        }
+        
+        // Also check by uniqueId if available (for cross-client deduplication)
+        const existsByUniqueId = prev.some(m => m.uniqueId === data.uniqueId && data.uniqueId)
+        if (existsByUniqueId) {
+          console.log("⏭️ Message already exists (by uniqueId), skipping duplicate")
+          return prev
+        }
+        
+        const newMessage = {
+          _id: data._id,
           fromUserId: data.fromUserId,
           fromUserName: data.fromUserName || "Unknown",
-          toUserId: data.toUserId,
+          toUserId: data.toUserId || currentUserId,
           message: data.message,
-          time: data.time || new Date().toISOString(),
+          time: data.time || data.createdAt || new Date().toISOString(),
           read: false,
-        },
-      ])
+          delivered: data.delivered || true,
+          uniqueId: data.uniqueId
+        }
+        
+        console.log("✅ Adding new received message. Total messages will be:", prev.length + 1)
+        return [...prev, newMessage]
+      })
 
-      // Update unread count if message is not from current chat
+      // Update unread count only if message is from a different user than current chat
       if (data.fromUserId !== selectedUserId) {
+        console.log("🔔 Message from different user, updating unread count")
         setUnreadCounts(prev => ({
           ...prev,
           [data.fromUserId]: (prev[data.fromUserId] || 0) + 1
@@ -150,47 +178,103 @@ export default function Chat() {
         
         // Play notification sound and show notification
         playNotificationSound()
-        showNotification(data.fromUserName, data.message)
+        showNotification(data.fromUserName || "New Message", data.message)
+      } else {
+        console.log("✅ Message is in current chat, automatically sending read receipt")
+        // Send read receipt immediately for messages in current chat
+        const socket = getSocket()
+        if (socket) {
+          socket.emit('read_receipt', {
+            messageId: data._id,
+            senderId: data.fromUserId
+          })
+        }
       }
     }
 
     const handleMessageSent = (data) => {
-      console.log("💾 Message sent confirmation:", data)
+      console.log("💾 Message sent confirmation from server:", data)
+      console.log("💾 Message sent confirmation from server:")
+      console.log("   Server returned _id:", data._id)
+      console.log("   Server returned uniqueId:", data.uniqueId)
+      console.log("   Server returned tempId:", data.tempId)
       
-      // Replace optimistic message with server response
+      // Replace optimistic message with server response using UNIQUE ID (most reliable)
       setMessages((prev) => {
-        // Find and replace the temporary message
-        const tempIndex = prev.findIndex(m => m.sending && m.message === data.message && m.toUserId === data.toUserId)
+        console.log("   Total messages in state before replacement:", prev.length)
+        
+        // Strategy 1: Match by uniqueId (most reliable for rapid sends)
+        let tempIndex = prev.findIndex(m => m.uniqueId === data.uniqueId)
         
         if (tempIndex !== -1) {
-          // Replace the temporary message
+          console.log("✅ Found temp message by uniqueId at index:", tempIndex)
           const updated = [...prev]
           updated[tempIndex] = {
-            _id: data._id,
-            fromUserId: data.fromUserId,
-            fromUserName: data.fromUserName,
+            _id: data._id || data.messageId,
+            fromUserId: data.fromUserId || currentUserId,
+            fromUserName: data.fromUserName || currentUserName,
             toUserId: data.toUserId,
             message: data.message,
-            time: data.time,
+            time: data.time || data.createdAt || new Date().toISOString(),
             read: false,
+            sending: false,
+            delivered: data.delivered || true,
+            // Remove uniqueId after confirmation (it was temp)
+            uniqueId: undefined
           }
+          console.log("   Message replaced with database _id:", data._id)
+          console.log("   Total messages after replacement:", updated.length)
           return updated
         }
         
-        // If not found, add it (fallback)
+        // Strategy 2: Match by tempId if uniqueId not found (fallback)
+        tempIndex = prev.findIndex(m => m._id === data.tempId)
+        if (tempIndex !== -1) {
+          console.log("✅ Found temp message by tempId at index:", tempIndex)
+          const updated = [...prev]
+          updated[tempIndex] = {
+            _id: data._id || data.messageId,
+            fromUserId: data.fromUserId || currentUserId,
+            fromUserName: data.fromUserName || currentUserName,
+            toUserId: data.toUserId,
+            message: data.message,
+            time: data.time || data.createdAt || new Date().toISOString(),
+            read: false,
+            sending: false,
+            delivered: data.delivered || true
+          }
+          console.log("   Total messages after replacement:", updated.length)
+          return updated
+        }
+        
+        // Strategy 3: If no temp message found, add the confirmed message
+        console.log("⚠️ No temp message found, adding new confirmed message with _id:", data._id)
+        console.log("   Total messages will be:", prev.length + 1)
         return [
           ...prev,
           {
-            _id: data._id,
-            fromUserId: data.fromUserId,
-            fromUserName: data.fromUserName,
+            _id: data._id || data.messageId,
+            fromUserId: data.fromUserId || currentUserId,
+            fromUserName: data.fromUserName || currentUserName,
             toUserId: data.toUserId,
             message: data.message,
-            time: data.time,
+            time: data.time || data.createdAt || new Date().toISOString(),
             read: false,
+            delivered: data.delivered || true
           }
         ]
       })
+    }
+
+    const handleMessageRead = (data) => {
+      console.log("👁️ Message read receipt:", data)
+      
+      // Update message read status to show blue tick
+      setMessages((prev) =>
+        prev.map(m =>
+          m._id === data.messageId ? { ...m, read: true } : m
+        )
+      )
     }
 
     const handleUserOffline = ({ toUserId }) => {
@@ -228,6 +312,7 @@ export default function Chat() {
     socket.on(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage)
     socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted)
     socket.on(SOCKET_EVENTS.TYPING, handleTyping)
+    socket.on('message_read', handleMessageRead)
 
     // Cleanup on unmount
     return () => {
@@ -238,6 +323,7 @@ export default function Chat() {
       socket.off(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage)
       socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted)
       socket.off(SOCKET_EVENTS.TYPING, handleTyping)
+      socket.off('message_read', handleMessageRead)
     }
   }, [token, navigate, currentUserId, currentUserName, selectedUserId])
 
@@ -262,23 +348,30 @@ export default function Chat() {
     setMessages([])
 
     try {
+      console.log("🔄 Fetching chat history with", userId)
       const data = await messageService.fetchChatHistory(userId)
-      console.log("✅ Fetched messages:", data.messages)
+      console.log("✅ Fetched messages from service:", data.messages.length, "messages")
 
+      // Transform messages from API format to component format
       const messagesWithIds = data.messages.map(msg => ({
         _id: msg._id,
-        fromUserId: msg.fromUserId,
-        toUserId: msg.toUserId,
-        fromUserName: msg.senderName || "Unknown",
+        fromUserId: msg.senderId || msg.fromUserId,  // Handle both formats from API
+        toUserId: msg.receiverId || msg.toUserId,
+        fromUserName: msg.senderName || msg.fromUserName || "Unknown",
         message: msg.message,
-        time: msg.createdAt,
-        read: msg.read
+        time: msg.createdAt || msg.time,
+        read: msg.read || false,
+        delivered: true  // These are already delivered since they're from DB
       }))
 
+      // Sort by timestamp to ensure proper order
+      messagesWithIds.sort((a, b) => new Date(a.time) - new Date(b.time))
+
+      console.log("📊 Setting", messagesWithIds.length, "messages to state")
       setMessages(messagesWithIds)
     } catch (err) {
-      console.error("Failed to fetch chat history:", err)
-      setError(err.message)
+      console.error("❌ Failed to fetch chat history:", err)
+      setError(err.message || "Failed to load messages")
       setMessages([])
     } finally {
       setLoading(false)
@@ -329,12 +422,14 @@ export default function Chat() {
   const handleSendMessage = () => {
     const socket = getSocket()
     if (!socket) {
+      console.error("❌ Socket not connected")
       setError("Socket not connected")
       setTimeout(() => setError(""), 3000)
       return
     }
 
     if (!selectedUserId) {
+      console.error("❌ No user selected")
       setError("Select a user first")
       setTimeout(() => setError(""), 3000)
       return
@@ -344,8 +439,22 @@ export default function Chat() {
       return
     }
 
+    if (!currentUserId || !currentUserName) {
+      console.error("❌ User not authenticated")
+      setError("User authentication failed")
+      setTimeout(() => setError(""), 3000)
+      return
+    }
+
     const messageText = messageInput.trim()
-    const tempId = `temp_${Date.now()}_${Math.random()}`
+    // Create unique ID with timestamp + random string to prevent collisions on rapid sends
+    const uniqueId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const tempId = `temp_${uniqueId}`
+    
+    console.log("📤 Sending message #", currentChatMessages.length + 1)
+    console.log("   uniqueId:", uniqueId)
+    console.log("   To user:", selectedUserId)
+    console.log("   Total messages in state before:", messages.length)
     
     // Optimistically add message to UI immediately
     const optimisticMessage = {
@@ -356,17 +465,33 @@ export default function Chat() {
       message: messageText,
       time: new Date().toISOString(),
       read: false,
-      sending: true // Flag to show sending state
+      sending: true,
+      delivered: false,
+      uniqueId: uniqueId // Add unique identifier for matching later
     }
     
-    setMessages((prev) => [...prev, optimisticMessage])
+    setMessages((prev) => {
+      console.log("📝 Adding optimistic message. Total messages before:", prev.length)
+      const updated = [...prev, optimisticMessage]
+      console.log("   Total messages after optimistic add:", updated.length)
+      return updated
+    })
+    
     setMessageInput("")
     setReplyingTo(null)
 
-    // Send via socket
+    // Send via socket with all necessary data + temp ID for matching
+    console.log("📡 Emitting PRIVATE_MESSAGE to socket")
+    
     socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
       toUserId: selectedUserId,
       message: messageText,
+      fromUserId: currentUserId,
+      fromUserName: currentUserName,
+      tempId: tempId,  // Send temp ID so server can echo it back
+      uniqueId: uniqueId
+    }, (acknowledgment) => {
+      console.log("📮 Socket acknowledgment received:", acknowledgment)
     })
   }
 
@@ -725,7 +850,7 @@ export default function Chat() {
                               isOwn
                                 ? "bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm"
                                 : "glass-effect text-white rounded-tl-sm border border-[rgb(var(--border-secondary))]"
-                            } ${m.sending ? 'opacity-70' : 'opacity-100'}`}
+                            }`}
                           >
                             <p className="wrap-break-word leading-relaxed">{m.message}</p>
                           </div>
@@ -734,22 +859,18 @@ export default function Chat() {
                             <span className="text-xs text-gray-500 font-medium">{formatTime(m.time)}</span>
                             {isOwn && (
                               <>
-                                {m.sending ? (
-                                  <div className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                                ) : m.read ? (
+                                {m.read ? (
                                   <CheckCheck className="w-3.5 h-3.5 text-green-400" />
                                 ) : (
                                   <Check className="w-3.5 h-3.5 text-gray-400" />
                                 )}
-                                {!m.sending && (
-                                  <button
-                                    onClick={() => handleDeleteMessage(m._id)}
-                                    className="opacity-0 group-hover/message:opacity-100 p-1.5 hover:bg-red-500/20 rounded-lg transition-all text-red-400 hover:text-red-300"
-                                    title="Delete message"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => handleDeleteMessage(m._id)}
+                                  className="opacity-0 group-hover/message:opacity-100 p-1.5 hover:bg-red-500/20 rounded-lg transition-all text-red-400 hover:text-red-300"
+                                  title="Delete message"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </>
                             )}
                           </div>
