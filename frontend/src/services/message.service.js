@@ -25,7 +25,7 @@ class MessageService {
       // Check cache (10 second TTL)
       if (this.chatCache.has(userId)) {
         const cached = this.chatCache.get(userId)
-        if (Date.now() - cached.time < 10000) {
+        if (Date.now() - cached.time < 1000) {
           console.log("✅ Using cached chat history for", userId)
           return cached.data
         }

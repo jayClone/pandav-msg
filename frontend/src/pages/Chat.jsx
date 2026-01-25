@@ -145,27 +145,17 @@ export default function Chat() {
         return
       }
 
-      console.log("📨 [PRIVATE_MESSAGE] Received message:", { _id: data._id, from: data.fromUserId, text: data.message.substring(0, 30) })
+      console.log("📨 [MSG] Received from", data.fromUserId)
 
-      // Check if in current chat first
       const isInCurrentChat = data.fromUserId === selectedUserId
-      console.log("📨 [PRIVATE_MESSAGE] Is in current chat:", isInCurrentChat)
 
-      // Prevent duplicate messages: check if message already exists
+      // Prevent duplicate messages
       setMessages((prev) => {
-        // Check by _id (database ID - most reliable)
         const messageExists = prev.some(m => m._id === data._id)
-        if (messageExists) {
-          console.log("⚠️ [PRIVATE_MESSAGE] Message already exists, skipping")
-          return prev
-        }
+        if (messageExists) return prev
 
-        // Also check by uniqueId if available (for cross-client deduplication)
         const existsByUniqueId = prev.some(m => m.uniqueId === data.uniqueId && data.uniqueId)
-        if (existsByUniqueId) {
-          console.log("⚠️ [PRIVATE_MESSAGE] Message already exists by uniqueId, skipping")
-          return prev
-        }
+        if (existsByUniqueId) return prev
 
         const newMessage = {
           _id: data._id,
@@ -174,30 +164,31 @@ export default function Chat() {
           toUserId: data.toUserId || currentUserId,
           message: data.message,
           time: data.time || data.createdAt || new Date().toISOString(),
-          read: isInCurrentChat,  // Mark as read if in current chat
+          read: isInCurrentChat,  // Mark as read instantly if in current chat
           delivered: data.delivered || true,
           uniqueId: data.uniqueId
         }
 
-        console.log("📨 [PRIVATE_MESSAGE] Adding new message to state:", { _id: newMessage._id, read: newMessage.read })
+        console.log(`📨 [MSG] ${isInCurrentChat ? '✅ Read' : '📌 Unread'}`)
         return [...prev, newMessage]
       })
 
-      // Send read receipt if message is in current chat
+      // If message is in current chat, send read receipt immediately
       if (isInCurrentChat) {
-        const socket = getSocket()
-        if (socket && socket.connected) {
-          console.log("📤 [READ_RECEIPT] Sending read receipt for message:", data._id)
-          socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
-            messageId: data._id,
-            senderId: data.fromUserId
-          })
-        } else {
-          console.warn("⚠️ [READ_RECEIPT] Socket not connected, cannot send read receipt")
-        }
+        // Send read receipt with small delay to ensure socket is ready
+        setTimeout(() => {
+          const socket = getSocket()
+          if (socket?.connected) {
+            socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
+              messageId: data._id,
+              senderId: data.fromUserId,
+              receiverId: currentUserId
+            })
+            console.log("📤 [READ_RECEIPT] Sent for:", data._id)
+          }
+        }, 50)
       } else {
-        // Update unread count only if message is from a different user than current chat
-        console.log("📨 [PRIVATE_MESSAGE] Message from different user, incrementing unread count")
+        // Increment unread count if from different user
         setUnreadCounts(prev => ({
           ...prev,
           [data.fromUserId]: (prev[data.fromUserId] || 0) + 1
@@ -258,25 +249,30 @@ export default function Chat() {
     }
 
     const handleMessageRead = (data) => {
-      // Update message read status to show blue tick
-      console.log("✅ [MESSAGE_READ] Received MESSAGE_READ event with messageId:", data.messageId)
-      console.log("✅ [MESSAGE_READ] Current messages count:", messages.length)
+      // Update message read status to show blue tick instantly
+      console.log("🔵 [MESSAGE_READ] Event received with data:", JSON.stringify(data))
       
+      if (!data.messageId) {
+        console.warn("⚠️ [MESSAGE_READ] No messageId in data:", data)
+        return
+      }
+
       setMessages((prev) => {
         const updated = prev.map(m => {
-          if (m._id === data.messageId) {
-            console.log("✅ [MESSAGE_READ] Found message to update:", { _id: m._id, oldRead: m.read, newRead: true })
+          if (m._id === data.messageId && !m.read) {
+            console.log("🔵 [MESSAGE_READ] ✅ Updated message:", m._id, "from read:", m.read, "to read: true")
             return { ...m, read: true }
           }
           return m
         })
         
-        // Verify the update happened
-        const updatedMessage = updated.find(m => m._id === data.messageId)
-        if (updatedMessage) {
-          console.log("✅ [MESSAGE_READ] Message state updated:", { _id: updatedMessage._id, read: updatedMessage.read })
+        // Debug: log what was actually updated
+        const foundMessage = updated.find(m => m._id === data.messageId)
+        if (foundMessage) {
+          console.log("🔵 [MESSAGE_READ] Result - Message read status:", foundMessage.read)
         } else {
-          console.warn("⚠️ [MESSAGE_READ] Message not found in state after update")
+          console.warn("❌ [MESSAGE_READ] Message not found in state:", data.messageId)
+          console.warn("📋 [MESSAGE_READ] Available message IDs:", prev.map(m => m._id))
         }
         
         return updated
@@ -350,7 +346,6 @@ export default function Chat() {
   useEffect(() => {
     if (selectedUserId) {
       fetchChatHistory(selectedUserId)
-      markAsRead(selectedUserId)
       // Clear unread count for selected user
       setUnreadCounts(prev => ({
         ...prev,
@@ -358,64 +353,119 @@ export default function Chat() {
       }))
       // Focus on input
       messageInputRef.current?.focus()
+      
+      // Polling: Check for updated read status every 500ms for instant blue ticks
+      const pollInterval = setInterval(() => {
+        updateMessageReadStatus(selectedUserId)
+      }, 20)
+      
+      return () => clearInterval(pollInterval)
     }
   }, [selectedUserId, currentUserId])
 
-  const fetchChatHistory = useCallback(async (userId) => {
+  // In the fetchChatHistory function, update it to properly mark messages as read:
+  const fetchChatHistory = async (userId) => {
     setLoading(true)
     setError("")
+    setMessages([])
 
     try {
       const data = await messageService.fetchChatHistory(userId)
+      console.log("✅ [CHAT_HISTORY] Fetched messages:", data.messages.length)
 
-      // Transform messages from API format to component format
+      // Map backend fields to frontend fields
       const messagesWithIds = data.messages.map(msg => ({
         _id: msg._id,
-        fromUserId: msg.senderId || msg.fromUserId,
-        toUserId: msg.receiverId || msg.toUserId,
-        fromUserName: msg.senderName || msg.fromUserName || "Unknown",
+        fromUserId: msg.fromUserId,
+        toUserId: msg.toUserId,
+        fromUserName: msg.senderName || "Unknown",
         message: msg.message,
-        time: msg.createdAt || msg.time,
-        read: msg.read || false,
-        delivered: true
+        time: msg.createdAt,
+        read: msg.read
       }))
 
-      messagesWithIds.sort((a, b) => new Date(a.time) - new Date(b.time))
       setMessages(messagesWithIds)
 
-      // Send read receipts for all unread messages from the other user
-      const socket = getSocket()
-      if (socket) {
-        messagesWithIds.forEach((msg) => {
-          // Only send read receipt for messages FROM the other user that are unread
-          if (msg.fromUserId === userId && !msg.read) {
-            socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
-              messageId: msg._id,
-              senderId: msg.fromUserId
-            })
-          }
-        })
+      // Get unread messages from the other user
+      const unreadMessages = messagesWithIds.filter(
+        msg => msg.fromUserId === userId && !msg.read
+      )
 
-        // Mark all messages in this chat as read
+      if (unreadMessages.length > 0) {
+        console.log(`📖 [READ_STATUS] Found ${unreadMessages.length} unread messages`)
+
+        // Step 1: Immediately mark all unread messages as read in UI (optimistic update)
         setMessages((prev) =>
           prev.map((m) => {
-            if (
-              (m.fromUserId === userId && m.toUserId === currentUserId) ||
-              (m.fromUserId === currentUserId && m.toUserId === userId)
-            ) {
+            if (m.fromUserId === userId && !m.read) {
               return { ...m, read: true }
             }
             return m
           })
         )
+
+        // Step 2: Send read receipts via socket
+        const socket = getSocket()
+        if (socket && socket.connected) {
+          unreadMessages.forEach((msg) => {
+            socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
+              messageId: msg._id,
+              senderId: msg.fromUserId,
+              receiverId: currentUserId
+            })
+          })
+          console.log(`📤 [READ_RECEIPT] Sent ${unreadMessages.length} read receipts`)
+        }
+
+        // Step 3: Persist to database
+        try {
+          await messageService.markMessagesAsRead(userId)
+          console.log(`✅ [DATABASE] Marked ${unreadMessages.length} messages as read`)
+        } catch (apiErr) {
+          console.error("❌ [DATABASE] Failed to persist read status:", apiErr)
+        }
       }
     } catch (err) {
-      console.error("❌ Failed to fetch chat history:", err)
-      setError(err.message || "Failed to load messages")
+      console.error("❌ [CHAT_HISTORY] Failed to fetch:", err)
+      setError(err.message)
+      setMessages([])
     } finally {
       setLoading(false)
     }
-  }, [currentUserId])
+  }
+
+  // Backup mechanism: Poll for updated read status
+  const updateMessageReadStatus = async (userId) => {
+    try {
+      const data = await messageService.fetchChatHistory(userId)
+      
+      // Check if any sent messages have been marked as read
+      setMessages((prev) => {
+        let hasChanges = false
+        
+        const updated = prev.map((m) => {
+          // Only check sent messages from current user
+          if (m.fromUserId === currentUserId && !m.read) {
+            // Find the updated message from backend
+            const updatedMsg = data.messages.find(msg => msg._id === m._id)
+            
+            // If message is marked as read in DB but not in UI
+            if (updatedMsg && updatedMsg.read) {
+              console.log("🔵 [INSTANT_READ] Blue tick appeared for:", m._id)
+              hasChanges = true
+              return { ...m, read: true }
+            }
+          }
+          return m
+        })
+        
+        return hasChanges ? updated : prev
+      })
+    } catch (err) {
+      // Silently fail - this is just a backup mechanism
+      console.debug("[POLL] Read status update failed")
+    }
+  }
 
   const markAsRead = useCallback(async (userId) => {
     try {
@@ -981,7 +1031,7 @@ export default function Chat() {
                                 ) : m.sending ? (
                                   <span className="text-xs text-yellow-400 font-semibold" title="Sending...">⏳</span>
                                 ) : m.read ? (
-                                  <CheckCheck className="w-3.5 h-3.5 text-green-400" title="Read" />
+                                  <CheckCheck className="w-3.5 h-3.5 text-blue-400" title="Read" />
                                 ) : (
                                   <Check className="w-3.5 h-3.5 text-gray-400" title="Sent" />
                                 )}
