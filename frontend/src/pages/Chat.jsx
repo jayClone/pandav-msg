@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState, useRef } from "react"
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { SOCKET_EVENTS } from "@constants/socketEvents.js"
-import { connectSocket, disconnectSocket, getSocket } from "@socket/socketClient.js"
+import { connectSocket, disconnectSocket, getSocket, isSocketConnected, waitForSocket } from "@socket/socketClient.js"
 import { useNavigate } from "react-router-dom"
 import { jwtDecode } from "jwt-decode"
 import messageService from "@services/message.service.js"
@@ -16,16 +16,11 @@ import {
   CheckCheck,
   Circle,
   Settings,
-  Moon,
-  Sun,
   Volume2,
   VolumeX,
   Paperclip,
   Smile,
-  Image as ImageIcon,
   X,
-  ChevronDown,
-  Archive,
   Pin,
   Bell,
   BellOff
@@ -55,24 +50,24 @@ export default function Chat() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [replyingTo, setReplyingTo] = useState(null)
   const [editingMessage, setEditingMessage] = useState(null)
+  const typingTimeoutRef = useRef(null)
+  const lastTypingTimeRef = useRef(0)
 
-  const token = useMemo(() => {
-    return localStorage.getItem("token")
-  }, [])
+  const token = localStorage.getItem("token")
 
-  const authState = useMemo(() => {
-    if (!token) return { currentUserName: "", currentUserId: "" }
+  let authState = { currentUserName: "", currentUserId: "" }
 
+  if (token) {
     try {
       const decoded = jwtDecode(token)
-      return {
+      authState = {
         currentUserName: decoded.name,
         currentUserId: decoded.userId,
       }
     } catch {
-      return { currentUserName: "", currentUserId: "" }
+      authState = { currentUserName: "", currentUserId: "" }
     }
-  }, [token])
+  }
 
   const { currentUserName, currentUserId } = authState
 
@@ -103,9 +98,13 @@ export default function Chat() {
     }
   }, [])
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom when new messages arrive - use requestAnimationFrame for smooth performance
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    if (messagesEndRef.current) {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" })
+      })
+    }
   }, [messages])
 
   // Socket connection effect
@@ -122,84 +121,184 @@ export default function Chat() {
     }
 
     const handleOnlineUsers = (users) => {
-      setOnlineUsers(users || [])
+      setOnlineUsers((prevUsers) => {
+        // Only update if users list actually changed
+        if (prevUsers.length === users?.length) {
+          const isSame = prevUsers.every((prevUser) =>
+            users.some(
+              (u) =>
+                u.userId === prevUser.userId &&
+                u.name === prevUser.name &&
+                u.online === prevUser.online
+            )
+          )
+          if (isSame) return prevUsers // Don't re-render if nothing changed
+        }
+        return users || []
+      })
     }
 
     const handlePrivateMessage = (data) => {
-      console.log("📨 Received message:", data)
-      
-      setMessages((prev) => [
-        ...prev,
-        {
-          _id: data._id || `temp_${Date.now()}`,
+      // Validate message data
+      if (!data._id || !data.fromUserId || !data.message) {
+        console.error("❌ Invalid message data:", data)
+        return
+      }
+
+      console.log("📨 [MSG] Received from", data.fromUserId)
+
+      const isInCurrentChat = data.fromUserId === selectedUserId
+
+      // Prevent duplicate messages
+      setMessages((prev) => {
+        const messageExists = prev.some(m => m._id === data._id)
+        if (messageExists) return prev
+
+        const existsByUniqueId = prev.some(m => m.uniqueId === data.uniqueId && data.uniqueId)
+        if (existsByUniqueId) return prev
+
+        const newMessage = {
+          _id: data._id,
           fromUserId: data.fromUserId,
           fromUserName: data.fromUserName || "Unknown",
-          toUserId: data.toUserId,
+          toUserId: data.toUserId || currentUserId,
           message: data.message,
-          time: data.time || new Date().toISOString(),
-          read: false,
-        },
-      ])
+          time: data.time || data.createdAt || new Date().toISOString(),
+          read: isInCurrentChat,  // Mark as read instantly if in current chat
+          delivered: data.delivered || true,
+          uniqueId: data.uniqueId
+        }
 
-      // Update unread count if message is not from current chat
-      if (data.fromUserId !== selectedUserId) {
+        console.log(`📨 [MSG] ${isInCurrentChat ? '✅ Read' : '📌 Unread'}`)
+        return [...prev, newMessage]
+      })
+
+      // If message is in current chat, send read receipt immediately
+      if (isInCurrentChat) {
+        // Send read receipt with small delay to ensure socket is ready
+        setTimeout(() => {
+          const socket = getSocket()
+          if (socket?.connected) {
+            socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
+              messageId: data._id,
+              senderId: data.fromUserId,
+              receiverId: currentUserId
+            })
+            console.log("📤 [READ_RECEIPT] Sent for:", data._id)
+          }
+        }, 50)
+      } else {
+        // Increment unread count if from different user
         setUnreadCounts(prev => ({
           ...prev,
           [data.fromUserId]: (prev[data.fromUserId] || 0) + 1
         }))
-        
+
         // Play notification sound and show notification
         playNotificationSound()
-        showNotification(data.fromUserName, data.message)
+        showNotification(data.fromUserName || "New Message", data.message)
       }
     }
 
     const handleMessageSent = (data) => {
-      console.log("💾 Message sent confirmation:", data)
-      
-      // Replace optimistic message with server response
+      // Replace optimistic message with server response using UNIQUE ID (most reliable)
       setMessages((prev) => {
-        // Find and replace the temporary message
-        const tempIndex = prev.findIndex(m => m.sending && m.message === data.message && m.toUserId === data.toUserId)
-        
+        // Strategy 1: Match by uniqueId (most reliable for rapid sends)
+        let tempIndex = prev.findIndex(m => m.uniqueId === data.uniqueId)
+
         if (tempIndex !== -1) {
-          // Replace the temporary message
           const updated = [...prev]
           updated[tempIndex] = {
-            _id: data._id,
-            fromUserId: data.fromUserId,
-            fromUserName: data.fromUserName,
+            _id: data._id || data.messageId,
+            fromUserId: data.fromUserId || currentUserId,
+            fromUserName: data.fromUserName || currentUserName,
             toUserId: data.toUserId,
             message: data.message,
-            time: data.time,
+            time: data.time || data.createdAt || new Date().toISOString(),
             read: false,
+            sending: false,
+            delivered: true,
+            uniqueId: undefined
           }
+          console.log("✅ [MESSAGE_SENT] Updated message with uniqueId:", data.uniqueId)
           return updated
         }
-        
-        // If not found, add it (fallback)
-        return [
-          ...prev,
-          {
-            _id: data._id,
-            fromUserId: data.fromUserId,
-            fromUserName: data.fromUserName,
+
+        // Strategy 2: Match by tempId if uniqueId not found (fallback)
+        tempIndex = prev.findIndex(m => m._id === data.tempId)
+        if (tempIndex !== -1) {
+          const updated = [...prev]
+          updated[tempIndex] = {
+            _id: data._id || data.messageId,
+            fromUserId: data.fromUserId || currentUserId,
+            fromUserName: data.fromUserName || currentUserName,
             toUserId: data.toUserId,
             message: data.message,
-            time: data.time,
+            time: data.time || data.createdAt || new Date().toISOString(),
             read: false,
+            sending: false,
+            delivered: true
           }
-        ]
+          console.log("✅ [MESSAGE_SENT] Updated message with tempId:", data.tempId)
+          return updated
+        }
+
+        console.warn("⚠️ [MESSAGE_SENT] Could not find message to update. Received data:", data)
+        return prev
+      })
+    }
+
+    const handleMessageRead = (data) => {
+      // Update message read status to show blue tick instantly
+      console.log("🔵 [MESSAGE_READ] Event received with data:", JSON.stringify(data))
+      
+      if (!data.messageId) {
+        console.warn("⚠️ [MESSAGE_READ] No messageId in data:", data)
+        return
+      }
+
+      setMessages((prev) => {
+        const updated = prev.map(m => {
+          if (m._id === data.messageId && !m.read) {
+            console.log("🔵 [MESSAGE_READ] ✅ Updated message:", m._id, "from read:", m.read, "to read: true")
+            return { ...m, read: true }
+          }
+          return m
+        })
+        
+        // Debug: log what was actually updated
+        const foundMessage = updated.find(m => m._id === data.messageId)
+        if (foundMessage) {
+          console.log("🔵 [MESSAGE_READ] Result - Message read status:", foundMessage.read)
+        } else {
+          console.warn("❌ [MESSAGE_READ] Message not found in state:", data.messageId)
+          console.warn("📋 [MESSAGE_READ] Available message IDs:", prev.map(m => m._id))
+        }
+        
+        return updated
       })
     }
 
     const handleUserOffline = ({ toUserId }) => {
+      // Only update specific user status, not entire list
       setOnlineUsers((prevUsers) => {
-        const user = prevUsers.find((u) => u.userId === toUserId)
-        const userName = user?.name || toUserId
-        setError(`User ${userName} is offline. Message not delivered.`)
-        setTimeout(() => setError(""), 3000)
-        return prevUsers
+        const updatedUsers = prevUsers.map((u) =>
+          u.userId === toUserId ? { ...u, online: false } : u
+        )
+        
+        // Check if anything actually changed
+        const userChanged = prevUsers.some(
+          (u) => u.userId === toUserId && u.online !== false
+        )
+        
+        if (userChanged) {
+          const user = prevUsers.find((u) => u.userId === toUserId)
+          const userName = user?.name || toUserId
+          setError(`User ${userName} is offline. Message not delivered.`)
+          setTimeout(() => setError(""), 3000)
+        }
+        
+        return userChanged ? updatedUsers : prevUsers
       })
     }
 
@@ -209,7 +308,6 @@ export default function Chat() {
     }
 
     const handleMessageDeleted = (data) => {
-      console.log("🔔 [MESSAGE_DELETED EVENT] Received:", data)
       setMessages((prev) => prev.filter((m) => m._id !== data.messageId))
     }
 
@@ -228,6 +326,7 @@ export default function Chat() {
     socket.on(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage)
     socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted)
     socket.on(SOCKET_EVENTS.TYPING, handleTyping)
+    socket.on(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead)
 
     // Cleanup on unmount
     return () => {
@@ -238,6 +337,8 @@ export default function Chat() {
       socket.off(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage)
       socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted)
       socket.off(SOCKET_EVENTS.TYPING, handleTyping)
+      socket.off(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead)
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
     }
   }, [token, navigate, currentUserId, currentUserName, selectedUserId])
 
@@ -245,7 +346,6 @@ export default function Chat() {
   useEffect(() => {
     if (selectedUserId) {
       fetchChatHistory(selectedUserId)
-      markAsRead(selectedUserId)
       // Clear unread count for selected user
       setUnreadCounts(prev => ({
         ...prev,
@@ -253,9 +353,17 @@ export default function Chat() {
       }))
       // Focus on input
       messageInputRef.current?.focus()
+      
+      // Polling: Check for updated read status every 500ms for instant blue ticks
+      const pollInterval = setInterval(() => {
+        updateMessageReadStatus(selectedUserId)
+      }, 20)
+      
+      return () => clearInterval(pollInterval)
     }
-  }, [selectedUserId])
+  }, [selectedUserId, currentUserId])
 
+  // In the fetchChatHistory function, update it to properly mark messages as read:
   const fetchChatHistory = async (userId) => {
     setLoading(true)
     setError("")
@@ -263,8 +371,9 @@ export default function Chat() {
 
     try {
       const data = await messageService.fetchChatHistory(userId)
-      console.log("✅ Fetched messages:", data.messages)
+      console.log("✅ [CHAT_HISTORY] Fetched messages:", data.messages.length)
 
+      // Map backend fields to frontend fields
       const messagesWithIds = data.messages.map(msg => ({
         _id: msg._id,
         fromUserId: msg.fromUserId,
@@ -276,8 +385,48 @@ export default function Chat() {
       }))
 
       setMessages(messagesWithIds)
+
+      // Get unread messages from the other user
+      const unreadMessages = messagesWithIds.filter(
+        msg => msg.fromUserId === userId && !msg.read
+      )
+
+      if (unreadMessages.length > 0) {
+        console.log(`📖 [READ_STATUS] Found ${unreadMessages.length} unread messages`)
+
+        // Step 1: Immediately mark all unread messages as read in UI (optimistic update)
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.fromUserId === userId && !m.read) {
+              return { ...m, read: true }
+            }
+            return m
+          })
+        )
+
+        // Step 2: Send read receipts via socket
+        const socket = getSocket()
+        if (socket && socket.connected) {
+          unreadMessages.forEach((msg) => {
+            socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
+              messageId: msg._id,
+              senderId: msg.fromUserId,
+              receiverId: currentUserId
+            })
+          })
+          console.log(`📤 [READ_RECEIPT] Sent ${unreadMessages.length} read receipts`)
+        }
+
+        // Step 3: Persist to database
+        try {
+          await messageService.markMessagesAsRead(userId)
+          console.log(`✅ [DATABASE] Marked ${unreadMessages.length} messages as read`)
+        } catch (apiErr) {
+          console.error("❌ [DATABASE] Failed to persist read status:", apiErr)
+        }
+      }
     } catch (err) {
-      console.error("Failed to fetch chat history:", err)
+      console.error("❌ [CHAT_HISTORY] Failed to fetch:", err)
       setError(err.message)
       setMessages([])
     } finally {
@@ -285,35 +434,60 @@ export default function Chat() {
     }
   }
 
-  const markAsRead = async (userId) => {
+  // Backup mechanism: Poll for updated read status
+  const updateMessageReadStatus = async (userId) => {
+    try {
+      const data = await messageService.fetchChatHistory(userId)
+      
+      // Check if any sent messages have been marked as read
+      setMessages((prev) => {
+        let hasChanges = false
+        
+        const updated = prev.map((m) => {
+          // Only check sent messages from current user
+          if (m.fromUserId === currentUserId && !m.read) {
+            // Find the updated message from backend
+            const updatedMsg = data.messages.find(msg => msg._id === m._id)
+            
+            // If message is marked as read in DB but not in UI
+            if (updatedMsg && updatedMsg.read) {
+              console.log("🔵 [INSTANT_READ] Blue tick appeared for:", m._id)
+              hasChanges = true
+              return { ...m, read: true }
+            }
+          }
+          return m
+        })
+        
+        return hasChanges ? updated : prev
+      })
+    } catch (err) {
+      // Silently fail - this is just a backup mechanism
+      console.debug("[POLL] Read status update failed")
+    }
+  }
+
+  const markAsRead = useCallback(async (userId) => {
     try {
       await messageService.markMessagesAsRead(userId)
     } catch (err) {
       console.error("Failed to mark as read:", err)
     }
-  }
+  }, [])
 
-  const handleDeleteMessage = async (messageId) => {
+  const handleDeleteMessage = useCallback(async (messageId) => {
     if (messageId.toString().startsWith('temp_')) {
-      console.log("🗑️ [DELETE TEMP] Removing unsent message:", messageId)
       setMessages((prev) => prev.filter((m) => m._id !== messageId))
       return
     }
 
     try {
-      console.log("🗑️ [DELETE] Attempting to delete:", messageId)
-      
       await messageService.deleteMessage(messageId)
-      console.log("✅ [DELETE DB] Message deleted from database")
-      
+
       setMessages((prev) => prev.filter((m) => m._id !== messageId))
-      
+
       const socket = getSocket()
       if (socket) {
-        console.log("📤 [DELETE SOCKET] Emitting MESSAGE_DELETED:", {
-          messageId: messageId,
-          toUserId: selectedUserId
-        })
         socket.emit(SOCKET_EVENTS.MESSAGE_DELETED, {
           messageId: messageId,
           toUserId: selectedUserId
@@ -324,17 +498,43 @@ export default function Chat() {
       setError(err.message)
       setTimeout(() => setError(""), 3000)
     }
-  }
+  }, [selectedUserId])
 
-  const handleSendMessage = () => {
+  const handleRetryMessage = useCallback((failedMessage) => {
+    // Remove the failed message
+    setMessages((prev) => prev.filter((m) => m._id !== failedMessage._id))
+    // Set input to the failed message text and send again
+    setMessageInput(failedMessage.message)
+  }, [])
+
+  const handleSendMessage = useCallback(() => {
     const socket = getSocket()
     if (!socket) {
-      setError("Socket not connected")
-      setTimeout(() => setError(""), 3000)
+      console.error("❌ Socket not initialized")
+      setError("Connection error. Please refresh the page.")
+      setTimeout(() => setError(""), 5000)
+      return
+    }
+
+    if (!isSocketConnected()) {
+      console.warn("⚠️ Socket not connected, waiting for connection...")
+      
+      // Wait for socket to connect, then send (silently, no error message)
+      waitForSocket()
+        .then(() => {
+          // Recursively call after socket is ready
+          handleSendMessage()
+        })
+        .catch((err) => {
+          console.error("❌ Socket connection failed:", err)
+          setError("Connection failed. Please check your internet.")
+          setTimeout(() => setError(""), 5000)
+        })
       return
     }
 
     if (!selectedUserId) {
+      console.error("❌ No user selected")
       setError("Select a user first")
       setTimeout(() => setError(""), 3000)
       return
@@ -344,9 +544,17 @@ export default function Chat() {
       return
     }
 
+    if (!currentUserId || !currentUserName) {
+      console.error("❌ User not authenticated")
+      setError("User authentication failed")
+      setTimeout(() => setError(""), 3000)
+      return
+    }
+
     const messageText = messageInput.trim()
-    const tempId = `temp_${Date.now()}_${Math.random()}`
-    
+    const uniqueId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const tempId = `temp_${uniqueId}`
+
     // Optimistically add message to UI immediately
     const optimisticMessage = {
       _id: tempId,
@@ -356,29 +564,99 @@ export default function Chat() {
       message: messageText,
       time: new Date().toISOString(),
       read: false,
-      sending: true // Flag to show sending state
+      sending: true,
+      delivered: false,
+      uniqueId: uniqueId
     }
-    
+
     setMessages((prev) => [...prev, optimisticMessage])
     setMessageInput("")
     setReplyingTo(null)
 
-    // Send via socket
     socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
       toUserId: selectedUserId,
       message: messageText,
-    })
-  }
+      fromUserId: currentUserId,
+      fromUserName: currentUserName,
+      tempId: tempId,
+      uniqueId: uniqueId
+    }, (error, response) => {
+      console.log("📨 [CALLBACK] Message callback received. Error:", error, "Response:", response)
+      
+      if (error) {
+        console.error("❌ Message send error:", error)
+        // Mark message as failed
+        setMessages((prev) => 
+          prev.map(m => 
+            m._id === tempId ? { ...m, sending: false, delivered: false, error: true } : m
+          )
+        )
+        return
+      }
 
-  const handleTyping = (isTyping) => {
+      if (!response || response.success === false) {
+        console.error("❌ Server rejected message:", response?.message)
+        setMessages((prev) => 
+          prev.map(m => 
+            m._id === tempId ? { ...m, sending: false, delivered: false, error: true } : m
+          )
+        )
+        return
+      }
+
+      // Message sent successfully - update with real ID
+      console.log("✅ Message sent successfully. Response:", response)
+      setMessages((prev) => 
+        prev.map(m => {
+          if (m._id === tempId) {
+            return {
+              ...m,
+              _id: response._id,
+              sending: false,
+              delivered: response.delivered,
+              uniqueId: undefined
+            }
+          }
+          return m
+        })
+      )
+    })
+  }, [selectedUserId, messageInput, currentUserId, currentUserName])
+
+  const handleTyping = useCallback((isTyping) => {
     const socket = getSocket()
-    if (socket && selectedUserId) {
+    if (!socket || !selectedUserId) return
+
+    const now = Date.now()
+    const timeSinceLastTyping = now - lastTypingTimeRef.current
+
+    // Only emit typing event every 300ms max
+    if (timeSinceLastTyping < 300 && isTyping) return
+
+    lastTypingTimeRef.current = now
+
+    if (isTyping) {
       socket.emit(SOCKET_EVENTS.TYPING, {
         toUserId: selectedUserId,
-        isTyping
+        isTyping: true
+      })
+
+      // Auto stop typing after 2 seconds
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+      typingTimeoutRef.current = setTimeout(() => {
+        socket.emit(SOCKET_EVENTS.TYPING, {
+          toUserId: selectedUserId,
+          isTyping: false
+        })
+      }, 2000)
+    } else {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+      socket.emit(SOCKET_EVENTS.TYPING, {
+        toUserId: selectedUserId,
+        isTyping: false
       })
     }
-  }
+  }, [selectedUserId])
 
   const handleLogout = () => {
     localStorage.removeItem("token")
@@ -386,18 +664,18 @@ export default function Chat() {
     navigate("/login")
   }
 
-  const togglePinChat = (userId) => {
-    setPinnedChats(prev => 
-      prev.includes(userId) 
+  const togglePinChat = useCallback((userId) => {
+    setPinnedChats(prev =>
+      prev.includes(userId)
         ? prev.filter(id => id !== userId)
         : [...prev, userId]
     )
-  }
+  }, [])
 
-  const getDisplayName = (userId) => {
+  const getDisplayName = useCallback((userId) => {
     const user = onlineUsers.find((u) => u.userId === userId)
     return user?.name || userId
-  }
+  }, [onlineUsers])
 
   const formatTime = (timestamp) => {
     const date = new Date(timestamp)
@@ -410,31 +688,35 @@ export default function Chat() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 
-  const filteredUsers = onlineUsers
-    .filter((user) => user.userId !== currentUserId)
-    .filter((user) => 
-      user.name.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    .sort((a, b) => {
-      // Pin sorting
-      const aIsPinned = pinnedChats.includes(a.userId)
-      const bIsPinned = pinnedChats.includes(b.userId)
-      if (aIsPinned && !bIsPinned) return -1
-      if (!aIsPinned && bIsPinned) return 1
-      
-      // Unread sorting
-      const aUnread = unreadCounts[a.userId] || 0
-      const bUnread = unreadCounts[b.userId] || 0
-      return bUnread - aUnread
-    })
+  const filteredUsers = useMemo(() => {
+    return onlineUsers
+      .filter((user) => user.userId !== currentUserId)
+      .filter((user) => 
+        user.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+      .sort((a, b) => {
+        // Pin sorting
+        const aIsPinned = pinnedChats.includes(a.userId)
+        const bIsPinned = pinnedChats.includes(b.userId)
+        if (aIsPinned && !bIsPinned) return -1
+        if (!aIsPinned && bIsPinned) return 1
+        
+        // Unread sorting
+        const aUnread = unreadCounts[a.userId] || 0
+        const bUnread = unreadCounts[b.userId] || 0
+        return bUnread - aUnread
+      })
+  }, [onlineUsers, currentUserId, searchQuery, pinnedChats, unreadCounts])
 
-  const currentChatMessages = messages.filter((m) => {
-    if (!selectedUserId) return false
-    return (
-      (m.fromUserId === currentUserId && m.toUserId === selectedUserId) ||
-      (m.fromUserId === selectedUserId && m.toUserId === currentUserId)
-    )
-  })
+  const currentChatMessages = useMemo(() => {
+    return messages.filter((m) => {
+      if (!selectedUserId) return false
+      return (
+        (m.fromUserId === currentUserId && m.toUserId === selectedUserId) ||
+        (m.fromUserId === selectedUserId && m.toUserId === currentUserId)
+      )
+    })
+  }, [messages, selectedUserId, currentUserId])
 
   const commonEmojis = ['😊', '👍', '❤️', '😂', '🎉', '🔥', '✅', '👏', '🙏', '💯']
 
@@ -443,43 +725,45 @@ export default function Chat() {
       {/* Sidebar - Users List */}
       <div className="w-80 glass-effect border-r border-[rgb(var(--border-secondary))] flex flex-col">
         {/* Header */}
-        <div className="p-4 bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))]">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <div className="w-10 h-10 rounded-full bg-linear-to-br from-green-500 to-emerald-600 flex items-center justify-center text-black font-bold glow-green">
-                  {currentUserName.charAt(0).toUpperCase()}
+          <div className="p-4 bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))]">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="relative shrink-0">
+            <div className="w-10 h-10 rounded-full bg-linear-to-br from-green-500 to-emerald-600 flex items-center justify-center text-amber-100 font-bold glow-green">
+              {currentUserName.charAt(0).toUpperCase()}
+            </div>
+            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 border-2 border-[rgb(var(--bg-secondary))] rounded-full pulse-glow"></div>
                 </div>
-                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 border-2 border-[rgb(var(--bg-secondary))] rounded-full pulse-glow"></div>
+                <div className="flex-1 min-w-0">
+            <h2 className="text-gray-500 font-normal truncate" title={currentUserName}>
+              {currentUserName.length > 20 ? `${currentUserName.substring(0, 20)}...` : currentUserName}
+            </h2>
+            <p className="text-xs text-green-400 flex items-center gap-1 font-medium">
+              <Circle className="w-2 h-2 fill-current animate-pulse" />
+              Active Now
+            </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-black font-semibold">{currentUserName}</h2>
-                <p className="text-xs text-green-400 flex items-center gap-1 font-medium">
-                  <Circle className="w-2 h-2 fill-current animate-pulse" />
-                  Active Now
-                </p>
+              <div className="flex gap-2 shrink-0">
+                <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400"
+            title="Settings"
+                >
+            <Settings className="w-5 h-5" />
+                </button>
+                <button
+            onClick={handleLogout}
+            className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400"
+            title="Logout"
+            aria-label="Logout"
+                >
+            <LogOut className="w-5 h-5" />
+                </button>
               </div>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowSettings(!showSettings)}
-                className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400"
-                title="Settings"
-              >
-                <Settings className="w-5 h-5" />
-              </button>
-              <button
-                onClick={handleLogout}
-                className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400"
-                title="Logout"
-                aria-label="Logout"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
 
-          {/* Settings Panel */}
+            {/* Settings Panel */}
           {showSettings && (
             <div className="mb-4 p-3 glass-effect rounded-lg space-y-2 animate-in slide-in-from-top">
               <div className="flex items-center justify-between">
@@ -582,7 +866,7 @@ export default function Chat() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <div className="font-semibold truncate text-black">{user.name}</div>
+                            <div className="font-semibold text-black truncate max-w-xs" title={user.name}>{user.name}</div>
                             {isPinned && <Pin className="w-3 h-3 text-green-400 shrink-0" />}
                           </div>
                           <div className={`text-xs ${selectedUserId === user.userId ? 'text-green-300' : 'text-gray-500'}`}>
@@ -722,34 +1006,42 @@ export default function Chat() {
                         <div className={`relative group/message ${isOwn ? "items-end" : "items-start"} flex flex-col`}>
                           <div
                             className={`px-4 py-2.5 rounded-2xl shadow-lg backdrop-blur-sm transition-all ${
-                              isOwn
+                              m.error
+                                ? "bg-red-600/20 border border-red-500/50 text-red-300"
+                                : isOwn
                                 ? "bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm"
                                 : "glass-effect text-white rounded-tl-sm border border-[rgb(var(--border-secondary))]"
-                            } ${m.sending ? 'opacity-70' : 'opacity-100'}`}
+                            }`}
                           >
                             <p className="wrap-break-word leading-relaxed">{m.message}</p>
                           </div>
-                          
+
                           <div className={`flex items-center gap-2 mt-1.5 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
                             <span className="text-xs text-gray-500 font-medium">{formatTime(m.time)}</span>
                             {isOwn && (
                               <>
-                                {m.sending ? (
-                                  <div className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                                ) : m.read ? (
-                                  <CheckCheck className="w-3.5 h-3.5 text-green-400" />
-                                ) : (
-                                  <Check className="w-3.5 h-3.5 text-gray-400" />
-                                )}
-                                {!m.sending && (
+                                {m.error ? (
                                   <button
-                                    onClick={() => handleDeleteMessage(m._id)}
-                                    className="opacity-0 group-hover/message:opacity-100 p-1.5 hover:bg-red-500/20 rounded-lg transition-all text-red-400 hover:text-red-300"
-                                    title="Delete message"
+                                    onClick={() => handleRetryMessage(m)}
+                                    className="text-xs text-red-400 font-semibold hover:text-red-300 hover:underline"
+                                    title="Retry sending"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    Retry ✗
                                   </button>
+                                ) : m.sending ? (
+                                  <span className="text-xs text-yellow-400 font-semibold" title="Sending...">⏳</span>
+                                ) : m.read ? (
+                                  <CheckCheck className="w-3.5 h-3.5 text-blue-400" title="Read" />
+                                ) : (
+                                  <Check className="w-3.5 h-3.5 text-gray-400" title="Sent" />
                                 )}
+                                <button
+                                  onClick={() => handleDeleteMessage(m._id)}
+                                  className="opacity-0 group-hover/message:opacity-100 p-1.5 hover:bg-red-500/20 rounded-lg transition-all text-red-400 hover:text-red-300"
+                                  title="Delete message"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </>
                             )}
                           </div>
