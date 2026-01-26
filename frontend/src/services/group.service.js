@@ -53,9 +53,15 @@ class GroupService {
         throw new Error(data.message || 'Failed to fetch group')
       }
 
-      return data.data
+      // Transform backend format to frontend format
+      const group = {
+        ...data.data,
+        members: data.data.participants || [] // Backend uses 'participants', frontend uses 'members'
+      }
+
+      return group
     } catch (error) {
-      console.error('getGroup error:', error)
+      console.error('getGroup error:', error.message || error)
       throw error
     }
   }
@@ -69,18 +75,35 @@ class GroupService {
         throw new Error(data.message || 'Failed to fetch group messages')
       }
 
+      // Transform backend message format to frontend format
+      const messages = (data.data || []).map(msg => ({
+        _id: msg._id,
+        content: msg.message, // Backend uses 'message', frontend uses 'content'
+        sender: msg.senderId, // Backend uses 'senderId', frontend uses 'sender'
+        createdAt: msg.createdAt,
+        read: msg.read
+      }))
+
       return {
-        messages: data.data || [],
+        messages: messages,
         count: data.count,
+        totalCount: data.totalCount,
+        page: data.page,
+        totalPages: data.totalPages
       }
     } catch (error) {
-      console.error('getGroupMessages error:', error)
+      console.error('getGroupMessages error:', error.message || error)
       throw error
     }
   }
 
   async addMember(groupId, memberId) {
     try {
+      if (!groupId || !memberId) {
+        throw new Error('Group ID and Member ID are required')
+      }
+      console.log('GroupService.addMember:', { groupId: String(groupId), memberId: String(memberId) })
+      
       const response = await groupApi.addMember(groupId, memberId)
       const { data } = response
 
@@ -88,15 +111,24 @@ class GroupService {
         throw new Error(data.message || 'Failed to add member')
       }
 
-      return data.data
+      // Return transformed group with members array
+      return {
+        ...data.data,
+        members: data.data.participants || [] // Backend uses 'participants', frontend uses 'members'
+      }
     } catch (error) {
-      console.error('addMember error:', error)
+      console.error('addMember error:', error.message || error)
       throw error
     }
   }
 
   async removeMember(groupId, memberId) {
     try {
+      if (!groupId || !memberId) {
+        throw new Error('Group ID and Member ID are required')
+      }
+      console.log('GroupService.removeMember:', { groupId: String(groupId), memberId: String(memberId) })
+      
       const response = await groupApi.removeMember(groupId, memberId)
       const { data } = response
 
@@ -104,9 +136,34 @@ class GroupService {
         throw new Error(data.message || 'Failed to remove member')
       }
 
-      return true
+      // Return transformed group with members array
+      return {
+        ...data.data,
+        members: data.data.participants || []
+      }
     } catch (error) {
-      console.error('removeMember error:', error)
+      console.error('removeMember error:', error.message || error)
+      throw error
+    }
+  }
+
+  async leaveGroup(groupId) {
+    try {
+      if (!groupId) {
+        throw new Error('Group ID is required')
+      }
+      console.log('GroupService.leaveGroup:', { groupId: String(groupId) })
+      
+      const response = await groupApi.leaveGroup(groupId)
+      const { data } = response
+
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to leave group')
+      }
+
+      return data.data
+    } catch (error) {
+      console.error('leaveGroup error:', error.message || error)
       throw error
     }
   }

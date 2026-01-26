@@ -29,16 +29,36 @@ const groupApi = {
   /**
    * Add member to group
    */
-  addMember: (groupId, memberId) =>
-    API.post(`/groups/${groupId}/members`, { memberId }),
+  addMember: (groupId, memberId) => {
+    if (!groupId || !memberId) {
+      throw new Error('Group ID and Member ID are required')
+    }
+    return API.post(`/groups/${String(groupId)}/members`, { 
+      userId: String(memberId)
+    })
+  },
 
   /**
    * Remove member from group
    */
-  removeMember: (groupId, memberId) =>
-    API.delete(`/groups/${groupId}/members`, {
-      data: { memberId }
-    }),
+  removeMember: (groupId, memberId) => {
+    if (!groupId || !memberId) {
+      throw new Error('Group ID and Member ID are required')
+    }
+    return API.delete(`/groups/${String(groupId)}/members`, {
+      data: { userId: String(memberId) }
+    })
+  },
+
+  /**
+   * Leave a group
+   */
+  leaveGroup: (groupId) => {
+    if (!groupId) {
+      throw new Error('Group ID is required')
+    }
+    return API.post(`/groups/${String(groupId)}/leave`)
+  },
 }
 
 export default groupApi

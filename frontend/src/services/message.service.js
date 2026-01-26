@@ -113,6 +113,72 @@ class MessageService {
     }
   }
 
+  // Send private message
+  async sendPrivateMessage(receiverId, message) {
+    try {
+      if (!receiverId || !message) {
+        throw new Error("Receiver ID and message are required")
+      }
+
+      const response = await messageApi.sendPrivateMessage(receiverId, message)
+      const { data } = response
+
+      if (!data.success) {
+        throw new Error(data.message || "Failed to send message")
+      }
+
+      // Invalidate caches since new message was sent
+      this.invalidateAllCache()
+
+      return data.data
+    } catch (error) {
+      console.error("sendPrivateMessage error:", error)
+      throw error
+    }
+  }
+
+  // Send group message
+  async sendGroupMessage(groupId, message) {
+    try {
+      if (!groupId || !message) {
+        throw new Error("Group ID and message are required")
+      }
+
+      const response = await messageApi.sendGroupMessage(groupId, message)
+      const { data } = response
+
+      if (!data.success) {
+        throw new Error(data.message || "Failed to send message")
+      }
+
+      return data.data
+    } catch (error) {
+      console.error("sendGroupMessage error:", error)
+      throw error
+    }
+  }
+
+  // Mark group messages as read
+  async markGroupMessagesAsRead(groupId) {
+    try {
+      if (!groupId) {
+        throw new Error("Group ID is required")
+      }
+
+      const response = await messageApi.markGroupMessagesAsRead(groupId)
+      const { data } = response
+
+      if (!data.success) {
+        throw new Error(data.message || "Failed to mark group messages as read")
+      }
+
+      return true
+    } catch (error) {
+      console.error("markGroupMessagesAsRead error:", error)
+      throw error
+    }
+  }
+
   // Delete a message
   async deleteMessage(messageId) {
     try {

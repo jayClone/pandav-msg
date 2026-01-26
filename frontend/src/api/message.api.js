@@ -18,6 +18,24 @@ const messageApi = {
     return API.put(`/messages/read/${userId}`)
   },
 
+  // Send private message
+  sendPrivateMessage: (receiverId, message) => {
+    if (!receiverId || !message) throw new Error("receiverId and message are required")
+    return API.post("/messages/private", { receiverId, message })
+  },
+
+  // Send group message
+  sendGroupMessage: (groupId, message) => {
+    if (!groupId || !message) throw new Error("groupId and message are required")
+    return API.post("/messages/group", { groupId, message })
+  },
+
+  // Mark group messages as read
+  markGroupMessagesAsRead: (groupId) => {
+    if (!groupId) throw new Error("groupId is required")
+    return API.put(`/messages/group/${groupId}/read`)
+  },
+
   // Delete a message
   deleteMessage: (messageId) => {
     if (!messageId) throw new Error("messageId is required")
