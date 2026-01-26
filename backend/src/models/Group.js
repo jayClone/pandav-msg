@@ -17,9 +17,9 @@ const groupSchema = new mongoose.Schema(
       required: [true, 'Participants are required'],
       validate: {
         validator: function(v) {
-          return v.length >= 2;
+          return v.length >= 1;
         },
-        message: 'Group must have at least 2 participants'
+        message: 'Group must have at least 1 participants'
       }
     },
 

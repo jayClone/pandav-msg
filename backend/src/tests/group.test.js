@@ -870,4 +870,443 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
       console.log('✅ TC-G-BONUS-04 PASSED: Member removed');
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // LEAVE GROUP FEATURE
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('F) LEAVE GROUP FEATURE', () => {
+    let groupA, user1, user2, user3, token1, token2, token3;
+
+    beforeEach(async () => {
+      await Group.deleteMany({});
+      await Message.deleteMany({});
+      await User.deleteMany({});
+
+      // ✅ USER 1 - ADMIN
+      const reg1 = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Leave User 1',
+          email: 'leave1@example.com',
+          password: 'Leave123!'
+        })
+        .timeout(15000);
+
+      // ✅ VERIFY RESPONSE STRUCTURE
+      if (!reg1.body.data) {
+        console.error('❌ Registration failed:', reg1.body);
+        throw new Error(`User1 registration failed: ${JSON.stringify(reg1.body)}`);
+      }
+
+      user1 = reg1.body.data;
+      token1 = reg1.body.token;
+
+      console.log('✅ User1 registered:', { id: user1._id, name: user1.name });
+
+      // ✅ USER 2
+      const reg2 = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Leave User 2',
+          email: 'leave2@example.com',
+          password: 'Leave123!'
+        })
+        .timeout(15000);
+
+      if (!reg2.body.data) {
+        console.error('❌ Registration failed:', reg2.body);
+        throw new Error(`User2 registration failed: ${JSON.stringify(reg2.body)}`);
+      }
+
+      user2 = reg2.body.data;
+      token2 = reg2.body.token;
+
+      console.log('✅ User2 registered:', { id: user2._id, name: user2.name });
+
+      // ✅ USER 3
+      const reg3 = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Leave User 3',
+          email: 'leave3@example.com',
+          password: 'Leave123!'
+        })
+        .timeout(15000);
+
+      if (!reg3.body.data) {
+        console.error('❌ Registration failed:', reg3.body);
+        throw new Error(`User3 registration failed: ${JSON.stringify(reg3.body)}`);
+      }
+
+      user3 = reg3.body.data;
+      token3 = reg3.body.token;
+
+      console.log('✅ User3 registered:', { id: user3._id, name: user3.name });
+
+      // ✅ CREATE GROUP WITH USER1 AS ADMIN
+      const groupRes = await request(app)
+        .post('/api/v1/groups')
+        .set('Authorization', `Bearer ${token1}`)
+        .send({
+          name: 'Leave Test Group',
+          memberIds: [user2._id, user3._id]  // ✅ NOW user2 IS DEFINED
+        })
+        .timeout(15000);
+
+      if (!groupRes.body.data) {
+        console.error('❌ Group creation failed:', groupRes.body);
+        throw new Error(`Group creation failed: ${JSON.stringify(groupRes.body)}`);
+      }
+
+      groupA = groupRes.body.data;
+      console.log('✅ Group created:', { id: groupA._id, name: groupA.name });
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE F.1: Member can leave group
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-G-36: Member can leave group', async () => {
+      const response = await request(app)
+        .post(`/api/v1/groups/${groupA._id}/leave`)
+        .set('Authorization', `Bearer ${token2}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.message).toContain('left the group');
+
+      // Verify user2 is removed
+      const participantIds = response.body.data.participants.map(p => p._id || p);
+      expect(participantIds.some(id => id.toString() === user2._id.toString())).toBe(false);
+
+      console.log('✅ TC-G-36 PASSED: Member left group successfully');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE F.2: Non-member cannot leave
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-G-37: Non-member cannot leave group', async () => {
+      const otherUserReg = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Other User Leave',
+          email: 'otherleave@example.com',
+          password: 'Other123!'
+        })
+        .timeout(15000);
+
+      if (!otherUserReg.body.data) {
+        throw new Error('Other user registration failed');
+      }
+
+      const otherToken = otherUserReg.body.token;
+
+      const response = await request(app)
+        .post(`/api/v1/groups/${groupA._id}/leave`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('not a member');
+
+      console.log('✅ TC-G-37 PASSED: Non-member cannot leave');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE F.3: Admin cannot leave if last member
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-G-38: Admin cannot leave if last member', async () => {
+      // Remove all other members first
+      const removeRes1 = await request(app)
+        .delete(`/api/v1/groups/${groupA._id}/members`)
+        .set('Authorization', `Bearer ${token1}`)
+        .send({ userId: user2._id })
+        .timeout(15000);
+
+      if (!removeRes1.body.success) {
+        console.log('⚠️ First removal response:', removeRes1.body);
+      }
+
+      const removeRes2 = await request(app)
+        .delete(`/api/v1/groups/${groupA._id}/members`)
+        .set('Authorization', `Bearer ${token1}`)
+        .send({ userId: user3._id })
+        .timeout(15000);
+
+      if (!removeRes2.body.success) {
+        console.log('⚠️ Second removal response:', removeRes2.body);
+      }
+
+      // Try to leave as admin
+      const response = await request(app)
+        .post(`/api/v1/groups/${groupA._id}/leave`)
+        .set('Authorization', `Bearer ${token1}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(403);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('cannot leave an empty group');
+
+      console.log('✅ TC-G-38 PASSED: Admin prevented from leaving empty group');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE F.4: Admin auto-reassigned when admin leaves
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-G-39: Admin reassigned when admin leaves', async () => {
+      const response = await request(app)
+        .post(`/api/v1/groups/${groupA._id}/leave`)
+        .set('Authorization', `Bearer ${token1}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+
+      // Verify new admin is one of remaining members
+      const newAdminId = response.body.data.adminId._id || response.body.data.adminId;
+      const participantIds = response.body.data.participants.map(p => p._id || p);
+
+      expect(participantIds.some(id => id.toString() === newAdminId.toString())).toBe(true);
+      expect(newAdminId.toString()).not.toBe(user1._id.toString());
+
+      console.log('✅ TC-G-39 PASSED: Admin reassigned correctly');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE F.5: Leave reduces participant count
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-G-40: Leave reduces participant count', async () => {
+      const initialCount = groupA.participants.length;
+
+      const response = await request(app)
+        .post(`/api/v1/groups/${groupA._id}/leave`)
+        .set('Authorization', `Bearer ${token2}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.participants.length).toBe(initialCount - 1);
+
+      console.log('✅ TC-G-40 PASSED: Participant count reduced');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE F.6: Invalid group ID rejected
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-G-41: Invalid group ID rejected', async () => {
+      const response = await request(app)
+        .post('/api/v1/groups/invalid_id/leave')
+        .set('Authorization', `Bearer ${token1}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('Invalid');
+
+      console.log('✅ TC-G-41 PASSED: Invalid ID rejected');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // TEST SUITE G: MARK GROUP MESSAGES AS READ
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('G) MARK GROUP MESSAGES AS READ', () => {
+    let groupA, user1, user2, token1, token2;
+
+    beforeEach(async () => {
+      await Group.deleteMany({});
+      await Message.deleteMany({});
+      await User.deleteMany({});
+
+      // ✅ USER 1
+      const reg1 = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Read User 1',
+          email: 'read1@example.com',
+          password: 'Read123!'
+        })
+        .timeout(15000);
+
+      if (!reg1.body.data) {
+        throw new Error(`User1 registration failed: ${JSON.stringify(reg1.body)}`);
+      }
+
+      user1 = reg1.body.data;
+      token1 = reg1.body.token;
+
+      console.log('✅ User1 registered:', { id: user1._id });
+
+      // ✅ USER 2
+      const reg2 = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Read User 2',
+          email: 'read2@example.com',
+          password: 'Read123!'
+        })
+        .timeout(15000);
+
+      if (!reg2.body.data) {
+        throw new Error(`User2 registration failed: ${JSON.stringify(reg2.body)}`);
+      }
+
+      user2 = reg2.body.data;
+      token2 = reg2.body.token;
+
+      console.log('✅ User2 registered:', { id: user2._id });
+
+      // ✅ CREATE GROUP
+      const groupRes = await request(app)
+        .post('/api/v1/groups')
+        .set('Authorization', `Bearer ${token1}`)
+        .send({
+          name: 'Read Test Group',
+          memberIds: [user2._id]
+        })
+        .timeout(15000);
+
+      if (!groupRes.body.data) {
+        throw new Error(`Group creation failed: ${JSON.stringify(groupRes.body)}`);
+      }
+
+      groupA = groupRes.body.data;
+      console.log('✅ Group created:', { id: groupA._id });
+
+      // ✅ SEND MESSAGES FROM USER1
+      for (let i = 0; i < 5; i++) {
+        const msgRes = await request(app)
+          .post('/api/v1/messages/group')
+          .set('Authorization', `Bearer ${token1}`)
+          .send({
+            groupId: groupA._id,
+            message: `Test message ${i + 1}`
+          })
+          .timeout(15000);
+
+        if (!msgRes.body.data) {
+          console.log('⚠️ Message send response:', msgRes.body);
+        }
+      }
+
+      console.log('✅ 5 messages sent to group');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE G.1: Mark group messages as read
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-M-18: Mark all group messages as read', async () => {
+      const response = await request(app)
+        .put(`/api/v1/messages/group/${groupA._id}/read`)
+        .set('Authorization', `Bearer ${token2}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.markedCount).toBeGreaterThanOrEqual(0);
+
+      console.log('✅ TC-M-18 PASSED: Group messages marked as read');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE G.2: Non-member cannot mark as read
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-M-19: Non-member cannot mark group messages as read', async () => {
+      const otherReg = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Other Read User',
+          email: 'otherread@example.com',
+          password: 'Other123!'
+        })
+        .timeout(15000);
+
+      if (!otherReg.body.data) {
+        throw new Error('Other user registration failed');
+      }
+
+      const otherToken = otherReg.body.token;
+
+      const response = await request(app)
+        .put(`/api/v1/messages/group/${groupA._id}/read`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(403);
+      expect(response.body.success).toBe(false);
+
+      console.log('✅ TC-M-19 PASSED: Non-member prevented');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE G.3: Invalid group ID rejected
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-M-20: Invalid group ID rejected', async () => {
+      const response = await request(app)
+        .put('/api/v1/messages/group/invalid_id/read')
+        .set('Authorization', `Bearer ${token2}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+
+      console.log('✅ TC-M-20 PASSED: Invalid ID rejected');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE G.4: Non-existent group returns 404
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-M-21: Non-existent group returns 404', async () => {
+      const fakeGroupId = '507f1f77bcf86cd799439011';
+
+      const response = await request(app)
+        .put(`/api/v1/messages/group/${fakeGroupId}/read`)
+        .set('Authorization', `Bearer ${token2}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(404);
+      expect(response.body.success).toBe(false);
+
+      console.log('✅ TC-M-21 PASSED: Non-existent group returns 404');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE G.5: markedCount is accurate
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-M-22: markedCount reflects actual messages marked', async () => {
+      const response = await request(app)
+        .put(`/api/v1/messages/group/${groupA._id}/read`)
+        .set('Authorization', `Bearer ${token2}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(200);
+      expect(response.body.markedCount).toBe(5);  // 5 messages sent
+
+      console.log('✅ TC-M-22 PASSED: markedCount is accurate');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TEST CASE G.6: Idempotent - marking twice returns 0
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-M-23: Marking twice is idempotent', async () => {
+      // First time
+      await request(app)
+        .put(`/api/v1/messages/group/${groupA._id}/read`)
+        .set('Authorization', `Bearer ${token2}`)
+        .timeout(15000);
+
+      // Second time
+      const response = await request(app)
+        .put(`/api/v1/messages/group/${groupA._id}/read`)
+        .set('Authorization', `Bearer ${token2}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(200);
+      expect(response.body.markedCount).toBe(0);  // No new messages to mark
+
+      console.log('✅ TC-M-23 PASSED: Idempotent operation');
+    });
+  });
 });

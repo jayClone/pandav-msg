@@ -1,6 +1,6 @@
 import express from 'express';
 
-import { createGroup, getMyGroups, getGroup, addMember, removeMember, getGroupMessages } from '@controllers/group.controller.js';
+import { createGroup, getMyGroups, getGroup, addMember, removeMember, getGroupMessages, leaveGroup } from '@controllers/group.controller.js';
 import { protect } from '@middlewares/auth.js';
 
 const router = express.Router();
@@ -39,6 +39,13 @@ router.post('/:groupId/members', protect, addMember);
  * @access Private (Admin only)
  */
 router.delete('/:groupId/members', protect, removeMember);
+
+/**
+ * @route POST /api/v1/groups/:groupId/leave
+ * @desc Leave a group (member can leave)
+ * @access Private
+ */
+router.post('/:groupId/leave', protect, leaveGroup);
 
 /**
  * @route GET /api/v1/groups/:groupId/messages

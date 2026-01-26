@@ -391,3 +391,93 @@ export const getGroupMessages = async (req, res) => {
         });
     }
 };
+
+/**
+ * Leave a group
+ * 
+ * @route POST /api/v1/groups/:groupId/leave
+ * @param groupId - Group to leave
+ * @access Private (Any member)
+ * 
+ * Features:
+ * - Member can leave any time
+ * - Cannot leave if admin and last member (must assign admin first)
+ * - Removes user from participants
+ * - Returns updated group
+ */
+export const leaveGroup = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const userId = toObjectId(req.user.userId);
+
+    // ✅ VALIDATE OBJECTID
+    if (!isValidObjectId(groupId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid group ID format'
+      });
+    }
+
+    const group = await Group.findById(groupId);
+
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found'
+      });
+    }
+
+    // ✅ CHECK: User is member
+    const isMember = group.participants.some(
+      p => p.toString() === userId.toString()
+    );
+
+    if (!isMember) {
+      return res.status(400).json({
+        success: false,
+        message: 'You are not a member of this group'
+      });
+    }
+
+    // ✅ CHECK: Admin cannot leave if only admin (prevent orphaned groups)
+    const isAdmin = group.adminId.toString() === userId.toString();
+    const otherMembers = group.participants.filter(
+      p => p.toString() !== userId.toString()
+    );
+
+    if (isAdmin && otherMembers.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin cannot leave an empty group. Add another admin or delete the group.'
+      });
+    }
+
+    // ✅ REMOVE USER FROM GROUP
+    group.participants = group.participants.filter(
+      p => p.toString() !== userId.toString()
+    );
+
+    // ✅ IF ADMIN LEFT, REASSIGN ADMIN TO FIRST REMAINING MEMBER
+    if (isAdmin && group.participants.length > 0) {
+      group.adminId = group.participants[0];
+    }
+
+    await group.save();
+    await group.populate('participants', 'name email');
+    await group.populate('adminId', 'name email');
+
+    return res.status(200).json({
+      success: true,
+      message: 'You have left the group successfully',
+      data: group
+    });
+
+  } catch (error) {
+    console.error('Leave group error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to leave group',
+      error: error.message
+    });
+  }
+};

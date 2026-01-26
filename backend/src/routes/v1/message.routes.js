@@ -5,7 +5,8 @@ import {
   getChatHistory,
   getConversations,
   markAsRead,
-  deleteMessage
+  deleteMessage,
+  markGroupMessagesAsRead
 } from '@controllers/message.controller.js';
 import { protect } from '@middlewares/auth.js';
 
@@ -27,7 +28,7 @@ router.post('/private', protect, sendPrivateMessage);
  * @param {string} groupId - Group to receive message
  * @param {string} message - Message content
  */
-router.post('/group', protect, sendGroupMessage);  // ✅ ADD THIS LINE
+router.post('/group', protect, sendGroupMessage);
 
 /**
  * @route GET /api/v1/messages/:userId
@@ -45,10 +46,17 @@ router.get('/conversations/all', protect, getConversations);
 
 /**
  * @route PUT /api/v1/messages/read/:userId
- * @desc Mark all messages from user as read
+ * @desc Mark all messages from user as read (private)
  * @access Private
  */
 router.put('/read/:userId', protect, markAsRead);
+
+/**
+ * @route PUT /api/v1/messages/group/:groupId/read
+ * @desc Mark all group messages as read
+ * @access Private
+ */
+router.put('/group/:groupId/read', protect, markGroupMessagesAsRead);
 
 /**
  * @route DELETE /api/v1/messages/:messageId
