@@ -497,7 +497,7 @@ const GroupChat = () => {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search conversations..."
+              placeholder="Search groups..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-500/50 focus:border-transparent transition-all"
@@ -543,7 +543,12 @@ const GroupChat = () => {
                 </div>
                 ) : (
                 <div className="space-y-2 p-3">
-                  {groups.map((group) => (
+                  {groups
+                    .filter((group) => {
+                      if (!searchQuery.trim()) return true
+                      return group.name.toLowerCase().includes(searchQuery.toLowerCase())
+                    })
+                    .map((group) => (
                   <div
                     key={group._id}
                     onClick={() => handleSelectGroup(group)}
@@ -554,12 +559,12 @@ const GroupChat = () => {
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white font-bold text-xs shadow-lg">
+                    <div className="w-9 h-9 rounded-full bg-linear-to-br  to-green-600 flex items-center justify-center text-white font-bold text-xs shadow-lg">
                       {group.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-sm text-black truncate">{group.name}</h3>
-                      <p className="text-xs text-gray-500">{group.members?.length || 0} members</p>
+                      {/* <p className="text-xs text-gray-500">{group.members?.length || 0} members</p> */}
                     </div>
                     </div>
                   </div>
@@ -592,7 +597,7 @@ const GroupChat = () => {
                             </svg>
                             </button>
                             <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <div className="w-11 h-11 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white font-bold shadow-lg shrink-0">
+                              <div className="w-11 h-11 rounded-full bg-linear-to-br  to-green-600 flex items-center justify-center text-white font-bold shadow-lg shrink-0">
                             {selectedGroup.name.charAt(0).toUpperCase()}
                               </div>
                               
@@ -714,10 +719,10 @@ const GroupChat = () => {
                       </div>
                     ) : messages.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full">
-                        <div className="w-24 h-24 rounded-full bg-linear-to-br from-purple-500/20 to-green-500/20 flex items-center justify-center mb-4 shadow-lg">
+                        <div className="w-24 h-24 rounded-full bg-linear-to-br to-green-500/20 flex items-center justify-center mb-4 shadow-lg">
                       <svg className="w-12 h-12 text-green-400" fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5z"/></svg>
                         </div>
-                        <p className="text-lg font-semibold text-transparent bg-clip-text from-purple-400 to-green-400 mb-2">No Messages Yet</p>
+                        <p className="text-lg font-semibold text-transparent bg-clip-text \ to-green-400 mb-2">No Messages Yet</p>
                         <p className="text-gray-400 text-center max-w-md">
                       Start the conversation by typing a message below
                         </p>
@@ -729,7 +734,7 @@ const GroupChat = () => {
                         return (
                         <div key={msg._id} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                       <div className="flex gap-3 group">
-                        <div className="w-8 h-8 rounded-full bg-linear-to-br from-purple-500 to-green-500 flex items-center justify-center text-white text-sm font-bold shadow-lg shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-linear-to-br\ to-green-500 flex items-center justify-center text-green text-sm font-bold shadow-lg shrink-0">
                           {msg.sender?.name?.charAt(0).toUpperCase() || 'U'}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -759,7 +764,7 @@ const GroupChat = () => {
 
                           {/* Read Receipt Dropdown */}
                           {isExpanded && (
-                            <div className="mt-2 ml-2 p-3 bg-gray-800/50 rounded-lg border border-green-500/20 animate-in fade-in">
+                            <div className="mt-2 ml-2 p-3 bg-white-800/50 rounded-lg border border-green-500/20 animate-in fade-in">
                               <p className="text-xs font-semibold text-green-400 mb-2">
                                 Read by {readInfo.readers.length}/{readInfo.totalRecipients + 1} members
                               </p>
@@ -767,10 +772,10 @@ const GroupChat = () => {
                                 {/* Current user as sender */}
                                 {msg.sender?._id === currentUserId && (
                                   <div className="flex items-center gap-2 px-2 py-1 rounded bg-green-500/10">
-                                    <div className="w-6 h-6 rounded-full bg-linear-to-br from-purple-500 to-green-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                                    <div className="w-6 h-6 rounded-full bg-linear-to-br  to-green-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
                                       {msg.sender?.name?.charAt(0).toUpperCase() || 'Y'}
                                     </div>
-                                    <span className="text-xs text-gray-300 flex-1">{msg.sender?.name || 'You'} (Sender)</span>
+                                    <span className="text-xs text-white-300 flex-1">{msg.sender?.name || 'You'} (Sender)</span>
                                     <CheckCheck className="w-3 h-3 text-green-400" />
                                   </div>
                                 )}
@@ -778,7 +783,7 @@ const GroupChat = () => {
                                 {/* Other members */}
                                 {readInfo.readers.map((reader) => (
                                   <div key={reader._id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-700/50">
-                                    <div className="w-6 h-6 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                                    <div className="w-6 h-6 rounded-full bg-linear-to-br  to-green-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
                                       {reader.name?.charAt(0).toUpperCase() || '?'}
                                     </div>
                                     <span className="text-xs text-gray-300 flex-1">{reader.name || 'Unknown'}</span>
@@ -861,7 +866,7 @@ const GroupChat = () => {
 
       {/* Members Preview Modal */}
       {showMembersPreview && selectedGroup && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+        <div className="fixed inset-0 bg-white/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
           <div className="glass-effect rounded-2xl w-full max-w-md max-h-[90vh] overflow-hidden border border-[rgb(var(--border-secondary))] shadow-2xl animate-slideUp flex flex-col">
             {/* Header */}
             <div className="sticky top-0 p-6 bg-[rgb(var(--bg-secondary))]/80 backdrop-blur-md border-b border-[rgb(var(--border-secondary))] z-10 flex items-center justify-between">
@@ -899,7 +904,7 @@ const GroupChat = () => {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="w-10 h-10 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white font-bold shadow-lg shrink-0 text-sm">
+                        <div className="w-10 h-10 rounded-full bg-linear-to-br  to-green-600 flex items-center justify-center text-white font-bold shadow-lg shrink-0 text-sm">
                           {member.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -963,7 +968,7 @@ const GroupChat = () => {
 
       {/* Create Group Modal */}
       {showCreateGroup && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-white/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="glass-effect rounded-2xl w-96 max-h-[90vh] overflow-y-auto p-6 border border-[rgb(var(--border-secondary))] shadow-2xl">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-black">Create New Group</h2>
