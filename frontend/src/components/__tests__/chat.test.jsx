@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
-import Chat from "@pages/Chat"
+import Chat from "@/pages/Layoute"
 import * as socketClient from "@socket/socketClient"
 import { vi } from "vitest"
 import { SOCKET_EVENTS } from "@constants/socketEvents"

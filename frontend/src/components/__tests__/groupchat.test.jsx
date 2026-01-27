@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
-import GroupChat from "@pages/GroupChat"
+import GroupChat from "@/pages/Layoute"
 import groupService from "@services/group.service"
 import messageService from "@services/message.service"
 import API from "@api/axios.js"

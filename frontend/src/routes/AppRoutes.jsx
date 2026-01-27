@@ -2,8 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "@/pages/Index";
 import Register from "@pages/Register";
 import Login from "@pages/Login";
-import Chat from "@pages/Chat";
-import GroupChat from "@pages/GroupChat";
+import Layoute from "@/pages/Layoute";
 import { ProtectedRoute } from "@routes/ProtectedRoute";
 
 export default function AppRoutes() {
@@ -13,23 +12,22 @@ export default function AppRoutes() {
         <Route path="/" element={<Index />} />
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/groupchat" element={<GroupChat />} />
         <Route
           path="/chat"
           element={
             <ProtectedRoute>
-              <Chat />
+              <Layoute initialTab="chats" />
             </ProtectedRoute>
           }
         />
-        {/* <Route
+        <Route
           path="/groupchat"
           element={
             <ProtectedRoute>
-              <GroupChat />
+              <Layoute initialTab="groups" />
             </ProtectedRoute>
           }
-        /> */}
+        />
       </Routes>
     </BrowserRouter>
   );
