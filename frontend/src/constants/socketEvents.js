@@ -8,4 +8,5 @@ export const SOCKET_EVENTS = {
   MESSAGE_READ: "message_read",
   READ_RECEIPT: "read_receipt",
   TYPING: "typing",
+  GROUP_MESSAGE: "group_message",
 };

@@ -68,7 +68,7 @@ export function SignupForm({ ...props }) {
   return (
     <Card className="w-full max-w-sm mx-auto shadow-2xl border-t-4 border-t-primary bg-card/50 backdrop-blur-sm" {...props}>
       <CardHeader className="space-y-1 pb-6">
-        <CardTitle className="text-3xl font-black tracking-tighter text-center bg-gradient-to-br from-primary to-primary/60 bg-clip-text text-transparent">
+        <CardTitle className="text-3xl font-black tracking-tighter text-center bg-linear-to-br from-primary to-primary/60 bg-clip-text text-transparent">
           Create account
         </CardTitle>
         <CardDescription className="text-center font-medium">
