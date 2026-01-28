@@ -27,6 +27,7 @@ import {
   Smile,
   Menu,
   ChevronLeft,
+  X,
 } from "lucide-react";
 
 export default function Chat({
@@ -514,6 +515,57 @@ export default function Chat({
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
+  // ✅ DELETE MESSAGE HANDLER
+  const handleDeleteMessage = useCallback(
+    async (messageId) => {
+      const confirmed = window.confirm("Are you sure you want to delete this message?");
+      if (!confirmed) return;
+
+      try {
+        console.log("🗑️ [DELETE] Deleting message:", messageId);
+
+        const socket = getSocket();
+        if (!socket || !isSocketConnected()) {
+          setError("Connection error. Please refresh.");
+          return;
+        }
+
+        // ✅ Remove from UI immediately (optimistic update)
+        setMessages((prev) => {
+          const updated = prev.filter((m) => m._id !== messageId);
+          console.log(`✅ [DELETE] Message removed from UI:`, messageId);
+          return updated;
+        });
+
+        // ✅ Notify backend via socket
+        socket.emit(SOCKET_EVENTS.MESSAGE_DELETED, {
+          messageId: messageId,
+          toUserId: selectedUserId,
+        });
+
+        console.log("📤 [DELETE] Delete notification sent to backend");
+      } catch (err) {
+        console.error("❌ [DELETE] Error:", err);
+        setError("Failed to delete message");
+      
+        // Reload messages on error
+        const data = await messageService.fetchChatHistory(selectedUserId);
+        setMessages(
+          data.messages.map((msg) => ({
+            _id: msg._id,
+            fromUserId: msg.fromUserId,
+            toUserId: msg.toUserId,
+            fromUserName: msg.senderName || "Unknown",
+            message: msg.message,
+            time: msg.createdAt,
+            read: msg.read,
+          }))
+        );
+      }
+    },
+    [selectedUserId]
+  );
+
   return (
     <>
       {/* Chat Sidebar */}
@@ -713,7 +765,7 @@ export default function Chat({
                     >
                       {showAvatar ? (
                         <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg ${
+                          className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg shrink-0 ${
                             isOwn
                               ? "bg-linear-to-br from-blue-500 to-purple-600"
                               : "bg-linear-to-br from-green-500 to-teal-600 glow-green"
@@ -724,21 +776,23 @@ export default function Chat({
                             .toUpperCase()}
                         </div>
                       ) : (
-                        <div className="w-8"></div>
+                        <div className="w-8 shrink-0"></div>
                       )}
 
+                      {/* Message Container with Delete Button Below */}
                       <div
                         className={`flex flex-col ${isOwn ? "items-end" : "items-start"} max-w-[70%]`}
                       >
+                        {/* Message Box */}
                         <div
-                          className={`px-4 py-2.5 rounded-2xl shadow-lg backdrop-blur-sm transition-all ${
+                          className={`px-4 py-2.5 rounded-2xl shadow-lg backdrop-blur-sm transition-all group/message hover:shadow-xl ${
                             isOwn
                               ? "bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm"
-                              : "glass-effect text-white  rounded-tl-sm border border-[rgb(var(--border-secondary))]"
+                              : "glass-effect text-white rounded-tl-sm border border-[rgb(var(--border-secondary))]"
                           }`}
                         >
                           <p
-                            className="wrap-break-word  leading-relaxed"
+                            className="wrap-break-word leading-relaxed"
                             style={{
                               color: bgImages[bgImage].textColor,
                             }}
@@ -747,12 +801,14 @@ export default function Chat({
                           </p>
                         </div>
 
+                        {/* Time, Ticks, and Delete Button Row */}
                         <div
                           className={`flex items-center gap-2 mt-1.5 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
                         >
                           <span className="text-xs text-gray-500 font-medium">
                             {formatTime(m.time)}
                           </span>
+                          
                           {isOwn && (
                             <>
                               {m.sending ? (
@@ -766,6 +822,23 @@ export default function Chat({
                                 <CheckCheck className="w-3.5 h-3.5 text-gray-400" />
                               )}
                             </>
+                          )}
+
+                          {/* ✅ DELETE BUTTON - Below message, visible on hover */}
+                          {isOwn && (
+                            <button
+                              onClick={() => handleDeleteMessage(m._id)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1.5 hover:bg-red-500/20 rounded-lg text-red-400 hover:text-red-300 ml-1"
+                              title="Delete message"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-9l-1 1H5v2h14V4z" />
+                              </svg>
+                            </button>
                           )}
                         </div>
                       </div>
