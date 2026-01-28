@@ -10,11 +10,17 @@ export async function handlePrivateMessage(socket, io, data, userId, name, onlin
     try {
         // Validation Layer
         if (!toUserId || typeof toUserId !== "string") {
-            throw new Error("toUserId is required");
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                message: MESSAGES.SOCKET.TO_USER_REQUIRED 
+            });
+            return;
         }
         
         if (!message || typeof message !== "string" || message.trim().length === 0) {
-            throw new Error("message cannot be empty");
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                message: MESSAGES.SOCKET.MESSAGE_EMPTY 
+            });
+            return;
         }
 
         const trimmedMessage = message.trim();
@@ -32,7 +38,10 @@ export async function handlePrivateMessage(socket, io, data, userId, name, onlin
             console.log(`[DB] Message saved: ${savedMessage._id}`);
         } catch (dbError) {
             console.error('[DB ERROR] Failed to save message:', dbError.message);
-            throw new Error('Failed to save message');
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                message: 'Failed to save message'
+            });
+            return;
         }
 
         const messagePayload = {
@@ -47,7 +56,7 @@ export async function handlePrivateMessage(socket, io, data, userId, name, onlin
 
         // If receiver is online: send real-time notification
         if (receiverUser) {
-            io.to(receiverUser.socketId).emit('private_message', {
+            io.to(receiverUser.socketId).emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
                 ...messagePayload,
                 delivered: true
             });
@@ -56,19 +65,32 @@ export async function handlePrivateMessage(socket, io, data, userId, name, onlin
         else {
             // If receiver is OFFLINE: Still saved in DB
             console.log(`[MSG-QUEUED] ${name} → ${toUserId} (offline): ${trimmedMessage.substring(0, 30)}...`);
+            
+            socket.emit('user_offline', {
+                toUserId: toUserId,
+                message: 'User is offline. Message queued for delivery.'
+            });
+            console.log(`[OFFLINE] ${toUserId} is offline`);
         }
 
-        console.log(`[CONFIRM] Message confirmed for ${name}`);
-        
-        // Return the saved message for callback
-        return {
+        // Send confirmation back to sender
+        socket.emit(SOCKET_EVENTS.MESSAGE_SENT, {
             _id: savedMessage._id,
+            fromUserId: userId,
+            toUserId: toUserId,
+            fromUserName: name,
+            message: trimmedMessage,
+            time: savedMessage.createdAt.toISOString(),
             delivered: !!receiverUser,
             saved: true
-        };
+        });
+
+        console.log(`[CONFIRM] Sent confirmation to ${name}`);
 
     } catch (error) {
         console.error('[ERROR] Message sending failed:', error.message);
-        throw error;
+        socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+            message: MESSAGES.SOCKET.SOMETHING_WENT_WRONG 
+        });
     }
 }

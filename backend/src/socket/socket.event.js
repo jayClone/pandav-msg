@@ -14,12 +14,15 @@ const onlineUsers = new Map();
 export function registerSocketEvents(io, socket) {
     const { userId, email, name } = socket.user;
 
-    //  User connected
+    // User connected
     handleUserConnect(socket, io, userId, email, name, onlineUsers);
 
     //  Private message event
     socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, async (data, callback) => {
-        console.log("📥 [SOCKET] Received PRIVATE_MESSAGE:", { toUserId: data.toUserId, tempId: data.tempId, uniqueId: data.uniqueId });
+        console.log("📥 [SOCKET] Received PRIVATE_MESSAGE:", { 
+            toUserId: data.toUserId, 
+            uniqueId: data.uniqueId 
+        });
         
         try {
             const result = await handlePrivateMessage(socket, io, data, userId, name, onlineUsers);
@@ -29,7 +32,6 @@ export function registerSocketEvents(io, socket) {
                 callback(null, {
                     success: true,
                     _id: result?._id,
-                    tempId: data.tempId,
                     uniqueId: data.uniqueId,
                     delivered: result?.delivered || true,
                     message: "Message sent successfully"
@@ -43,28 +45,31 @@ export function registerSocketEvents(io, socket) {
         }
     });
 
-    //  Join group event
-    socket.on('join_group', async (payload) => {
+    // ✅ JOIN GROUP EVENT
+    socket.on(SOCKET_EVENTS.JOIN_GROUP, async (payload) => {
+        console.log("📥 [SOCKET] Received JOIN_GROUP");
         handleJoinGroup(socket, io, payload, userId, name);
     });
 
-    //  Leave group event
-    socket.on('leave_group', async (payload) => {
+    // ✅ LEAVE GROUP EVENT
+    socket.on(SOCKET_EVENTS.LEAVE_GROUP, async (payload) => {
+        console.log("📥 [SOCKET] Received LEAVE_GROUP");
         handleLeaveGroup(socket, io, payload, userId, name);
     });
 
-    //  Group message event
-    socket.on('group_message', async (payload) => {
+    // ✅ GROUP MESSAGE EVENT
+    socket.on(SOCKET_EVENTS.GROUP_MESSAGE, async (payload) => {
+        console.log("📥 [SOCKET] Received GROUP_MESSAGE");
         handleGroupMessage(socket, io, payload, userId, name);
     });
 
-    //  Typing event
+    // ✅ TYPING EVENT
     socket.on(SOCKET_EVENTS.TYPING, (data) => {
-        console.log("📥 [SOCKET] Received TYPING event:", { toUserId: data.toUserId, isTyping: data.isTyping });
+        console.log("📥 [SOCKET] Received TYPING:", { toUserId: data.toUserId, isTyping: data.isTyping });
         const receiverUser = onlineUsers.get(data.toUserId);
         
         if (receiverUser) {
-            console.log(`📤 [SOCKET] Sending typing notification to ${receiverUser.name}`);
+            console.log(`📤 [SOCKET] Sending TYPING to ${receiverUser.name}`);
             io.to(receiverUser.socketId).emit(SOCKET_EVENTS.TYPING, {
                 fromUserId: userId,
                 isTyping: data.isTyping
@@ -72,62 +77,61 @@ export function registerSocketEvents(io, socket) {
         }
     });
 
-    //  Message deleted event
+    // ✅ MESSAGE DELETED EVENT
     socket.on(SOCKET_EVENTS.MESSAGE_DELETED, (data) => {
-        console.log("📥 [SOCKET] Received MESSAGE_DELETED event:", data);
-        console.log("📥 [SOCKET] Current userId:", userId);
-        console.log("📥 [SOCKET] Online users map:", Array.from(onlineUsers.entries()));
+        console.log("📥 [SOCKET] Received MESSAGE_DELETED:", data);
         
         const receiverUser = onlineUsers.get(data.toUserId);
-        console.log("📥 [SOCKET] Receiver user found:", receiverUser);
         
         if (receiverUser) {
-            console.log(`📤 [SOCKET] Sending to receiver ${receiverUser.name} (socket: ${receiverUser.socketId})`);
+            console.log(`📤 [SOCKET] Sending MESSAGE_DELETED to ${receiverUser.name}`);
             io.to(receiverUser.socketId).emit(SOCKET_EVENTS.MESSAGE_DELETED, {
                 messageId: data.messageId,
                 fromUserId: userId,
                 toUserId: data.toUserId
             });
         } else {
-            console.log(`⚠️ [SOCKET] Receiver ${data.toUserId} NOT found in online users`);
+            console.log(`⚠️ [SOCKET] Receiver ${data.toUserId} offline`);
         }
     });
 
     //  Read receipt event
     socket.on(SOCKET_EVENTS.READ_RECEIPT, async (data) => {
-        console.log("📥 [SOCKET] Received READ_RECEIPT event:", data);
-        console.log("📥 [SOCKET] Current userId (message sender):", userId);
-        console.log("📥 [SOCKET] Looking for user in onlineUsers:", Array.from(onlineUsers.keys()));
-        
-        // The sender of the original message is the current user (userId)
-        const senderUser = onlineUsers.get(userId);
-        console.log("📥 [SOCKET] Sender user found:", senderUser?.name);
+        console.log("📥 [READ_RECEIPT] Received:", data);
+
+        const { messageId, senderId, receiverId } = data;
         
         try {
-            // Update message as read in database
+            // ✅ Update message in DB as read
             const updatedMessage = await Message.findByIdAndUpdate(
-                data.messageId,
+                messageId,
                 { read: true },
                 { new: true }
             );
-            console.log(`✅ [DB] Message ${data.messageId} marked as read in database`, updatedMessage);
+            console.log(`✅ [DB] Message ${messageId} marked as read in database`);
+
+            // ✅ Find ORIGINAL SENDER (who sent the message)
+            const originalSender = onlineUsers.get(senderId);
+            console.log(`📥 [READ_RECEIPT] Looking for sender ${senderId}:`, originalSender ? "FOUND" : "NOT FOUND");
+            
+            if (originalSender) {
+                // ✅ Send read receipt back to sender ONLY if online
+                io.to(originalSender.socketId).emit(SOCKET_EVENTS.MESSAGE_READ, {
+                    messageId: messageId,
+                    readBy: userId,  // Who read it
+                    senderId: senderId,
+                    readerName: name
+                });
+                console.log(`✅ [SOCKET] MESSAGE_READ sent to sender ${originalSender.name}`);
+            } else {
+                console.log(`⚠️ [READ_RECEIPT] Sender ${senderId} is offline, message saved as read in DB`);
+            }
         } catch (err) {
-            console.error(`❌ [DB ERROR] Failed to mark message as read:`, err.message);
-        }
-        
-        if (senderUser) {
-            console.log(`📤 [SOCKET] Sending MESSAGE_READ to ${senderUser.name} (socket: ${senderUser.socketId})`);
-            io.to(senderUser.socketId).emit(SOCKET_EVENTS.MESSAGE_READ, {
-                messageId: data.messageId,
-                readBy: userId
-            });
-            console.log(`✅ [SOCKET] MESSAGE_READ event sent`);
-        } else {
-            console.log(`⚠️ [SOCKET] Sender (${userId}) NOT found in online users, message may not be delivered`);
+            console.error(`❌ [ERROR] Failed to mark message as read:`, err.message);
         }
     });
 
-    //  User disconnected
+    // ✅ USER DISCONNECTED
     socket.on("disconnect", async () => {
         handleUserDisconnect(socket, io, userId, name, onlineUsers);
     });

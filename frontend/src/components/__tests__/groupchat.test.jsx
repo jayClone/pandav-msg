@@ -875,7 +875,7 @@ describe("GroupChat Component", () => {
 
       // Check for message wrapper with relative positioning for arrow
       const messageContent = screen.getByText(/Hello/)
-      const messageWrapper = messageContent.closest(".relative")
+      //const messageWrapper = messageContent.closest(".relative")
       
       // Verify message bubble structure exists
       expect(messageContent.closest(".glass-effect")).toBeInTheDocument()

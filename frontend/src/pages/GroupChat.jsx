@@ -1,29 +1,26 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { jwtDecode } from "jwt-decode";
-import groupService from "@services/group.service";
-import messageService from "@services/message.service";
-import axios from "axios";
-import { SOCKET_EVENTS } from "@constants/socketEvents.js";
-import { getSocket } from "@socket/socketClient.js";
+import React, { useCallback, useMemo, useEffect, useState } from 'react'
+import axios from 'axios'
+import groupService from '@services/group.service.js'
+import messageService from '@services/message.service.js'
+import { SOCKET_EVENTS } from '@constants/socketEvents.js'
+import { connectSocket, getSocket } from '@socket/socketClient.js'
 import {
-  Users,
-  Search,
   Plus,
-  Trash2,
-  X,
-  ChevronDown,
-  Check,
-  CheckCheck,
+  Search,
+  Users,
   Pin,
-  MoreVertical,
-  Send,
-  Paperclip,
-  Smile,
+  MessageCircle,
   Menu,
   ChevronLeft,
-  MessageCircle,
+  MoreVertical,
+  Send,
+  Check,
+  CheckCheck,
+  Paperclip,
+  Smile,
+  X,
   Loader,
-} from "lucide-react";
+} from 'lucide-react'
 
 export default function GroupChat({
   sidebarOpen,
@@ -41,7 +38,7 @@ export default function GroupChat({
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showAddMember, setShowAddMember] = useState(false);
+  //const [showAddMember, setShowAddMember] = useState(false);
   const [showMembersPreview, setShowMembersPreview] = useState(false);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -62,36 +59,32 @@ export default function GroupChat({
   const [searchUsersToAdd, setSearchUsersToAdd] = useState(""); // NEW: Separate search state
   const [messageReadStatus, setMessageReadStatus] = useState({}); // Track who read each message
   const [lastMessages, setLastMessages] = useState({}); // Track last message per group
-  const [onlineMembers, setOnlineMembers] = useState({}); // Track online members per group
+  //const [onlineMembers, setOnlineMembers] = useState({}); // Track online members per group
 
   // Fetch all groups
   const fetchAllGroups = useCallback(async () => {
     try {
-      const response = await axios.get("/groups", {
-        baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (response.data.success) {
-        const groupList = response.data.data || [];
-        setGroups(
-          groupList.map((g) => ({
-            groupId: g._id || g.groupId,
-            id: g._id || g.groupId,
-            name: g.name,
-            description: g.description,
-            membersCount: g.members?.length || 0,
-            createdAt: g.createdAt,
-          }))
-        );
-      }
+      const groups = await groupService.getMyGroups(); // ✅ Service returns array
+      console.log('📥 Groups fetched:', groups)
+      
+      // ✅ Groups is already an array from service
+      const formattedGroups = Array.isArray(groups) ? groups : []
+      
+      setGroups(
+        formattedGroups.map((g) => ({
+          groupId: g._id || g.groupId,
+          id: g._id || g.groupId,
+          name: g.name,
+          description: g.description || '',
+          membersCount: g.members?.length || g.participants?.length || 0,
+          createdAt: g.createdAt,
+        }))
+      )
     } catch (err) {
-      console.error("❌ Failed to fetch groups:", err);
-      setError("Failed to load groups");
+      console.error('❌ Failed to fetch groups:', err.message)
+      setError('Failed to load groups')
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -208,11 +201,11 @@ export default function GroupChat({
     if (!socket || !selectedGroup) return;
 
     console.log("🚪 Joining group room:", selectedGroup.id);
-    socket.emit('join_group', { groupId: selectedGroup.id });
+    socket.emit(SOCKET_EVENTS.JOIN_GROUP, { groupId: selectedGroup.id });
 
     return () => {
       console.log("🚪 Leaving group room:", selectedGroup.id);
-      socket.emit('leave_group', { groupId: selectedGroup.id });
+      socket.emit(SOCKET_EVENTS.LEAVE_GROUP, { groupId: selectedGroup.id });
     };
   }, [selectedGroup]);
 
@@ -339,7 +332,7 @@ export default function GroupChat({
         }
       }
     });
-  }, [messages, selectedGroup, currentUserId, currentUserName]);
+  }, [messages, selectedGroup, currentUserId, currentUserName,messageReadStatus]);
 
   // Filtered groups
   const filteredGroups = useMemo(() => {
@@ -636,6 +629,18 @@ export default function GroupChat({
     }
   };
 
+  // ✅ Connect socket when component mounts
+  useEffect(() => {
+    if (!token) return
+  
+    const socket = connectSocket(token)
+    console.log('🔌 Socket connected for group chat:', socket?.id)
+  
+    return () => {
+      // Cleanup if needed
+    }
+  }, [token])
+
   return (
     <>
       {/* Groups Sidebar */}
@@ -802,9 +807,9 @@ export default function GroupChat({
 
             {/* Members Preview */}
             {showMembersPreview && (
-              <div className="p-4 sm:p-6 bg-gradient-to-b from-[rgb(var(--bg-secondary))] to-[rgb(var(--bg-tertiary))]/30 border-b-2 border-green-500/20 max-h-72 overflow-y-auto custom-scrollbar">
+              <div className="p-4 sm:p-6 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-[rgb(var(--bg-tertiary))]/30 border-b-2 border-green-500/20 max-h-72 overflow-y-auto custom-scrollbar">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4 sticky top-0 bg-gradient-to-b from-[rgb(var(--bg-secondary))] to-transparent pb-3 z-10">
+                <div className="flex items-center justify-between mb-4 sticky top-0 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-transparent pb-3 z-10">
                   <div>
                     <h4 className="text-base font-bold text-gray-200">
                       👥 Members
@@ -820,7 +825,7 @@ export default function GroupChat({
                       setSelectedUsersToAdd([]);
                       fetchUsersToAdd();
                     }}
-                    className="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg hover:shadow-green-500/50 glow-green"
+                    className="px-4 py-2 bg-linear-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg hover:shadow-green-500/50 glow-green"
                   >
                     <Plus className="w-4 h-4" />
                     Add
@@ -841,7 +846,7 @@ export default function GroupChat({
                         className="flex items-center justify-between gap-3 p-3 bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 rounded-xl border border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30 transition-all group"
                       >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shrink-0 shadow-lg text-sm">
+                          <div className="w-10 h-10 rounded-full bg-linear-to-r from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shrink-0 shadow-lg text-sm">
                             {member.name.charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0 flex-1">
@@ -975,7 +980,7 @@ export default function GroupChat({
                                               key={idx}
                                               className="flex items-center gap-3 p-2 rounded-lg bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/60"
                                             >
-                                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                                              <div className="w-8 h-8 rounded-full bg-linear-to-r from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
                                                 {reader.userName
                                                   .charAt(0)
                                                   .toUpperCase()}
@@ -1303,7 +1308,7 @@ export default function GroupChat({
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl border border-green-500/20 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
             {/* Modal Header */}
-            <div className="p-4 sm:p-6 bg-gradient-to-r from-[rgb(var(--bg-secondary))] to-green-950/20 border-b-2 border-green-500/20 flex items-center justify-between sticky top-0 z-10">
+            <div className="p-4 sm:p-6 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-green-950/20 border-b-2 border-green-500/20 flex items-center justify-between sticky top-0 z-10">
               <div>
                 <h3 className="text-lg sm:text-xl font-bold text-gray-100">
                   ➕ Add Members
@@ -1390,7 +1395,6 @@ export default function GroupChat({
                 ) : (
                   usersToAddList
                     .filter((user) => {
-                      const userId = user.userId || user._id;
                       const userStr = `${user.name} ${user.email}`.toLowerCase();
                       return userStr.includes(searchUsersToAdd.toLowerCase()); // CHANGED
                     })

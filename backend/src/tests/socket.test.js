@@ -3,7 +3,9 @@ import io from 'socket.io-client';
 import http from 'http';
 import app from '../app.js';
 import { createSocketServer } from '@socket/socket.server.js';
-import { connectDB, disconnectDB } from '@config/db.js';  // ✅ ADD
+import { connectDB, disconnectDB } from '@config/db.js';  
+import User from '../models/User.js';
+import Message from '../models/Message.js';
 import jwt from 'jsonwebtoken';
 
 /**
@@ -102,28 +104,31 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
   afterAll(async () => {
     return new Promise(async (resolve) => {
       try {
-        // ✅ Add imports at top of file first:
-        // import User from '../models/User.js';
-        // import Message from '../models/Message.js';
+        // ✅ STEP 1: Clean database WHILE CONNECTED
+        console.log('🧹 Cleaning up test data...');
+        try {
+          await User.deleteMany({});
+          await Message.deleteMany({});
+          console.log('✅ Test data cleaned');
+        } catch (cleanupError) {
+          console.warn('⚠️ Cleanup error (non-critical):', cleanupError.message);
+          // Don't fail the test suite on cleanup errors
+        }
 
+        // ✅ STEP 2: Close HTTP server
         httpServer.close(() => {
           console.log('✅ Test server closed');
         });
 
+        // ✅ STEP 3: Disconnect from MongoDB LAST
         await disconnectDB();
         console.log('✅ MongoDB disconnected');
 
-        // ✅ Clean up test data
-        console.log('🧹 Cleaning up test data...');
-        await User.deleteMany({});
-        await Message.deleteMany({});
-        console.log('✅ Cleanup complete');
-
         setTimeout(resolve, 1000);
-        
+      
       } catch (error) {
         console.error('⚠️ Cleanup error:', error.message);
-        resolve();
+        resolve();  // Still resolve promise to prevent hanging
       }
     });
   });

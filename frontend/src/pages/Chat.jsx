@@ -6,23 +6,17 @@ import React, {
   useMemo,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import { jwtDecode } from "jwt-decode";
 import messageService from "@services/message.service.js";
 import axios from "axios";
 import { SOCKET_EVENTS } from "@constants/socketEvents.js";
 import {
   connectSocket,
-  disconnectSocket,
   getSocket,
   isSocketConnected,
 } from "@socket/socketClient.js";
 import {
   MessageCircle,
   Search,
-  Bell,
-  BellOff,
-  Volume2,
-  VolumeX,
   Pin,
   Circle,
   MoreVertical,
@@ -36,20 +30,14 @@ import {
 } from "lucide-react";
 
 export default function Chat({
-  onlineUsers,
   allUsers,
   setAllUsers,
   currentUserName,
   currentUserId,
-  theme,
   bgImage,
   bgImages,
   sidebarOpen,
   setSidebarOpen,
-  soundEnabled,
-  setSoundEnabled,
-  notificationsEnabled,
-  setNotificationsEnabled,
   token,
 }) {
   const navigate = useNavigate();
@@ -67,7 +55,6 @@ export default function Chat({
   const [typingUsers, setTypingUsers] = useState({});
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [messageReadStatus, setMessageReadStatus] = useState({});
 
   const typingTimeoutRef = useRef(null);
   const lastTypingTimeRef = useRef(0);
@@ -107,7 +94,7 @@ export default function Chat({
     fetchAllUsers();
   }, [token, fetchAllUsers]);
 
-  // Socket event handlers
+  // Socket event handlers - Main useEffect
   useEffect(() => {
     if (!token) {
       navigate("/login");
@@ -117,6 +104,7 @@ export default function Chat({
     let socket = connectSocket(token);
     if (!socket) return;
 
+    // ✅ ONLINE USERS HANDLER
     const handleOnlineUsers = (users) => {
       console.log("📡 [ONLINE_USERS] Received:", users?.length, "users");
       if (users && users.length > 0) {
@@ -150,6 +138,7 @@ export default function Chat({
       }
     };
 
+    // ✅ INCOMING MESSAGE HANDLER
     const handlePrivateMessage = (data) => {
       if (!data._id || !data.fromUserId || !data.message) {
         console.error("❌ Invalid message data:", data);
@@ -159,8 +148,12 @@ export default function Chat({
       const isInCurrentChat = data.fromUserId === selectedUserId;
 
       setMessages((prev) => {
+        // ✅ Check if message already exists
         const messageExists = prev.some((m) => m._id === data._id);
-        if (messageExists) return prev;
+        if (messageExists) {
+          console.warn(`⚠️ Message ${data._id} already exists, skipping`);
+          return prev;
+        }
 
         const newMessage = {
           _id: data._id,
@@ -171,13 +164,13 @@ export default function Chat({
           time: data.time || data.createdAt || new Date().toISOString(),
           read: isInCurrentChat,
           delivered: data.delivered || true,
-          uniqueId: data.uniqueId,
         };
 
         return [...prev, newMessage];
       });
 
       if (isInCurrentChat) {
+        // ✅ Auto-mark as read when chat is open
         setTimeout(() => {
           socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
             messageId: data._id,
@@ -186,6 +179,7 @@ export default function Chat({
           });
         }, 50);
       } else {
+        // ✅ Add to unread count
         setUnreadCounts((prev) => ({
           ...prev,
           [data.fromUserId]: (prev[data.fromUserId] || 0) + 1,
@@ -193,53 +187,61 @@ export default function Chat({
       }
     };
 
+    // ✅ MESSAGE SENT CONFIRMATION - Just add to UI with real ID
     const handleMessageSent = (data) => {
-      setMessages((prev) => {
-        let tempIndex = prev.findIndex((m) => m.uniqueId === data.uniqueId);
+      console.log("✅ [MESSAGE_SENT] Confirmed:", {
+        _id: data._id,
+        message: data.message.substring(0, 30)
+      });
 
-        if (tempIndex !== -1) {
-          const updated = [...prev];
-          updated[tempIndex] = {
-            _id: data._id || data.messageId,
-            fromUserId: data.fromUserId || currentUserId,
-            fromUserName: data.fromUserName || currentUserName,
-            toUserId: data.toUserId,
-            message: data.message,
-            time: data.time || data.createdAt || new Date().toISOString(),
-            read: false,
-            sending: false,
-            delivered: true,
-            uniqueId: undefined,
-          };
-          return updated;
+      // ✅ Add message to UI with REAL MongoDB ID
+      setMessages((prev) => {
+        const messageExists = prev.some((m) => m._id === data._id);
+        if (messageExists) {
+          console.warn(`⚠️ Message ${data._id} already in state`);
+          return prev;
         }
 
-        return prev;
-      });
-    };
-
-    const handleMessageRead = (data) => {
-      console.log("🔵 [MESSAGE_READ] Event received");
-
-      // Update the message as read
-      setMessages((prev) => {
-        return prev.map((m) => {
-          if (m._id === data.messageId) {
-            return { ...m, read: true };
+        return [
+          ...prev,
+          {
+            _id: data._id,  
+            fromUserId: data.fromUserId,
+            toUserId: data.toUserId,
+            fromUserName: data.fromUserName,
+            message: data.message,
+            time: data.time,
+            delivered: data.delivered,
+            read: false, 
           }
-          return m;
-        });
+        ];
       });
-
-      // Track who read it
-      setMessageReadStatus((prev) => ({
-        ...prev,
-        [data.messageId]: {
-          [data.readBy]: { readAt: new Date().toISOString() },
-        },
-      }));
     };
 
+    // ✅ MESSAGE READ - Simple read status update
+    const handleMessageRead = (data) => {
+      console.log("🔵 [MESSAGE_READ]:", data.messageId);
+
+      setMessages((prev) => {
+        const messageExists = prev.find((m) => m._id === data.messageId);
+        
+        if (!messageExists) {
+          console.warn(`⚠️ Message ${data.messageId} not found`);
+          return prev;
+        }
+
+        if (messageExists.read) {
+          console.log(`ℹ️ Message already read`);
+          return prev;
+        }
+
+        return prev.map((m) => 
+          m._id === data.messageId ? { ...m, read: true } : m
+        );
+      });
+    };
+
+    // ✅ USER OFFLINE HANDLER
     const handleUserOffline = ({ toUserId }) => {
       setAllUsers((prevUsers) => {
         const userIndex = prevUsers.findIndex((u) => u.userId === toUserId);
@@ -252,6 +254,7 @@ export default function Chat({
       });
     };
 
+    // ✅ TYPING HANDLER
     const handleTyping = ({ fromUserId, isTyping }) => {
       setTypingUsers((prev) => ({
         ...prev,
@@ -259,12 +262,20 @@ export default function Chat({
       }));
     };
 
+    // ✅ MESSAGE DELETED HANDLER
+    const handleMessageDeleted = (data) => {
+      console.log("🗑️ [MESSAGE_DELETED] Received:", data);
+      setMessages((prev) => prev.filter((m) => m._id !== data.messageId));
+    };
+
+    // Register all listeners
     socket.on(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers);
     socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage);
     socket.on(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent);
     socket.on(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline);
     socket.on(SOCKET_EVENTS.TYPING, handleTyping);
     socket.on(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
+    socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
 
     return () => {
       socket.off(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers);
@@ -273,74 +284,107 @@ export default function Chat({
       socket.off(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline);
       socket.off(SOCKET_EVENTS.TYPING, handleTyping);
       socket.off(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
+      socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
     };
-  }, [token, navigate, currentUserId, currentUserName, selectedUserId, setAllUsers]);
+  }, [token, navigate, currentUserId, currentUserName, setAllUsers,selectedUserId]); // ✅ Fixed dependencies
 
-  // Fetch chat history when user selected
+  // ✅ FETCH CHAT HISTORY - Separate useEffect
   useEffect(() => {
-    if (selectedUserId) {
-      const fetchChatHistory = async () => {
-        setLoading(true);
-        try {
-          const data = await messageService.fetchChatHistory(selectedUserId);
-          const messagesWithIds = data.messages.map((msg) => ({
-            _id: msg._id,
-            fromUserId: msg.fromUserId,
-            toUserId: msg.toUserId,
-            fromUserName: msg.senderName || "Unknown",
-            message: msg.message,
-            time: msg.createdAt,
-            read: msg.read,
-          }));
-          setMessages(messagesWithIds);
+    if (!selectedUserId) return;
 
-          const unreadMessages = messagesWithIds.filter(
-            (msg) => msg.fromUserId === selectedUserId && !msg.read
-          );
+    const fetchChatHistory = async () => {
+      setLoading(true);
+      try {
+        const data = await messageService.fetchChatHistory(selectedUserId);
+        const messagesWithIds = data.messages.map((msg) => ({
+          _id: msg._id,
+          fromUserId: msg.fromUserId,
+          toUserId: msg.toUserId,
+          fromUserName: msg.senderName || "Unknown",
+          message: msg.message,
+          time: msg.createdAt,
+          read: msg.read,
+        }));
+        setMessages(messagesWithIds);
 
-          if (unreadMessages.length > 0) {
-            setMessages((prev) =>
-              prev.map((m) => {
-                if (m.fromUserId === selectedUserId && !m.read) {
-                  return { ...m, read: true };
-                }
-                return m;
-              })
-            );
+        // ✅ Mark unread messages as read
+        const unreadMessages = messagesWithIds.filter(
+          (msg) => msg.fromUserId === selectedUserId && !msg.read
+        );
 
-            const socket = getSocket();
-            if (socket && socket.connected) {
-              unreadMessages.forEach((msg) => {
-                socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
-                  messageId: msg._id,
-                  senderId: msg.fromUserId,
-                  receiverId: currentUserId,
-                });
+        if (unreadMessages.length > 0) {
+          const socket = getSocket();
+          if (socket && socket.connected) {
+            unreadMessages.forEach((msg) => {
+              console.log(`📤 [Frontend] Emitting READ_RECEIPT for ${msg._id}`);
+              console.log(`📤 [Frontend] senderId: ${msg.fromUserId}, receiverId: ${currentUserId}`);
+      
+              socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
+                messageId: msg._id,
+                senderId: msg.fromUserId,
+                receiverId: currentUserId,
               });
-            }
-
-            try {
-              await messageService.markMessagesAsRead(selectedUserId);
-            } catch (apiErr) {
-              console.error("❌ Failed to persist read status:", apiErr);
-            }
+            });
           }
-        } catch (err) {
-          console.error("❌ Failed to fetch chat history:", err);
-          setError(err.message);
-          setMessages([]);
-        } finally {
-          setLoading(false);
-        }
-      };
 
-      fetchChatHistory();
-      setUnreadCounts((prev) => ({
-        ...prev,
-        [selectedUserId]: 0,
-      }));
-      messageInputRef.current?.focus();
-    }
+          try {
+            await messageService.markMessagesAsRead(selectedUserId);
+          } catch (apiErr) {
+            console.error("❌ Failed to mark as read in DB:", apiErr);
+          }
+        }
+      } catch (err) {
+        console.error("❌ Failed to fetch chat history:", err);
+        setError(err.message);
+        setMessages([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchChatHistory();
+    setUnreadCounts((prev) => ({
+      ...prev,
+      [selectedUserId]: 0,
+    }));
+    messageInputRef.current?.focus();
+  }, [selectedUserId, currentUserId]); // ✅ Fixed dependencies
+
+  // ✅ ADD THIS NEW EFFECT: Poll for read status updates
+  useEffect(() => {
+    if (!selectedUserId) return;
+
+    // Poll every 2 seconds to check if messages were marked as read
+    const pollInterval = setInterval(async () => {
+      try {
+        const data = await messageService.fetchChatHistory(selectedUserId);
+        
+        setMessages((prev) => {
+          let hasChanges = false;
+          const updated = prev.map((msg) => {
+            // Only check sent messages from current user
+            if (msg.fromUserId === currentUserId && !msg.read) {
+              const updatedMsg = data.messages.find((m) => m._id === msg._id);
+              
+              // If message is marked as read in DB but not in UI
+              if (updatedMsg && updatedMsg.read) {
+                console.log(`🔵 [POLL] Blue tick appeared for: ${msg._id}`);
+                hasChanges = true;
+                return { ...msg, read: true };
+              }
+            }
+            return msg;
+          });
+
+          return hasChanges ? updated : prev;
+        });
+      } catch (err) {
+        console.debug("[POLL] Read status check failed");
+        console.log(err)
+      }
+    }, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(pollInterval);
   }, [selectedUserId, currentUserId]);
 
   // Auto-scroll
@@ -374,13 +418,7 @@ export default function Chat({
         const bUnread = unreadCounts[b.userId] || 0;
         return bUnread - aUnread;
       });
-  }, [
-    allUsers,
-    currentUserId,
-    searchQuery,
-    pinnedChats,
-    unreadCounts,
-  ]);
+  }, [allUsers, currentUserId, searchQuery, pinnedChats, unreadCounts]);
 
   // Current chat messages
   const currentChatMessages = useMemo(() => {
@@ -403,34 +441,16 @@ export default function Chat({
 
     if (!selectedUserId || !messageInput.trim()) return;
 
-    const uniqueId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const tempId = `temp_${uniqueId}`;
+      console.log("📤 [SEND] Sending message:", messageInput.trim());
 
-    const optimisticMessage = {
-      _id: tempId,
-      fromUserId: currentUserId,
-      fromUserName: currentUserName,
-      toUserId: selectedUserId,
-      message: messageInput.trim(),
-      time: new Date().toISOString(),
-      read: false,
-      sending: true,
-      delivered: false,
-      uniqueId: uniqueId,
-    };
+      // ✅ Just emit to backend - DON'T add to UI yet
+      socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
+        toUserId: selectedUserId,
+        message: messageInput.trim(),
+      });
 
-    setMessages((prev) => [...prev, optimisticMessage]);
-    setMessageInput("");
-
-    socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
-      toUserId: selectedUserId,
-      message: messageInput.trim(),
-      fromUserId: currentUserId,
-      fromUserName: currentUserName,
-      tempId: tempId,
-      uniqueId: uniqueId,
-    });
-  }, [selectedUserId, messageInput, currentUserId, currentUserName]);
+      setMessageInput("");
+    }, [selectedUserId, messageInput]);
 
   // Handle typing
   const handleChatTyping = useCallback(
@@ -688,7 +708,7 @@ export default function Chat({
 
                   return (
                     <div
-                      key={m._id || index}
+                      key={`${m._id}-${index}`}
                       className={`flex gap-3 ${isOwn ? "flex-row-reverse" : "flex-row"} group animate-in fade-in slide-in-from-bottom-2 duration-300`}
                     >
                       {showAvatar ? (
@@ -736,15 +756,14 @@ export default function Chat({
                           {isOwn && (
                             <>
                               {m.sending ? (
-                                <span className="text-xs text-yellow-400">
-                                  ⏳
-                                </span>
-                              ) : messageReadStatus[m._id] ? (
-                                <CheckCheck className="w-3.5 h-3.5 text-blue-400" title="Read" />
+                                // ✅ Single tick - sending
+                                <Check className="w-3.5 h-3.5 text-gray-400" />
                               ) : m.read ? (
+                                // ✅ Double tick - delivered AND read
                                 <CheckCheck className="w-3.5 h-3.5 text-blue-400" />
                               ) : (
-                                <Check className="w-3.5 h-3.5 text-gray-400" />
+                                // ✅ Double tick - delivered but not read
+                                <CheckCheck className="w-3.5 h-3.5 text-gray-400" />
                               )}
                             </>
                           )}

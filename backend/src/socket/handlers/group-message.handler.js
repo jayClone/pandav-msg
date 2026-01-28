@@ -4,12 +4,10 @@ import Group from "@models/Group.js";
 
 /**
  * Handle group messages
- * NOTE: Message is already saved via HTTP API
- * This handler just broadcasts to all group members
  */
 export async function handleGroupMessage(socket, io, payload, userId, name) {
     try {
-        const { groupId, message, _id, createdAt } = payload || {};
+        const { groupId, message } = payload || {};
 
         if (!groupId) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
@@ -21,13 +19,6 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
         if (!message || typeof message !== "string" || message.trim().length === 0) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
                 message: "Message cannot be empty" 
-            });
-            return;
-        }
-
-        if (!_id) {
-            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-                message: 'Message ID is required' 
             });
             return;
         }
@@ -50,25 +41,41 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
 
         const trimmedMessage = message.trim();
 
+        // Save to DB
+        const savedMessage = await Message.create({
+            senderId: userId,
+            groupId: groupId,
+            message: trimmedMessage,
+            chatType: 'group'
+        });
+
         console.log(`[GROUP-MSG] ${name} → ${groupId}: ${trimmedMessage.substring(0, 30)}`);
 
-        // Prepare broadcast (message already saved via HTTP API)
         const messagePayload = {
-            _id: _id,
+            _id: savedMessage._id,
             groupId: groupId,
             fromUserId: userId,
             fromUserName: name,
             message: trimmedMessage,
-            time: createdAt || new Date().toISOString()
+            time: savedMessage.createdAt.toISOString()
         };
 
-        // Broadcast to all group members (including sender)
+        // Send to all group members
         io.to(groupId).emit('group_message', messagePayload);
 
+        // Send confirmation to sender
+        socket.emit(SOCKET_EVENTS.MESSAGE_SENT, {
+            messageId: savedMessage._id,
+            groupId: groupId,
+            message: trimmedMessage,
+            time: savedMessage.createdAt.toISOString(),
+            saved: true
+        });
+
     } catch (error) {
-        console.error('[ERROR] Group message broadcast failed:', error.message);
+        console.error('[ERROR] Group message failed:', error.message);
         socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-            message: 'Failed to broadcast group message' 
+            message: 'Failed to send group message' 
         });
     }
 }

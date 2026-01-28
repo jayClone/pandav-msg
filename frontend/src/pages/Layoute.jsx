@@ -45,7 +45,7 @@ export default function Layoute({ initialTab = "chats" }) {
 
   // UI States
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [theme, setTheme] = useState("dark");
+  const [theme, ] = useState("dark");
   const [bgImage, setBgImage] = useState(() => {
     const savedTheme = localStorage.getItem("selectedTheme");
     return savedTheme || "default";
@@ -53,7 +53,7 @@ export default function Layoute({ initialTab = "chats" }) {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
-  const [showThemeSettings, setShowThemeSettings] = useState(false);
+  const [showThemeSettings, ] = useState(false);
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [allUsers, setAllUsers] = useState([]);
