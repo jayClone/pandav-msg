@@ -3,7 +3,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun src/server.js",
+    "dev": "bun --watch run src/server.js",
+    "start": "bun run src/server.js",
     "build": "echo Backend build OK",
     "test": "bun test"
   },

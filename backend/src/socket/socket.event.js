@@ -9,130 +9,186 @@ const onlineUsers = new Map();
 
 /**
  * Register all socket events
- * Handlers: messaging, online status, disconnection
+ * ✅ Uses SOCKET_EVENTS constants - NO more case confusion!
  */
 export function registerSocketEvents(io, socket) {
-    const { userId, email, name } = socket.user;
+  const { userId, email, name } = socket.user;
 
-    // User connected
-    handleUserConnect(socket, io, userId, email, name, onlineUsers);
+  console.log(`\n🟢 ================================`);
+  console.log(`👤 User Connected: ${name}`);
+  console.log(`   ID: ${userId}`);
+  console.log(`   Socket: ${socket.id}`);
+  console.log(`🟢 ================================\n`);
 
-    //  Private message event
-    socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, async (data, callback) => {
-        console.log("📥 [SOCKET] Received PRIVATE_MESSAGE:", { 
-            toUserId: data.toUserId, 
-            uniqueId: data.uniqueId 
+  // ✅ User connected
+  handleUserConnect(socket, io, userId, email, name, onlineUsers);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ✅ PRIVATE MESSAGE
+  // ═══════════════════════════════════════════════════════════════════
+  socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, async (data, callback) => {
+    console.log("📥 [SOCKET] Received PRIVATE_MESSAGE:", { 
+      toUserId: data.toUserId, 
+      uniqueId: data.uniqueId 
+    });
+    
+    try {
+      const result = await handlePrivateMessage(socket, io, data, userId, name, onlineUsers);
+      
+      if (callback && typeof callback === 'function') {
+        callback(null, {
+          success: true,
+          _id: result?._id,
+          uniqueId: data.uniqueId,
+          delivered: result?.delivered || true,
+          message: "Message sent successfully"
         });
-        
-        try {
-            const result = await handlePrivateMessage(socket, io, data, userId, name, onlineUsers);
-            
-            // Send acknowledgment back to sender with message details
-            if (callback && typeof callback === 'function') {
-                callback(null, {
-                    success: true,
-                    _id: result?._id,
-                    uniqueId: data.uniqueId,
-                    delivered: result?.delivered || true,
-                    message: "Message sent successfully"
-                });
-            }
-        } catch (error) {
-            console.error("❌ [SOCKET] Error handling private message:", error.message);
-            if (callback && typeof callback === 'function') {
-                callback(error.message);
-            }
-        }
+      }
+    } catch (error) {
+      console.error("❌ [SOCKET] Error handling private message:", error.message);
+      if (callback && typeof callback === 'function') {
+        callback(error.message);
+      }
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ✅ JOIN GROUP - Using SOCKET_EVENTS.JOIN_GROUP
+  // ═══════════════════════════════════════════════════════════════════
+  socket.on(SOCKET_EVENTS.JOIN_GROUP, async (payload) => {
+    console.log(`📥 [SOCKET] Received JOIN_GROUP from ${name}:`, payload);
+    
+    try {
+      handleJoinGroup(socket, io, payload, userId, name);
+      console.log(`✅ User ${name} joined group`);
+    } catch (error) {
+      console.error("❌ Error joining group:", error.message);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ✅ LEAVE GROUP - Using SOCKET_EVENTS.LEAVE_GROUP
+  // ═══════════════════════════════════════════════════════════════════
+  socket.on(SOCKET_EVENTS.LEAVE_GROUP, async (payload) => {
+    console.log(`📥 [SOCKET] Received LEAVE_GROUP from ${name}:`, payload);
+    
+    try {
+      handleLeaveGroup(socket, io, payload, userId, name);
+      console.log(`✅ User ${name} left group`);
+    } catch (error) {
+      console.error("❌ Error leaving group:", error.message);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ✅ GROUP MESSAGE - ⚠️ THIS WAS MISSING THE HANDLER CALL!
+  // ═══════════════════════════════════════════════════════════════════
+  socket.on(SOCKET_EVENTS.GROUP_MESSAGE, async (payload) => {
+    console.log(`\n📥 [SOCKET] Received GROUP_MESSAGE from ${name}`);
+    console.log(`   Payload:`, payload);
+    
+    try {
+      // ✅ IMPORTANT: Actually call the handler!
+      await handleGroupMessage(socket, io, payload, userId, name);
+      console.log(`✅ GROUP_MESSAGE processed successfully\n`);
+    } catch (error) {
+      console.error("❌ [SOCKET] Error handling group message:", error.message);
+      socket.emit('error', { message: 'Failed to send group message' });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ✅ TYPING
+  // ═══════════════════════════════════════════════════════════════════
+  socket.on(SOCKET_EVENTS.TYPING, (data) => {
+    console.log(`📥 [SOCKET] Received TYPING from ${name}:`, { 
+      toUserId: data.toUserId, 
+      isTyping: data.isTyping 
     });
+    
+    const receiverUser = onlineUsers.get(data.toUserId);
+    
+    if (receiverUser) {
+      console.log(`📤 [SOCKET] Sending TYPING to ${receiverUser.name}`);
+      io.to(receiverUser.socketId).emit(SOCKET_EVENTS.TYPING, {
+        fromUserId: userId,
+        isTyping: data.isTyping
+      });
+    }
+  });
 
-    // ✅ JOIN GROUP EVENT
-    socket.on(SOCKET_EVENTS.JOIN_GROUP, async (payload) => {
-        console.log("📥 [SOCKET] Received JOIN_GROUP");
-        handleJoinGroup(socket, io, payload, userId, name);
-    });
+  // ═══════════════════════════════════════════════════════════════════
+  // ✅ MESSAGE DELETED
+  // ═══════════════════════════════════════════════════════════════════
+  socket.on(SOCKET_EVENTS.MESSAGE_DELETED, (data) => {
+    console.log(`📥 [SOCKET] Received MESSAGE_DELETED from ${name}:`, data);
+    
+    const receiverUser = onlineUsers.get(data.toUserId);
+    
+    if (receiverUser) {
+      console.log(`📤 [SOCKET] Sending MESSAGE_DELETED to ${receiverUser.name}`);
+      io.to(receiverUser.socketId).emit(SOCKET_EVENTS.MESSAGE_DELETED, {
+        messageId: data.messageId,
+        fromUserId: userId,
+        toUserId: data.toUserId
+      });
+    } else {
+      console.log(`⚠️ [SOCKET] Receiver ${data.toUserId} offline`);
+    }
+  });
 
-    // ✅ LEAVE GROUP EVENT
-    socket.on(SOCKET_EVENTS.LEAVE_GROUP, async (payload) => {
-        console.log("📥 [SOCKET] Received LEAVE_GROUP");
-        handleLeaveGroup(socket, io, payload, userId, name);
-    });
+  // ═══════════════════════════════════════════════════════════════════
+  // ✅ READ RECEIPT
+  // ═══════════════════════════════════════════════════════════════════
+  socket.on(SOCKET_EVENTS.READ_RECEIPT, async (data) => {
+    console.log(`📥 [SOCKET] Received READ_RECEIPT from ${name}:`, data);
 
-    // ✅ GROUP MESSAGE EVENT
-    socket.on(SOCKET_EVENTS.GROUP_MESSAGE, async (payload) => {
-        console.log("📥 [SOCKET] Received GROUP_MESSAGE");
-        handleGroupMessage(socket, io, payload, userId, name);
-    });
+    const { messageId, senderId, receiverId } = data;
+    
+    try {
+      // ✅ Update message in DB as read
+      const updatedMessage = await Message.findByIdAndUpdate(
+        messageId,
+        { read: true },
+        { new: true }
+      );
+      console.log(`✅ [DB] Message ${messageId} marked as read in database`);
 
-    // ✅ TYPING EVENT
-    socket.on(SOCKET_EVENTS.TYPING, (data) => {
-        console.log("📥 [SOCKET] Received TYPING:", { toUserId: data.toUserId, isTyping: data.isTyping });
-        const receiverUser = onlineUsers.get(data.toUserId);
-        
-        if (receiverUser) {
-            console.log(`📤 [SOCKET] Sending TYPING to ${receiverUser.name}`);
-            io.to(receiverUser.socketId).emit(SOCKET_EVENTS.TYPING, {
-                fromUserId: userId,
-                isTyping: data.isTyping
-            });
-        }
-    });
+      // ✅ Find original sender
+      const originalSender = onlineUsers.get(senderId);
+      
+      if (originalSender) {
+        // ✅ Send MESSAGE_READ to sender
+        io.to(originalSender.socketId).emit(SOCKET_EVENTS.MESSAGE_READ, {
+          messageId: messageId,
+          readBy: userId,
+          senderId: senderId,
+          readerName: name
+        });
+        console.log(`✅ [SOCKET] MESSAGE_READ sent to sender ${originalSender.name}`);
+      } else {
+        console.log(`⚠️ [SOCKET] Sender ${senderId} is offline`);
+      }
+    } catch (err) {
+      console.error(`❌ [ERROR] Failed to mark message as read:`, err.message);
+    }
+  });
 
-    // ✅ MESSAGE DELETED EVENT
-    socket.on(SOCKET_EVENTS.MESSAGE_DELETED, (data) => {
-        console.log("📥 [SOCKET] Received MESSAGE_DELETED:", data);
-        
-        const receiverUser = onlineUsers.get(data.toUserId);
-        
-        if (receiverUser) {
-            console.log(`📤 [SOCKET] Sending MESSAGE_DELETED to ${receiverUser.name}`);
-            io.to(receiverUser.socketId).emit(SOCKET_EVENTS.MESSAGE_DELETED, {
-                messageId: data.messageId,
-                fromUserId: userId,
-                toUserId: data.toUserId
-            });
-        } else {
-            console.log(`⚠️ [SOCKET] Receiver ${data.toUserId} offline`);
-        }
-    });
+  // ═══════════════════════════════════════════════════════════════════
+  // ✅ DISCONNECT
+  // ═══════════════════════════════════════════════════════════════════
+  socket.on("disconnect", async () => {
+    try {
+      handleUserDisconnect(socket, io, userId, name, onlineUsers);
+    } catch (error) {
+      console.error("❌ Error handling disconnect:", error.message);
+    }
+  });
 
-    //  Read receipt event
-    socket.on(SOCKET_EVENTS.READ_RECEIPT, async (data) => {
-        console.log("📥 [READ_RECEIPT] Received:", data);
-
-        const { messageId, senderId, receiverId } = data;
-        
-        try {
-            // ✅ Update message in DB as read
-            const updatedMessage = await Message.findByIdAndUpdate(
-                messageId,
-                { read: true },
-                { new: true }
-            );
-            console.log(`✅ [DB] Message ${messageId} marked as read in database`);
-
-            // ✅ Find ORIGINAL SENDER (who sent the message)
-            const originalSender = onlineUsers.get(senderId);
-            console.log(`📥 [READ_RECEIPT] Looking for sender ${senderId}:`, originalSender ? "FOUND" : "NOT FOUND");
-            
-            if (originalSender) {
-                // ✅ Send read receipt back to sender ONLY if online
-                io.to(originalSender.socketId).emit(SOCKET_EVENTS.MESSAGE_READ, {
-                    messageId: messageId,
-                    readBy: userId,  // Who read it
-                    senderId: senderId,
-                    readerName: name
-                });
-                console.log(`✅ [SOCKET] MESSAGE_READ sent to sender ${originalSender.name}`);
-            } else {
-                console.log(`⚠️ [READ_RECEIPT] Sender ${senderId} is offline, message saved as read in DB`);
-            }
-        } catch (err) {
-            console.error(`❌ [ERROR] Failed to mark message as read:`, err.message);
-        }
-    });
-
-    // ✅ USER DISCONNECTED
-    socket.on("disconnect", async () => {
-        handleUserDisconnect(socket, io, userId, name, onlineUsers);
-    });
+  // ═══════════════════════════════════════════════════════════════════
+  // ✅ ERROR HANDLING
+  // ═══════════════════════════════════════════════════════════════════
+  socket.on("error", (error) => {
+    console.error(`⚠️ [SOCKET] Error from ${name}:`, error);
+  });
 }

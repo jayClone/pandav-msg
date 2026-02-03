@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useEffect, useState, useRef } from 'react'
 import axios from 'axios'
 import groupService from '@services/group.service.js'
-import messageService from '@services/message.service.js'
+// import messageService from '@services/message.service.js'
 import { SOCKET_EVENTS } from '@constants/socketEvents.js'
 import { connectSocket, getSocket } from '@socket/socketClient.js'
 import {
@@ -26,8 +26,6 @@ import {
 export default function GroupChat({
   sidebarOpen,
   setSidebarOpen,
-  bgImage,
-  bgImages,
   token,
   currentUserName,
   currentUserId,
@@ -60,7 +58,7 @@ export default function GroupChat({
   const [selectedUsersToAdd, setSelectedUsersToAdd] = useState([]);
   const [searchUsersToAdd, setSearchUsersToAdd] = useState("");
   const [messageReadStatus, setMessageReadStatus] = useState({});
-  const [lastMessages, setLastMessages] = useState({});
+  const [lastMessages,] = useState({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingGroup, setDeletingGroup] = useState(false);
 
@@ -212,67 +210,41 @@ export default function GroupChat({
     messageInputRef.current?.focus();
   }, [token]);
 
-  const handleSendMessage = useCallback(async () => {
-    const socket = getSocket();
+const handleSendMessage = useCallback(async () => {
+  const socket = getSocket();
+  
+  if (!socket?.connected) {
+    console.warn('⚠️ Socket not connected');
+    return;
+  }
+  
+  if (!selectedGroup || !newMessage.trim()) return;
+
+  const messageText = newMessage.trim();
+  setNewMessage("");
+  
+  try {
+    console.log("📤 Sending message via Socket:", {
+      groupId: selectedGroup.id,
+      message: messageText,
+    });
     
-    if (!socket?.connected) {
-        console.warn('⚠️ Socket not connected, attempting to reconnect...');
-        return;
-    }
+    // ✅ Use SOCKET_EVENTS constant
+    socket.emit(SOCKET_EVENTS.GROUP_MESSAGE, {
+      groupId: selectedGroup.id,
+      message: messageText,
+      fromUserId: currentUserId,
+      fromUserName: currentUserName,
+    });
+
+    console.log('✅ Message emitted to socket');
+    messageInputRef.current?.focus();
     
-    if (!selectedGroup || !newMessage.trim()) return;
-
-    const messageText = newMessage.trim();
-    setNewMessage("");
-    
-    try {
-        console.log("📤 Sending message:", {
-            groupId: selectedGroup.id,
-            message: messageText,
-            socketConnected: socket.connected
-        });
-        
-        const savedMessage = await messageService.sendGroupMessage(
-            selectedGroup.id,
-            messageText
-        );
-        
-        console.log("✅ Message sent successfully:", savedMessage);
-
-        if (!savedMessage || !savedMessage._id) {
-            throw new Error("Failed to send message - no message ID returned");
-        }
-
-        const newMsg = {
-            _id: savedMessage._id,
-            fromUserId: currentUserId,
-            fromUserName: currentUserName,
-            message: messageText,
-            time: savedMessage.createdAt || new Date().toISOString(),
-            read: true,
-        };
-        
-        setMessages((prev) => [...prev, newMsg]);
-
-        if (socket.connected) {
-            socket.emit(SOCKET_EVENTS.GROUP_MESSAGE, {
-                message: messageText,
-                fromUserId: currentUserId,
-                fromUserName: currentUserName,
-                _id: savedMessage._id,
-                groupId: selectedGroup.id,
-                createdAt: savedMessage.createdAt || new Date().toISOString(),
-            });
-        }
-
-        setError(null);
-    } catch (err) {
-        console.error("❌ Failed to send message:", err);
-        setNewMessage(messageText);
-        const errorMsg = err.response?.data?.message || err.message || "Unknown error";
-        setError("Failed to send message: " + errorMsg);
-    }
-  }, [selectedGroup, newMessage, currentUserId, currentUserName]);
+  } catch (err) {
+    console.error("❌ Failed to send message:", err);
+    setNewMessage(messageText);
+  }
+}, [selectedGroup, newMessage, currentUserId, currentUserName]);
 
   const togglePinGroup = useCallback((groupId) => {
     setPinnedGroups((prev) =>
@@ -508,12 +480,6 @@ export default function GroupChat({
     }));
   }, []);
 
-  const handleLastMessage = useCallback((groupId, message) => {
-    setLastMessages((prev) => ({
-      ...prev,
-      [groupId]: message,
-    }));
-  }, []);
 
   const fetchAvailableUsers = useCallback(async () => {
     try {
@@ -544,44 +510,66 @@ export default function GroupChat({
 
   // ✅ Connect socket when component mounts
   useEffect(() => {
-    if (!token) return
-  
-    const socket = connectSocket(token)
-    console.log('🔌 Socket connected for group chat:', socket?.id)
-  
-    return () => {
-      // Cleanup if needed
+    if (!token) {
+      console.warn('⚠️ No token available for socket');
+      return;
     }
+
+    console.log('🔌 Connecting socket...');
+    const socket = connectSocket(token);
+  
+    console.log('🔌 Socket connected:', {
+      id: socket?.id,
+      connected: socket?.connected,
+      url: socket?.io?.uri
+    });
+
+    // ✅ Listen for connection events
+    socket.on('connect', () => {
+      console.log('✅ Socket connected successfully');
+    });
+
+    socket.on('disconnect', () => {
+      console.log('❌ Socket disconnected');
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket connection error:', error.message);
+    });
+
+    return () => {
+      // Don't disconnect on unmount - keep connection alive
+    };
   }, [token])
 
-  // ✅ Listen for group messages
+  // ✅ Listen for group messages using SOCKET_EVENTS
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
 
+    console.log('🎧 Setting up group_message listener...');
+
     socket.on(SOCKET_EVENTS.GROUP_MESSAGE, (data) => {
-      console.log('💬 New group message:', data);
+      console.log('💬 Received group_message event:', data);
       
-      const newMsg = {
-        _id: data._id || `temp_${Date.now()}`,
-        fromUserId: data.fromUserId,
-        fromUserName: data.fromUserName,
-        message: data.message,
-        time: data.createdAt || new Date().toISOString(),
-        read: false,
-        chatType: 'group',
-      };
+      if (!data?.groupId) {
+        console.warn('⚠️ Invalid message data:', data);
+        return;
+      }
 
       if (data.groupId === selectedGroup?.id) {
-        setMessages((prev) => [...prev, newMsg]);
-        // ✅ USE handleLastMessage
-        handleLastMessage(data.groupId, {
+        const newMsg = {
+          _id: data._id || `msg_${Date.now()}`,
+          fromUserId: data.fromUserId,
+          fromUserName: data.fromUserName || 'Unknown',
           message: data.message,
-          userName: data.fromUserName,
-          timestamp: data.createdAt,
-        });
+          time: data.createdAt || new Date().toISOString(),
+          read: false,
+        };
+
+        console.log('✅ Adding message:', newMsg._id);
+        setMessages((prev) => [...prev, newMsg]);
       } else {
-        // Update unread count for other groups
         setUnreadCounts((prev) => ({
           ...prev,
           [data.groupId]: (prev[data.groupId] || 0) + 1,
@@ -592,7 +580,7 @@ export default function GroupChat({
     return () => {
       socket.off(SOCKET_EVENTS.GROUP_MESSAGE);
     };
-  }, [selectedGroup?.id, handleLastMessage]);
+  }, [selectedGroup?.id]);
 
   // ✅ Listen for read receipts
   useEffect(() => {
@@ -916,164 +904,50 @@ export default function GroupChat({
                   return (
                     <div
                       key={msg._id || index}
-                      className={`flex gap-3 ${isOwn ? "flex-row-reverse" : "flex-row"} group animate-in fade-in slide-in-from-bottom-2 duration-300`}
+                      className={`flex gap-3 ${isOwn ? "flex-row-reverse" : "flex-row"} group animate-in fade-in slide-in-from-bottom-2 duration-300 ${
+                        msg.pending ? "opacity-70" : "opacity-100"  // ✅ Show pending state
+                      }`}
                     >
-                      {showAvatar ? (
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg ${
-                            isOwn
-                              ? "bg-linear-to-br from-blue-500 to-purple-600"
-                              : "bg-linear-to-br from-purple-500 to-pink-600"
-                          }`}
-                        >
-                          {(msg?.fromUserName || 'U').charAt(0).toUpperCase()}
-                        </div>
-                      ) : (
-                        <div className="w-8"></div>
-                      )}
-
+                      {/* Avatar */}
                       <div
-                        className={`flex flex-col ${isOwn ? "items-end" : "items-start"} max-w-[70%]`}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg ${
+                          isOwn
+                            ? "bg-linear-to-br from-blue-500 to-purple-600"
+                            : "bg-linear-to-br from-purple-500 to-pink-600"
+                        }`}
                       >
+                        {(msg?.fromUserName || 'U').charAt(0).toUpperCase()}
+                      </div>
+
+                      <div className={`flex flex-col ${isOwn ? "items-end" : "items-start"} max-w-[70%]`}>
                         {showAvatar && !isOwn && (
                           <p className="text-xs text-gray-400 mb-1">
                             {msg.fromUserName}
                           </p>
                         )}
+                        
                         <div
                           className={`px-4 py-2.5 rounded-2xl shadow-lg backdrop-blur-sm transition-all ${
                             isOwn
                               ? "bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm"
                               : "glass-effect text-white  rounded-tl-sm border border-[rgb(var(--border-secondary))]"
-                          }`}
+                          } ${msg.pending ? "border-2 border-yellow-500/50" : ""}`}  // ✅ Show pending border
                         >
-                          <p
-                            className="wrap-break-word  leading-relaxed"
-                            style={{
-                              color: bgImages[bgImage].textColor,
-                            }}
-                          >
-                            {msg.message}
-                          </p>
+                          <p className="wrap-break-word  leading-relaxed">{msg.message}</p>
                         </div>
 
                         <div className="flex items-center gap-2 mt-1.5">
                           <span className="text-xs text-gray-500 font-medium">
                             {formatTime(msg.time)}
+                            {msg.pending && " (sending...)"}  {/* ✅ Show pending text */}
                           </span>
-                          {isOwn && (
+                          {isOwn && !msg.pending && (  /* ✅ Only show checks if sent */
                             <div className="flex items-center gap-1">
                               {messageReadStatus[msg._id] &&
-                                Object.keys(messageReadStatus[msg._id]).length > 0 ? (
-                                <div className="group relative cursor-pointer">
-                                  <CheckCheck className="w-4 h-4 text-green-400 hover:scale-110 transition-transform" />
-                                  {/* Tooltip */}
-                                  <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-[rgb(var(--bg-secondary))] border-2 border-green-500/30 rounded-xl p-4 text-xs text-gray-300 w-80 shadow-2xl z-50">
-                                    {/* Read By Section */}
-                                    <div className="mb-4">
-                                      <div className="flex items-center gap-2 mb-3">
-                                        <CheckCheck className="w-4 h-4 text-green-400" />
-                                        <span className="font-bold text-green-400">
-                                          Read by
-                                        </span>
-                                        <span className="text-gray-500">
-                                          ({Object.keys(messageReadStatus[msg._id]).length})
-                                        </span>
-                                      </div>
-                                      <div className="space-y-2">
-                                        {Object.values(messageReadStatus[msg._id]).map(
-                                          (reader, idx) => (
-                                            <div
-                                              key={idx}
-                                              className="flex items-center gap-3 p-2 rounded-lg bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/60"
-                                            >
-                                              <div className="w-8 h-8 rounded-full bg-linear-to-r from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
-                                                {reader.userName
-                                                  .charAt(0)
-                                                  .toUpperCase()}
-                                              </div>
-                                              <div className="min-w-0 flex-1">
-                                                <p className="text-sm font-semibold text-gray-200 truncate">
-                                                  {reader.userName}
-                                                </p>
-                                                <p className="text-xs text-gray-500">
-                                                  {reader.readAt
-                                                    ? new Date(
-                                                        reader.readAt
-                                                      ).toLocaleTimeString(
-                                                        "en-US",
-                                                        {
-                                                          hour: "2-digit",
-                                                          minute: "2-digit",
-                                                          hour12: true,
-                                                        }
-                                                      )
-                                                    : "Just now"}
-                                                </p>
-                                              </div>
-                                            </div>
-                                          )
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Delivered To Section */}
-                                    {members.length >
-                                      Object.keys(messageReadStatus[msg._id])
-                                        .length && (
-                                      <div className="border-t border-[rgb(var(--border-secondary))] pt-3">
-                                        <div className="flex items-center gap-2 mb-3">
-                                          <Check className="w-4 h-4 text-gray-500" />
-                                          <span className="font-bold text-gray-400">
-                                            Delivered to
-                                          </span>
-                                          <span className="text-gray-600">
-                                            (
-                                            {members.length -
-                                              Object.keys(messageReadStatus[msg._id])
-                                                .length}
-                                            )
-                                          </span>
-                                        </div>
-                                        <div className="space-y-2">
-                                          {members
-                                            .filter(
-                                              (member) =>
-                                                !messageReadStatus[msg._id]?.[
-                                                  member._id || member.userId
-                                                ] &&
-                                                (member._id || member.userId) !==
-                                                  currentUserId
-                                            )
-                                            .map((member) => (
-                                              <div
-                                                key={
-                                                  member._id || member.userId
-                                                }
-                                                className="flex items-center gap-3 p-2 rounded-lg bg-[rgb(var(--bg-hover))]/20"
-                                              >
-                                                <div className="w-8 h-8 rounded-full bg-linear-to-br from-orange-500 to-red-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
-                                                  {member.name
-                                                    .charAt(0)
-                                                    .toUpperCase()}
-                                                </div>
-                                                <div className="min-w-0 flex-1">
-                                                  <p className="text-sm font-semibold text-gray-300 truncate">
-                                                    {member.name}
-                                                  </p>
-                                                  <p className="text-xs text-gray-600">
-                                                    Waiting...
-                                                  </p>
-                                                </div>
-                                              </div>
-                                            ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
+                              Object.keys(messageReadStatus[msg._id]).length > 0 ? (
+                                <CheckCheck className="w-4 h-4 text-green-400" />
                               ) : (
-                                <Check className="w-4 h-4 text-gray-500 cursor-pointer" />
+                                <Check className="w-4 h-4 text-gray-500" />
                               )}
                             </div>
                           )}
@@ -1233,11 +1107,10 @@ export default function GroupChat({
                 </div>
               )}
 
-              {/* Users List - FIXED */}
+              {/* Users List - PROPERLY FIXED */}
               <div className="space-y-2">
-                {members.length === 0 ? (
+                {availableUsers.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
-                    <Users className="w-12 h-12 mx-auto mb-2 opacity-30" />
                     <p className="text-sm">
                       {searchUsers
                         ? "No users found"
@@ -1245,48 +1118,45 @@ export default function GroupChat({
                     </p>
                   </div>
                 ) : (
-                  members.map((member) => {
-                    // ✅ SAFETY CHECK - Skip invalid members
-                    if (!member || (!member._id && !member.userId)) {
-                      console.warn('⚠️ Invalid member found:', member);
-                      return null;
-                    }
+                  availableUsers
+                    .filter((user) => {
+                      const userStr = `${user.name} ${user.email}`.toLowerCase();
+                      return userStr.includes(searchUsers.toLowerCase());
+                    })
+                    .map((user) => {
+                      const userId = user.userId || user._id;
+                      const isSelected = selectedMembers.includes(userId);
+                      const userName = user.name || user.email || 'Unknown User';
 
-                    const memberId = member._id || member.userId;
-                    const memberName = member.name || member.email || 'Unknown User';
-
-                    return (
-                      <div
-                        key={memberId}
-                        className="flex items-center justify-between gap-3 p-3 bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 rounded-xl border border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30 transition-all group"
-                      >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className="w-10 h-10 rounded-full bg-linear-to-r from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shrink-0 shadow-lg text-sm">
-                            {memberName.charAt(0).toUpperCase()}
+                      return (
+                        <button
+                          key={userId}
+                          onClick={() => {
+                            toggleMemberSelection(userId);
+                          }}
+                          className={`w-full p-3 rounded-lg text-left transition-all flex items-center gap-3 ${
+                            isSelected
+                              ? "bg-green-500/20 border border-green-500/30"
+                              : "hover:bg-[rgb(var(--bg-hover))]/50 border border-[rgb(var(--border-secondary))]/50"
+                          }`}
+                        >
+                          <div className="w-10 h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                            {userName.charAt(0).toUpperCase()}
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-gray-200 truncate">
-                              {memberName}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-300 truncate">
+                              {user.name}
                             </p>
                             <p className="text-xs text-gray-500 truncate">
-                              {member.email || 'No email'}
+                              {user.email}
                             </p>
                           </div>
-                        </div>
-                        <button
-                          onClick={() => handleRemoveMember(memberId)}
-                          disabled={removeMemberLoading === memberId}
-                          className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 disabled:opacity-50 shrink-0 opacity-0 group-hover:opacity-100"
-                        >
-                          {removeMemberLoading === memberId ? (
-                            <Loader className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <X className="w-4 h-4" />
+                          {isSelected && (
+                            <Check className="w-5 h-5 text-green-400 shrink-0" />
                           )}
                         </button>
-                      </div>
-                    );
-                  })
+                      );
+                    })
                 )}
               </div>
             </div>
@@ -1308,13 +1178,14 @@ export default function GroupChat({
                 onClick={handleCreateGroup}
                 disabled={creatingGroup || !groupName.trim() || selectedMembers.length === 0}
                 className={`flex-1 px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold ${
-                  creatingGroup || !groupName.trim() || selectedMembers.length === 0
-                    ? "bg-gray-600 text-gray-400 cursor-not-allowed"
-                    : "bg-linear-to-br from-green-600 to-emerald-700 text-black hover:from-green-500 hover:to-emerald-600 glow-green"
+                  // ✅ CORRECT: Check if we have valid input
+                  !creatingGroup && groupName.trim() && selectedMembers.length > 0
+                    ? "bg-linear-to-br from-green-600 to-emerald-700 text-black hover:from-green-500 hover:to-emerald-600 glow-green cursor-pointer"
+                    : "bg-gray-600 text-gray-400 cursor-not-allowed opacity-50"
                 }`}
               >
                 {creatingGroup && <Loader className="w-4 h-4 animate-spin" />}
-                {creatingGroup ? "Creating..." : "Create Group"}
+                {creatingGroup ? "Creating..." : `Create Group (${selectedMembers.length})`}
               </button>
             </div>
           </div>
@@ -1419,6 +1290,8 @@ export default function GroupChat({
                     .map((user) => {
                       const userId = user.userId || user._id;
                       const isSelected = selectedUsersToAdd.includes(userId);
+                      const userName = user.name || user.email || 'Unknown User';
+
                       return (
                         <button
                           key={userId}
@@ -1431,12 +1304,12 @@ export default function GroupChat({
                           }}
                           className={`w-full p-3 rounded-lg text-left transition-all flex items-center gap-3 ${
                             isSelected
-                              ? "bg-blue-500/20 border border-blue-500/30"
+                              ? "bg-green-500/20 border border-green-500/30"
                               : "hover:bg-[rgb(var(--bg-hover))]/50 border border-[rgb(var(--border-secondary))]/50"
                           }`}
                         >
-                          <div className="w-10 h-10 rounded-full bg-linear-to-br from-blue-500 to-cyan-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
-                            {(user?.name || user?.email || 'U').charAt(0).toUpperCase()}
+                          <div className="w-10 h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                            {userName.charAt(0).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-gray-300 truncate">
@@ -1447,7 +1320,7 @@ export default function GroupChat({
                             </p>
                           </div>
                           {isSelected && (
-                            <Check className="w-5 h-5 text-blue-400 shrink-0" />
+                            <Check className="w-5 h-5 text-green-400 shrink-0" />
                           )}
                         </button>
                       );
@@ -1477,7 +1350,7 @@ export default function GroupChat({
                 }
                 className={`flex-1 px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold ${
                   addMemberLoading || selectedUsersToAdd.length === 0
-                    ? "bg-gray-600 text-gray-400 cursor-not-allowed"
+                    ? "bg-gray-600 text-gray-400 cursor-not-allowed opacity-50"
                     : "bg-linear-to-br from-blue-600 to-cyan-700 text-white hover:from-blue-500 hover:to-cyan-600 glow-blue"
                 }`}
               >
