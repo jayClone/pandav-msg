@@ -6,7 +6,8 @@ import {
   getConversations,
   markAsRead,
   deleteMessage,
-  markGroupMessagesAsRead
+  markGroupMessagesAsRead,
+  getMessageReadReceipts
 } from '@controllers/message.controller.js';
 import { protect } from '@middlewares/auth.js';
 
@@ -50,6 +51,13 @@ router.get('/conversations/all', protect, getConversations);
  * @access Private
  */
 router.put('/read/:userId', protect, markAsRead);
+
+/**
+ * @route GET /api/v1/messages/:messageId/read-receipts
+ * @desc Get who has read a specific message
+ * @access Private
+ */
+router.get('/:messageId/read-receipts', protect, getMessageReadReceipts);
 
 /**
  * @route PUT /api/v1/messages/group/:groupId/read

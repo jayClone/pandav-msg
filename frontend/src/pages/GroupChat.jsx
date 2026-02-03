@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useEffect, useState } from 'react'
+import React, { useCallback, useMemo, useEffect, useState, useRef } from 'react'
 import axios from 'axios'
 import groupService from '@services/group.service.js'
 import messageService from '@services/message.service.js'
@@ -12,7 +12,6 @@ import {
   MessageCircle,
   Menu,
   ChevronLeft,
-  MoreVertical,
   Send,
   Check,
   CheckCheck,
@@ -20,6 +19,8 @@ import {
   Smile,
   X,
   Loader,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react'
 
 export default function GroupChat({
@@ -31,6 +32,10 @@ export default function GroupChat({
   currentUserName,
   currentUserId,
 }) {
+  // ═══════════════════════════════════════════════════════════════════
+  // STATE DECLARATIONS (FIRST)
+  // ═══════════════════════════════════════════════════════════════════
+  
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -38,14 +43,11 @@ export default function GroupChat({
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  //const [showAddMember, setShowAddMember] = useState(false);
   const [showMembersPreview, setShowMembersPreview] = useState(false);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [pinnedGroups, setPinnedGroups] = useState([]);
   const [unreadCounts, setUnreadCounts] = useState({});
-  const messageInputRef = React.useRef(null);
-  const messagesEndRef = React.useRef(null);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [selectedMembers, setSelectedMembers] = useState([]);
@@ -56,287 +58,41 @@ export default function GroupChat({
   const [removeMemberLoading, setRemoveMemberLoading] = useState(null);
   const [usersToAddList, setUsersToAddList] = useState([]);
   const [selectedUsersToAdd, setSelectedUsersToAdd] = useState([]);
-  const [searchUsersToAdd, setSearchUsersToAdd] = useState(""); // NEW: Separate search state
-  const [messageReadStatus, setMessageReadStatus] = useState({}); // Track who read each message
-  const [lastMessages, setLastMessages] = useState({}); // Track last message per group
-  //const [onlineMembers, setOnlineMembers] = useState({}); // Track online members per group
+  const [searchUsersToAdd, setSearchUsersToAdd] = useState("");
+  const [messageReadStatus, setMessageReadStatus] = useState({});
+  const [lastMessages, setLastMessages] = useState({});
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingGroup, setDeletingGroup] = useState(false);
 
-  // Fetch all groups
-  const fetchAllGroups = useCallback(async () => {
-    try {
-      const groups = await groupService.getMyGroups(); // ✅ Service returns array
-      console.log('📥 Groups fetched:', groups)
-      
-      // ✅ Groups is already an array from service
-      const formattedGroups = Array.isArray(groups) ? groups : []
-      
-      setGroups(
-        formattedGroups.map((g) => ({
-          groupId: g._id || g.groupId,
-          id: g._id || g.groupId,
-          name: g.name,
-          description: g.description || '',
-          membersCount: g.members?.length || g.participants?.length || 0,
-          createdAt: g.createdAt,
-        }))
-      )
-    } catch (err) {
-      console.error('❌ Failed to fetch groups:', err.message)
-      setError('Failed to load groups')
-    }
-  }, []);
+  // ✅ FIX: ADD REFS HERE
+  const messageInputRef = useRef(null);
+  const messagesEndRef = useRef(null);
 
-  useEffect(() => {
-    if (!token) return;
-    fetchAllGroups();
-  }, [token, fetchAllGroups]);
+  // ═══════════════════════════════════════════════════════════════════
+  // MEMOIZED VALUES (SECOND)
+  // ═══════════════════════════════════════════════════════════════════
 
-  // Fetch available users for adding to groups
-  const fetchAvailableUsers = useCallback(async () => {
-    try {
-      const response = await axios.get("/users", {
-        baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (response.data.success) {
-        setAvailableUsers(response.data.data || []);
-      }
-    } catch (err) {
-      console.error("❌ Failed to fetch users:", err);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (showCreateGroupModal && availableUsers.length === 0) {
-      fetchAvailableUsers();
-    }
-  }, [showCreateGroupModal, availableUsers, fetchAvailableUsers]);
-
-  // Fetch group messages when selected
-  useEffect(() => {
-    if (!selectedGroup) return;
-
-    const fetchGroupMessages = async () => {
-      setLoading(true);
-      try {
-        const response = await axios.get(
-          `/groups/${selectedGroup.id}/messages`,
-          {
-            baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        if (response.data.success) {
-          const msgs = response.data.data || [];
-          setMessages(
-            msgs.map((msg) => ({
-              _id: msg._id,
-              fromUserId: msg.senderId?._id || msg.fromUserId || msg.userId,
-              fromUserName: msg.senderId?.name || msg.fromUserName || msg.userName,
-              message: msg.message,
-              time: msg.createdAt,
-              read: msg.read || true,
-            }))
-          );
-        }
-      } catch (err) {
-        console.error("❌ Failed to fetch group messages:", err);
-        setError("Failed to load messages");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchGroupMessages();
-    setUnreadCounts((prev) => ({
-      ...prev,
-      [selectedGroup.id]: 0,
-    }));
-    messageInputRef.current?.focus();
-  }, [selectedGroup, token]);
-
-  // Fetch group members
-  useEffect(() => {
-    if (!selectedGroup) return;
-
-    const fetchMembers = async () => {
-      try {
-        // Get the full group data which includes members
-        const response = await axios.get(
-          `/groups/${selectedGroup.id}`,
-          {
-            baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        if (response.data.success) {
-          // Extract members from group response
-          const membersList = response.data.data.members || 
-                             response.data.data.participants || 
-                             [];
-          setMembers(Array.isArray(membersList) ? membersList : []);
-        }
-      } catch (err) {
-        console.error("❌ Failed to fetch members:", err);
-      }
-    };
-
-    fetchMembers();
-  }, [selectedGroup, token]);
-
-  // Join group room on socket when group is selected
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket || !selectedGroup) return;
-
-    console.log("🚪 Joining group room:", selectedGroup.id);
-    socket.emit(SOCKET_EVENTS.JOIN_GROUP, { groupId: selectedGroup.id });
-
-    return () => {
-      console.log("🚪 Leaving group room:", selectedGroup.id);
-      socket.emit(SOCKET_EVENTS.LEAVE_GROUP, { groupId: selectedGroup.id });
+  // ✅ SAFE SELECTED GROUP MEMOIZED GETTER
+  const safeSelectedGroup = useMemo(() => {
+    if (!selectedGroup || !selectedGroup.id) return null;
+    return {
+      ...selectedGroup,
+      name: selectedGroup.name || 'Unnamed Group'
     };
   }, [selectedGroup]);
 
-  // Socket event listeners for group messages
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket || !selectedGroup) return;
-
-    const handleGroupMessage = (data) => {
-      console.log("📨 Received group message - ID:", data._id, "Type:", typeof data._id);
-      if (data.groupId === selectedGroup.id) {
-        setMessages((prev) => {
-          // Double check: convert both to strings to ensure proper comparison
-          const messageExists = prev.some((m) => String(m._id) === String(data._id));
-          console.log("Message exists?", messageExists, "Comparing:", data._id, "vs existing:", prev.map(m => m._id));
-          
-          // SKIP if message already exists
-          if (messageExists) {
-            console.log("⏭️ SKIPPED duplicate:", data._id);
-            return prev;
-          }
-          
-          console.log("✅ ADDED message:", data._id);
-          return [
-            ...prev,
-            {
-              _id: data._id,
-              fromUserId: data.fromUserId,
-              fromUserName: data.fromUserName,
-              message: data.message,
-              time: data.time || data.createdAt || new Date().toISOString(),
-              read: true,
-            },
-          ];
-        });
-
-        // Track last message for this group
-        setLastMessages((prev) => ({
-          ...prev,
-          [data.groupId]: {
-            userName: data.fromUserName,
-            message: data.message,
-            time: data.time || data.createdAt,
-          },
-        }));
-      }
-    };
-
-    // Listen for read receipts
-    const handleMessageRead = (data) => {
-      console.log("� Received read receipt:", data);
-      if (data.groupId === selectedGroup.id) {
-        setMessageReadStatus((prev) => ({
-          ...prev,
-          [data.messageId]: {
-            ...(prev[data.messageId] || {}),
-            [data.userId]: {
-              userName: data.userName,
-              readAt: data.readAt,
-            },
-          },
-        }));
-      }
-    };
-
-    // Remove all old listeners to prevent stacking
-    socket.removeAllListeners(SOCKET_EVENTS.GROUP_MESSAGE);
-    socket.removeAllListeners(SOCKET_EVENTS.READ_RECEIPT);
-
-    socket.on(SOCKET_EVENTS.GROUP_MESSAGE, handleGroupMessage);
-    socket.on(SOCKET_EVENTS.READ_RECEIPT, handleMessageRead);
-
-    return () => {
-      socket.removeAllListeners(SOCKET_EVENTS.GROUP_MESSAGE);
-      socket.removeAllListeners(SOCKET_EVENTS.READ_RECEIPT);
-    };
-  }, [selectedGroup]);
-
-  // Auto-scroll
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-      });
-    }
-  }, [messages]);
-
-  // Emit read receipt when viewing messages from others
-  // Mark messages as read when viewing
-  useEffect(() => {
-    if (!selectedGroup || !messages.length) return;
-
-    const socket = getSocket();
-    if (!socket) return;
-
-    console.log("📨 Marking messages as read...");
-
-    // Mark all messages from others as read by current user
-    messages.forEach((msg) => {
-      if (msg.fromUserId !== currentUserId) {
-        // Check if current user has already marked this as read
-        if (!messageReadStatus[msg._id]?.[currentUserId]) {
-          console.log("✅ Marking message as read:", msg._id, "by", currentUserName);
-          
-          setMessageReadStatus((prev) => ({
-            ...prev,
-            [msg._id]: {
-              ...(prev[msg._id] || {}),
-              [currentUserId]: {
-                userName: currentUserName,
-                readAt: new Date().toISOString(),
-              },
-            },
-          }));
-
-          // EMIT READ RECEIPT TO OTHER USERS
-          socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
-            messageId: msg._id,
-            groupId: selectedGroup.id,
-            userId: currentUserId,
-            userName: currentUserName,
-            readAt: new Date().toISOString(),
-          });
-        }
-      }
-    });
-  }, [messages, selectedGroup, currentUserId, currentUserName,messageReadStatus]);
-
-  // Filtered groups
+  // ✅ SAFE FILTERED GROUPS WITH VALIDATION
   const filteredGroups = useMemo(() => {
-    return groups
+    const safeGroups = Array.isArray(groups) ? groups : [];
+    
+    return safeGroups
+      .filter(group => {
+        if (!group || !group.id || !group.name) {
+          console.warn('⚠️ Invalid group filtered out:', group);
+          return false;
+        }
+        return true;
+      })
       .filter((group) =>
         group.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
@@ -349,63 +105,172 @@ export default function GroupChat({
       });
   }, [groups, searchQuery, pinnedGroups]);
 
-  // Send group message
-  const handleSendMessage = useCallback(async () => {
-    const socket = getSocket();
-    if (!socket || !selectedGroup || !newMessage.trim()) return;
+  // ═══════════════════════════════════════════════════════════════════
+  // CALLBACK FUNCTIONS (THIRD - BEFORE useEffect)
+  // ═══════════════════════════════════════════════════════════════════
 
-    const messageText = newMessage.trim();
-    setNewMessage(""); // Clear immediately for better UX
-    
+  // ✅ FIX: Define fetchAllGroups BEFORE using it in useEffect
+  const fetchAllGroups = useCallback(async () => {
+    if (!token) {
+      console.warn('⚠️ No token available');
+      setGroups([]);
+      return;
+    }
+
     try {
-      // Debug logging
-      console.log("📤 Sending message:", {
-        groupId: selectedGroup.id,
-        message: messageText,
-        token: !!localStorage.getItem("token"),
-        socketConnected: socket.connected
-      });
+      console.log('📥 Fetching groups...');
+      const groups = await groupService.getMyGroups();
       
-      // Call messageService to send message
-      const savedMessage = await messageService.sendGroupMessage(
-        selectedGroup.id,
-        messageText
-      );
-      
-      console.log("✅ Message sent successfully:", savedMessage);
-
-      if (!savedMessage || !savedMessage._id) {
-        throw new Error("Failed to send message - no message ID returned");
+      if (!Array.isArray(groups)) {
+        console.error('❌ Groups response is not an array:', groups);
+        setGroups([]);
+        return;
       }
 
-      // ADD MESSAGE TO UI IMMEDIATELY (Optimistic Update)
-      const newMsg = {
-        _id: savedMessage._id,
-        fromUserId: currentUserId,
-        fromUserName: currentUserName,
-        message: messageText,
-        time: savedMessage.createdAt || new Date().toISOString(),
-        read: true,
-      };
-      
-      setMessages((prev) => [...prev, newMsg]);
+      const formattedGroups = groups
+        .filter(g => g && g._id && g.name)
+        .map((g) => {
+          const groupName = g.name || g.groupName || 'Unnamed Group';
+          const groupId = g._id || g.groupId;
+          
+          if (!groupId) {
+            console.warn('⚠️ Group without ID found:', g);
+            return null;
+          }
+          
+          return {
+            groupId: groupId,
+            id: groupId,
+            name: groupName.trim() || 'Unnamed Group',
+            description: g.description || '',
+            membersCount: g.members?.length || g.participants?.length || 0,
+            createdAt: g.createdAt,
+          };
+        })
+        .filter(Boolean);
 
-      // Emit socket event to trigger backend broadcast
-      socket.emit(SOCKET_EVENTS.GROUP_MESSAGE, {
-        message: messageText,
-        fromUserId: currentUserId,
-        fromUserName: currentUserName,
-        _id: savedMessage._id,
-        groupId: selectedGroup.id,
-        createdAt: savedMessage.createdAt || new Date().toISOString(),
-      });
-
-      setError(null);
+      console.log(`✅ ${formattedGroups.length} groups loaded`);
+      setGroups(formattedGroups);
     } catch (err) {
-      console.error("❌ Failed to send message - Full error:", err);
-      setNewMessage(messageText); // Restore message on error
-      const errorMsg = err.response?.data?.message || err.message || "Unknown error";
-      setError("Failed to send message: " + errorMsg);
+      console.error('❌ Failed to fetch groups:', err.message);
+      setError('Failed to load groups');
+      setGroups([]);
+    }
+  }, [token]);
+
+  // ✅ FIX: Now handleSelectGroup is actually used
+  const handleSelectGroup = useCallback(async (group) => {
+    setSelectedGroup(group);
+    
+    // Fetch group messages
+    try {
+      setLoading(true);
+      const response = await axios.get(
+        `/groups/${group.id}/messages`,
+        {
+          baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.data.success) {
+        const msgs = response.data.data || [];
+        setMessages(
+          msgs.map((msg) => ({
+            _id: msg._id,
+            fromUserId: msg.senderId?._id || msg.senderId || msg.fromUserId,
+            fromUserName: msg.senderId?.name || msg.fromUserName,
+            message: msg.message,
+            time: msg.createdAt,
+            read: msg.read || true,
+            chatType: msg.chatType,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error("❌ Failed to fetch group messages:", err);
+      setError("Failed to load messages");
+    } finally {
+      setLoading(false);
+    }
+
+    // Join socket room
+    const socket = getSocket();
+    if (socket?.connected) {
+      socket.emit(SOCKET_EVENTS.JOIN_GROUP, { groupId: group.id });
+    }
+
+    // Reset unread count
+    setUnreadCounts((prev) => ({
+      ...prev,
+      [group.id]: 0,
+    }));
+    
+    messageInputRef.current?.focus();
+  }, [token]);
+
+  const handleSendMessage = useCallback(async () => {
+    const socket = getSocket();
+    
+    if (!socket?.connected) {
+        console.warn('⚠️ Socket not connected, attempting to reconnect...');
+        return;
+    }
+    
+    if (!selectedGroup || !newMessage.trim()) return;
+
+    const messageText = newMessage.trim();
+    setNewMessage("");
+    
+    try {
+        console.log("📤 Sending message:", {
+            groupId: selectedGroup.id,
+            message: messageText,
+            socketConnected: socket.connected
+        });
+        
+        const savedMessage = await messageService.sendGroupMessage(
+            selectedGroup.id,
+            messageText
+        );
+        
+        console.log("✅ Message sent successfully:", savedMessage);
+
+        if (!savedMessage || !savedMessage._id) {
+            throw new Error("Failed to send message - no message ID returned");
+        }
+
+        const newMsg = {
+            _id: savedMessage._id,
+            fromUserId: currentUserId,
+            fromUserName: currentUserName,
+            message: messageText,
+            time: savedMessage.createdAt || new Date().toISOString(),
+            read: true,
+        };
+        
+        setMessages((prev) => [...prev, newMsg]);
+
+        if (socket.connected) {
+            socket.emit(SOCKET_EVENTS.GROUP_MESSAGE, {
+                message: messageText,
+                fromUserId: currentUserId,
+                fromUserName: currentUserName,
+                _id: savedMessage._id,
+                groupId: selectedGroup.id,
+                createdAt: savedMessage.createdAt || new Date().toISOString(),
+            });
+        }
+
+        setError(null);
+    } catch (err) {
+        console.error("❌ Failed to send message:", err);
+        setNewMessage(messageText);
+        const errorMsg = err.response?.data?.message || err.message || "Unknown error";
+        setError("Failed to send message: " + errorMsg);
     }
   }, [selectedGroup, newMessage, currentUserId, currentUserName]);
 
@@ -432,7 +297,6 @@ export default function GroupChat({
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
-  // Handle create group
   const handleCreateGroup = async () => {
     if (!groupName.trim()) {
       alert("Please enter a group name");
@@ -458,7 +322,6 @@ export default function GroupChat({
 
       console.log("✅ Group created:", newGroup);
       
-      // Add new group to the list
       setGroups((prev) => [
         ...prev,
         {
@@ -471,7 +334,6 @@ export default function GroupChat({
         },
       ]);
 
-      // Reset form
       setGroupName("");
       setSelectedMembers([]);
       setSearchUsers("");
@@ -486,7 +348,6 @@ export default function GroupChat({
     }
   };
 
-  // Toggle member selection
   const toggleMemberSelection = (userId) => {
     setSelectedMembers((prev) =>
       prev.includes(userId)
@@ -495,17 +356,15 @@ export default function GroupChat({
     );
   };
 
-  // Filter users based on search
-  const filteredUsers = useMemo(() => {
-    return availableUsers.filter(
-      (user) =>
-        (user.name.toLowerCase().includes(searchUsers.toLowerCase()) ||
-          user.email.toLowerCase().includes(searchUsers.toLowerCase())) &&
-        !selectedMembers.includes(user.userId || user._id)
-    );
-  }, [availableUsers, searchUsers, selectedMembers]);
+  // const filteredUsers = useMemo(() => {
+  //   return availableUsers.filter(
+  //     (user) =>
+  //       (user.name.toLowerCase().includes(searchUsers.toLowerCase()) ||
+  //         user.email.toLowerCase().includes(searchUsers.toLowerCase())) &&
+  //       !selectedMembers.includes(user.userId || user._id)
+  //   );
+  // }, [availableUsers, searchUsers, selectedMembers]);
 
-  // Fetch users to add to existing group
   const fetchUsersToAdd = useCallback(async () => {
     try {
       const response = await axios.get("/users", {
@@ -516,7 +375,6 @@ export default function GroupChat({
         },
       });
       if (response.data.success) {
-        // Filter out already existing members
         const nonMembers = response.data.data.filter(
           (user) =>
             !members.some(
@@ -530,7 +388,6 @@ export default function GroupChat({
     }
   }, [token, members]);
 
-  // Handle add member to group
   const handleAddMember = async () => {
     if (selectedUsersToAdd.length === 0) {
       alert("Please select at least one member to add");
@@ -539,16 +396,13 @@ export default function GroupChat({
 
     setAddMemberLoading(true);
     try {
-      // Add each selected user
       for (const userId of selectedUsersToAdd) {
         await groupService.addMember(selectedGroup.id, userId);
       }
 
-      // Refresh group members
       const updatedGroup = await groupService.getGroup(selectedGroup.id);
       setMembers(updatedGroup.members || updatedGroup.participants || []);
       
-      // Update group in list
       setGroups((prev) =>
         prev.map((g) =>
           g.id === selectedGroup.id
@@ -571,7 +425,6 @@ export default function GroupChat({
           0,
       }));
 
-      // Reset and close modal
       setSelectedUsersToAdd([]);
       setShowAddMemberModal(false);
       alert("Member(s) added successfully!");
@@ -583,7 +436,6 @@ export default function GroupChat({
     }
   };
 
-  // Handle remove member from group
   const handleRemoveMember = async (memberId) => {
     if (!confirm("Are you sure you want to remove this member from the group?")) {
       return;
@@ -593,11 +445,9 @@ export default function GroupChat({
     try {
       await groupService.removeMember(selectedGroup.id, memberId);
 
-      // Refresh group members
       const updatedGroup = await groupService.getGroup(selectedGroup.id);
       setMembers(updatedGroup.members || updatedGroup.participants || []);
 
-      // Update group in list
       setGroups((prev) =>
         prev.map((g) =>
           g.id === selectedGroup.id
@@ -629,6 +479,69 @@ export default function GroupChat({
     }
   };
 
+  const handleDeleteGroup = async () => {
+    if (!confirm('⚠️ Are you sure? This will delete the group and all its messages permanently.')) {
+      return;
+    }
+
+    setDeletingGroup(true);
+    try {
+      await groupService.deleteGroup(selectedGroup.id);
+      
+      setGroups((prev) => prev.filter(g => g.id !== selectedGroup.id));
+      
+      setSelectedGroup(null);
+      
+      alert('✅ Group deleted successfully!');
+    } catch (err) {
+      console.error('Failed to delete group:', err);
+      alert('Failed to delete group: ' + (err.message || 'Unknown error'));
+    } finally {
+      setDeletingGroup(false);
+    }
+  };
+
+  const handleMessageRead = useCallback((messageId, readers) => {
+    setMessageReadStatus((prev) => ({
+      ...prev,
+      [messageId]: readers,
+    }));
+  }, []);
+
+  const handleLastMessage = useCallback((groupId, message) => {
+    setLastMessages((prev) => ({
+      ...prev,
+      [groupId]: message,
+    }));
+  }, []);
+
+  const fetchAvailableUsers = useCallback(async () => {
+    try {
+      const response = await axios.get("/users", {
+        baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      if (response.data.success) {
+        setAvailableUsers(response.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch available users:", err);
+    }
+  }, [token]);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // EFFECTS (FOURTH - NOW fetchAllGroups is defined)
+  // ═══════════════════════════════════════════════════════════════════
+
+  // ✅ FIX: Fetch groups on component mount
+  useEffect(() => {
+    console.log('🔄 GroupChat mounted - fetching groups...');
+    fetchAllGroups();
+  }, [token, fetchAllGroups]);
+
   // ✅ Connect socket when component mounts
   useEffect(() => {
     if (!token) return
@@ -640,6 +553,77 @@ export default function GroupChat({
       // Cleanup if needed
     }
   }, [token])
+
+  // ✅ Listen for group messages
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    socket.on(SOCKET_EVENTS.GROUP_MESSAGE, (data) => {
+      console.log('💬 New group message:', data);
+      
+      const newMsg = {
+        _id: data._id || `temp_${Date.now()}`,
+        fromUserId: data.fromUserId,
+        fromUserName: data.fromUserName,
+        message: data.message,
+        time: data.createdAt || new Date().toISOString(),
+        read: false,
+        chatType: 'group',
+      };
+
+      if (data.groupId === selectedGroup?.id) {
+        setMessages((prev) => [...prev, newMsg]);
+        // ✅ USE handleLastMessage
+        handleLastMessage(data.groupId, {
+          message: data.message,
+          userName: data.fromUserName,
+          timestamp: data.createdAt,
+        });
+      } else {
+        // Update unread count for other groups
+        setUnreadCounts((prev) => ({
+          ...prev,
+          [data.groupId]: (prev[data.groupId] || 0) + 1,
+        }));
+      }
+    });
+
+    return () => {
+      socket.off(SOCKET_EVENTS.GROUP_MESSAGE);
+    };
+  }, [selectedGroup?.id, handleLastMessage]);
+
+  // ✅ Listen for read receipts
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    socket.on(SOCKET_EVENTS.READ_RECEIPT, (data) => {
+      console.log('📖 Message read receipt:', data);
+      
+      // ✅ USE handleMessageRead HERE
+      if (data.messageId && data.readers) {
+        handleMessageRead(data.messageId, data.readers);
+      }
+    });
+
+    return () => {
+      socket.off(SOCKET_EVENTS.READ_RECEIPT);
+    };
+  }, [handleMessageRead]);
+
+  // ✅ Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // ✅ Fetch available users when create modal opens
+  useEffect(() => {
+    if (token && showCreateGroupModal) {
+      fetchAvailableUsers();
+    }
+  }, [token, showCreateGroupModal, fetchAvailableUsers]);
 
   return (
     <>
@@ -695,6 +679,11 @@ export default function GroupChat({
             </div>
           ) : (
             filteredGroups.map((group) => {
+              if (!group || !group.id) {
+                console.warn('⚠️ Invalid group in list:', group);
+                return null;  // Skip invalid groups
+              }
+              
               const id = group.id;
               const isPinned = pinnedGroups.includes(id);
               const unreadCount = unreadCounts[id] || 0;
@@ -705,7 +694,7 @@ export default function GroupChat({
               return (
                 <div
                   key={id}
-                  onClick={() => setSelectedGroup(group)}
+                  onClick={() => handleSelectGroup(group)}
                   className={`group relative p-3 mx-2 mb-1 rounded-xl cursor-pointer transition-all ${
                     selectedGroup?.id === id
                       ? "bg-linear-to-r from-green-600/20 to-emerald-600/20 border border-green-500/30 shadow-lg glow-green"
@@ -714,7 +703,7 @@ export default function GroupChat({
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-full flex items-center justify-center text-gray-100 font-bold text-lg shadow-lg bg-linear-to-br from-purple-500 to-pink-600 relative">
-                      {group.name.charAt(0).toUpperCase()}
+                      {(group?.name || 'G').charAt(0).toUpperCase()}
                       <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-[rgb(var(--bg-secondary))]"></div>
                     </div>
 
@@ -783,11 +772,11 @@ export default function GroupChat({
                   <Menu className="w-5 h-5" />
                 </button>
                 <div className="w-10 sm:w-11 h-10 sm:h-11 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-gray-100 font-bold shadow-lg text-sm sm:text-base">
-                  {selectedGroup.name.charAt(0).toUpperCase()}
+                  {(safeSelectedGroup?.name || 'G').charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
                   <h3 className="font-semibold text-gray-700 text-base sm:text-lg truncate">
-                    {selectedGroup.name}
+                    {safeSelectedGroup?.name || 'Group'}
                   </h3>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
@@ -802,6 +791,13 @@ export default function GroupChat({
                 className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400 shrink-0"
               >
                 <Users className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 shrink-0"
+                title="Delete Group"
+              >
+                <Trash2 className="w-5 h-5" />
               </button>
             </div>
 
@@ -840,37 +836,48 @@ export default function GroupChat({
                       <p className="text-sm">No members yet</p>
                     </div>
                   ) : (
-                    members.map((member) => (
-                      <div
-                        key={member._id || member.userId}
-                        className="flex items-center justify-between gap-3 p-3 bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 rounded-xl border border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30 transition-all group"
-                      >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className="w-10 h-10 rounded-full bg-linear-to-r from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shrink-0 shadow-lg text-sm">
-                            {member.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-gray-200 truncate">
-                              {member.name}
-                            </p>
-                            <p className="text-xs text-gray-500 truncate">
-                              {member.email}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleRemoveMember(member._id || member.userId)}
-                          disabled={removeMemberLoading === (member._id || member.userId)}
-                          className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 disabled:opacity-50 shrink-0 opacity-0 group-hover:opacity-100"
+                    members.map((member) => {
+                      // ✅ SAFETY CHECK - Skip invalid members
+                      if (!member || (!member._id && !member.userId)) {
+                        console.warn('⚠️ Invalid member found:', member);
+                        return null;
+                      }
+
+                      const memberId = member._id || member.userId;
+                      const memberName = member.name || member.email || 'Unknown User';
+
+                      return (
+                        <div
+                          key={memberId}
+                          className="flex items-center justify-between gap-3 p-3 bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 rounded-xl border border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30 transition-all group"
                         >
-                          {removeMemberLoading === (member._id || member.userId) ? (
-                            <Loader className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <X className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
-                    ))
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="w-10 h-10 rounded-full bg-linear-to-r from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shrink-0 shadow-lg text-sm">
+                              {memberName.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-gray-200 truncate">
+                                {memberName}
+                              </p>
+                              <p className="text-xs text-gray-500 truncate">
+                                {member.email || 'No email'}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveMember(memberId)}
+                            disabled={removeMemberLoading === memberId}
+                            className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 disabled:opacity-50 shrink-0 opacity-0 group-hover:opacity-100"
+                          >
+                            {removeMemberLoading === memberId ? (
+                              <Loader className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <X className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -893,7 +900,7 @@ export default function GroupChat({
                     <MessageCircle className="w-12 h-12 text-green-500/50" />
                   </div>
                   <h3 className="text-xl font-bold mb-2">
-                    {selectedGroup.name}
+                    {safeSelectedGroup.name}
                   </h3>
                   <p className="text-gray-500 text-center max-w-md">
                     No messages yet. Start the conversation!
@@ -919,7 +926,7 @@ export default function GroupChat({
                               : "bg-linear-to-br from-purple-500 to-pink-600"
                           }`}
                         >
-                          {msg.fromUserName.charAt(0).toUpperCase()}
+                          {(msg?.fromUserName || 'U').charAt(0).toUpperCase()}
                         </div>
                       ) : (
                         <div className="w-8"></div>
@@ -1191,7 +1198,7 @@ export default function GroupChat({
                     placeholder="Search users..."
                     value={searchUsers}
                     onChange={(e) => setSearchUsers(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent"
+                    className="w-full pl-10 pr-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
                   />
                 </div>
               </div>
@@ -1226,47 +1233,58 @@ export default function GroupChat({
                 </div>
               )}
 
-              {/* Users List */}
-              <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-2">
-                {filteredUsers.length === 0 && searchUsers.length > 0 ? (
-                  <div className="text-center text-gray-500 py-4">
-                    <p className="text-sm">No users found</p>
-                  </div>
-                ) : filteredUsers.length === 0 ? (
-                  <div className="text-center text-gray-500 py-4">
-                    <p className="text-sm">Loading users...</p>
+              {/* Users List - FIXED */}
+              <div className="space-y-2">
+                {members.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">
+                      {searchUsers
+                        ? "No users found"
+                        : "Loading users..."}
+                    </p>
                   </div>
                 ) : (
-                  filteredUsers.map((user) => {
-                    const userId = user.userId || user._id;
-                    const isSelected = selectedMembers.includes(userId);
+                  members.map((member) => {
+                    // ✅ SAFETY CHECK - Skip invalid members
+                    if (!member || (!member._id && !member.userId)) {
+                      console.warn('⚠️ Invalid member found:', member);
+                      return null;
+                    }
+
+                    const memberId = member._id || member.userId;
+                    const memberName = member.name || member.email || 'Unknown User';
+
                     return (
-                      <button
-                        key={userId}
-                        onClick={() => {
-                          toggleMemberSelection(userId);
-                        }}
-                        className={`w-full p-3 rounded-lg text-left transition-all flex items-center gap-3 ${
-                          isSelected
-                            ? "bg-blue-500/20 border border-blue-500/30"
-                            : "hover:bg-[rgb(var(--bg-hover))]/50"
-                        }`}
+                      <div
+                        key={memberId}
+                        className="flex items-center justify-between gap-3 p-3 bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 rounded-xl border border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30 transition-all group"
                       >
-                        <div className="w-10 h-10 rounded-full bg-linear-to-br from-blue-500 to-cyan-600 flex items-center justify-center text-white text-sm font-bold">
-                          {user.name.charAt(0).toUpperCase()}
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-10 h-10 rounded-full bg-linear-to-r from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shrink-0 shadow-lg text-sm">
+                            {memberName.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-gray-200 truncate">
+                              {memberName}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {member.email || 'No email'}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-300 truncate">
-                            {user.name}
-                          </p>
-                          <p className="text-xs text-gray-500 truncate">
-                            {user.email}
-                          </p>
-                        </div>
-                        {isSelected && (
-                          <Check className="w-5 h-5 text-blue-400 shrink-0" />
-                        )}
-                      </button>
+                        <button
+                          onClick={() => handleRemoveMember(memberId)}
+                          disabled={removeMemberLoading === memberId}
+                          className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 disabled:opacity-50 shrink-0 opacity-0 group-hover:opacity-100"
+                        >
+                          {removeMemberLoading === memberId ? (
+                            <Loader className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <X className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
                     );
                   })
                 )}
@@ -1313,8 +1331,8 @@ export default function GroupChat({
                 <h3 className="text-lg sm:text-xl font-bold text-gray-100">
                   ➕ Add Members
                 </h3>
-                <p className="text-xs text-gray-500 mt-1">
-                  Adding to <span className="text-green-400 font-semibold">{selectedGroup.name}</span>
+                <p className="text-sm text-gray-500 mt-2">
+                  Adding to <span className="text-green-400 font-semibold">{safeSelectedGroup.name}</span>
                 </p>
               </div>
               <button
@@ -1341,8 +1359,8 @@ export default function GroupChat({
                   <input
                     type="text"
                     placeholder="Search users..."
-                    value={searchUsersToAdd} // CHANGED
-                    onChange={(e) => setSearchUsersToAdd(e.target.value)} // CHANGED
+                    value={searchUsersToAdd}
+                    onChange={(e) => setSearchUsersToAdd(e.target.value)}
                     className="w-full pl-10 pr-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
                   />
                 </div>
@@ -1396,7 +1414,7 @@ export default function GroupChat({
                   usersToAddList
                     .filter((user) => {
                       const userStr = `${user.name} ${user.email}`.toLowerCase();
-                      return userStr.includes(searchUsersToAdd.toLowerCase()); // CHANGED
+                      return userStr.includes(searchUsersToAdd.toLowerCase());
                     })
                     .map((user) => {
                       const userId = user.userId || user._id;
@@ -1414,11 +1432,11 @@ export default function GroupChat({
                           className={`w-full p-3 rounded-lg text-left transition-all flex items-center gap-3 ${
                             isSelected
                               ? "bg-blue-500/20 border border-blue-500/30"
-                              : "hover:bg-[rgb(var(--bg-hover))]/50"
+                              : "hover:bg-[rgb(var(--bg-hover))]/50 border border-[rgb(var(--border-secondary))]/50"
                           }`}
                         >
-                          <div className="w-10 h-10 rounded-full bg-linear-to-br from-blue-500 to-cyan-600 flex items-center justify-center text-white text-sm font-bold">
-                            {user.name.charAt(0).toUpperCase()}
+                          <div className="w-10 h-10 rounded-full bg-linear-to-br from-blue-500 to-cyan-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                            {(user?.name || user?.email || 'U').charAt(0).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-gray-300 truncate">
@@ -1444,7 +1462,7 @@ export default function GroupChat({
                 onClick={() => {
                   setShowAddMemberModal(false);
                   setSelectedUsersToAdd([]);
-                  setSearchUsersToAdd(""); // CHANGED
+                  setSearchUsersToAdd("");
                 }}
                 className="flex-1 px-4 py-2 bg-[rgb(var(--bg-hover))] text-gray-300 rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
               >
@@ -1465,6 +1483,42 @@ export default function GroupChat({
               >
                 {addMemberLoading && <Loader className="w-4 h-4 animate-spin" />}
                 {addMemberLoading ? "Adding..." : "Add Members"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl max-w-sm w-full border border-red-500/20">
+            <div className="p-6 border-b border-red-500/20">
+              <h3 className="text-lg font-bold text-gray-300 flex items-center gap-3">
+                <AlertTriangle className="w-6 h-6 text-red-500" />
+                Delete Group?
+              </h3>
+              <p className="text-sm text-gray-400 mt-2">
+                This will permanently delete <span className="text-red-400 font-semibold">{selectedGroup?.name}</span> and all its messages.
+              </p>
+            </div>
+            
+            <div className="p-6 flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 px-4 py-2 bg-[rgb(var(--bg-hover))] text-gray-300 rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteGroup}
+                disabled={deletingGroup}
+                className={`flex-1 px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold ${
+                  deletingGroup
+                    ? "bg-gray-600 text-gray-400 cursor-not-allowed"
+                    : "bg-linear-to-br from-red-600 to-red-700 text-white hover:from-red-500 hover:to-red-600"
+                }`}
+              >
+                {deletingGroup && <Loader className="w-4 h-4 animate-spin" />}
+                {deletingGroup ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>

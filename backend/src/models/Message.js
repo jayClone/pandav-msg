@@ -33,7 +33,16 @@ const messageSchema = new mongoose.Schema(
     read: {
       type: Boolean,
       default: false
-    }
+    },
+    
+    readBy: [{
+      userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      readAt: Date
+    }],
+
   },
   { timestamps: true }
 );

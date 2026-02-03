@@ -49,8 +49,10 @@ export const connectSocket = (token) => {
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 10000,
-        reconnectionAttempts: 10,
-        transports: ['websocket', 'polling']
+        reconnectionAttempts: 5,  // ✅ REDUCED from 10
+        transports: ['websocket', 'polling'],
+        secure: false,  // ✅ ADD: Disable SSL for localhost
+        rejectUnauthorized: false  // ✅ ADD: For development
     });
 
     socket.on('connect', () => {
@@ -58,7 +60,19 @@ export const connectSocket = (token) => {
     });
 
     socket.on('connect_error', (error) => {
-        console.error('🔴 Socket connection error:', error.message);
+        console.error('🔴 Socket connection error:', {
+            message: error.message,
+            type: error.type,
+            data: error.data
+        });
+        
+        // ✅ ADD: More helpful error logging
+        if (error.message === 'Client is closed') {
+            console.warn('⚠️ Socket connection closed before establishing');
+        }
+        if (error.data?.content?.message === 'Invalid token') {
+            console.error('❌ Authentication failed - Invalid token');
+        }
     });
 
     socket.on('disconnect', (reason) => {

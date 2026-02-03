@@ -167,6 +167,26 @@ class GroupService {
       throw error
     }
   }
+  async deleteGroup(groupId) {
+    try {
+      if (!groupId) {
+        throw new Error('Group ID is required')
+      }
+      console.log('GroupService.deleteGroup:', { groupId: String(groupId) })
+      
+      const response = await groupApi.deleteGroup(groupId)
+      const { data } = response
+
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to delete group')
+      }
+
+      return data.data
+    } catch (error) {
+      console.error('deleteGroup error:', error.message || error)
+      throw error
+    }
+  }
 }
 
 export default new GroupService()

@@ -10,6 +10,7 @@ import {
 import ThemeChanger from "@components/ThemeChanger";
 import Chat from "./Chat";
 import GroupChat from "./GroupChat";
+import GroupChatErrorBoundary from '@components/GroupChatErrorBoundary';
 import {
   MessageCircle,
   Users,
@@ -123,16 +124,7 @@ export default function Layoute({ initialTab = "chats" }) {
   };
 
   return (
-    <div 
-      className="flex h-screen" 
-      style={{ 
-        background: bgImages[bgImage].bg, 
-        color: bgImages[bgImage].textColor,
-        fontFamily: bgImages[bgImage].fontFamily,
-        fontSize: bgImages[bgImage].fontSize,
-        fontWeight: bgImages[bgImage].fontWeight
-      }}
-    >
+    <div className="flex h-screen bg-gray-900">
       {/* LEFT SIDEBAR - Navigation Icons */}
       <div className="hidden sm:flex sm:w-16 md:w-20 sm:glass-effect bg-[rgb(var(--bg-secondary))] sm:bg-transparent border-r border-[rgb(var(--border-secondary))] flex-col items-center py-3 sm:py-4 gap-4 sm:gap-6">
         <div
@@ -260,15 +252,17 @@ export default function Layoute({ initialTab = "chats" }) {
           token={token}
         />
       ) : (
-        <GroupChat
-          sidebarOpen={sidebarOpen}
-          setSidebarOpen={setSidebarOpen}
-          bgImage={bgImage}
-          bgImages={bgImages}
-          token={token}
-          currentUserName={currentUserName}
-          currentUserId={currentUserId}
-        />
+        <GroupChatErrorBoundary>
+          <GroupChat
+            sidebarOpen={sidebarOpen}
+            setSidebarOpen={setSidebarOpen}
+            bgImage={bgImage}
+            bgImages={bgImages}
+            token={token}
+            currentUserName={currentUserName}
+            currentUserId={currentUserId}
+          />
+        </GroupChatErrorBoundary>
       )}
 
       {/* Theme Changer Modal */}

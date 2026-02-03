@@ -181,31 +181,38 @@ export const getGroup = async (req, res) =>{
 };
 
 // add member to group
-export const addMember = async (req, res) =>{
+export const addMember = async(req, res) => {
     try {
         const { groupId } = req.params;
-        const { userId: newMemberId } = req.body;
-        const userId = toObjectId(req.user.userId);
+        const { userId } = req.body;  // ✅ Receive 'userId' from frontend
+        const myId = req.user.userId;
 
-        //  VALIDATE OBJECTID
-        if (!isValidObjectId(groupId) || !isValidObjectId(newMemberId)) {
+        // VALIDATE OBJECTID
+        if (!isValidObjectId(groupId)) {
             return res.status(400).json({
                 success: false,
-                message: 'Invalid ID format'
+                message: 'Invalid group ID format'
+            });
+        }
+
+        if (!userId || !isValidObjectId(userId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid user ID format'
             });
         }
 
         const group = await Group.findById(groupId);
 
-        if (!group) {
+        if (!group){
             return res.status(404).json({
                 success: false,
                 message: 'Group not found'
-            });
+            });    
         }
 
         // Check if user is admin
-        if (group.adminId.toString() !== userId.toString()) {
+        if (group.adminId.toString() !== toObjectId(myId).toString()) {
             return res.status(403).json({
                 success: false,
                 message: 'Only admin can add members'
@@ -213,18 +220,22 @@ export const addMember = async (req, res) =>{
         }
 
         // Convert to ObjectId for comparison
-        const newMemberObjId = toObjectId(newMemberId);
+        const newMemberObjId = toObjectId(userId);
 
-        // Check if already member
-        if (group.participants.some(p => p.toString() === newMemberObjId.toString())) {
+        // Check if user already exists
+        const alreadyMember = group.participants.some(
+            p => p.toString() === newMemberObjId.toString()
+        );
+
+        if (alreadyMember) {
             return res.status(400).json({
                 success: false,
                 message: 'User is already a member'
-            });            
+            });
         }
 
-        // Verify user exists
-        const userExists = await User.findById(newMemberObjId);
+        // Check if user exists in DB
+        const userExists = await User.findById(userId);
         if (!userExists) {
             return res.status(404).json({
                 success: false,
@@ -235,14 +246,15 @@ export const addMember = async (req, res) =>{
         // Add member
         group.participants.push(newMemberObjId);
         await group.save();
-
         await group.populate('participants', 'name email');
+        await group.populate('adminId', 'name email');
 
         return res.status(200).json({
             success: true,
             message: 'Member added successfully',
             data: group
         });
+
     } catch (error) {
         console.error('Add member error:', error.message);
         return res.status(500).json({
@@ -257,14 +269,21 @@ export const addMember = async (req, res) =>{
 export const removeMember = async(req, res) => {
     try {
         const { groupId } = req.params;
-        const { userId: memberToRemove } = req.body;
-        const userId = toObjectId(req.user.userId);
+        const { memberId } = req.body;  // ✅ CONSISTENT: Use singular 'memberId'
+        const myId = toObjectId(req.user.userId);
 
         //  VALIDATE OBJECTID
-        if (!isValidObjectId(groupId) || !isValidObjectId(memberToRemove)) {
+        if (!isValidObjectId(groupId)) {
             return res.status(400).json({
                 success: false,
-                message: 'Invalid ID format'
+                message: 'Invalid group ID format'
+            });
+        }
+
+        if (!memberId || !isValidObjectId(memberId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid member ID format'
             });
         }
 
@@ -278,19 +297,19 @@ export const removeMember = async(req, res) => {
         }
 
         // Check if user is admin
-        if (group.adminId.toString() !== userId.toString()) {
+        if (group.adminId.toString() !== myId.toString()) {
             return res.status(403).json({
                 success: false,
                 message: 'Only admin can remove members'
             });
         }
 
-        // Convert to ObjectId for comparison
-        const memberObjId = toObjectId(memberToRemove);
+        // ✅ FIX: Convert to ObjectId for comparison
+        const memberObjIdToRemove = toObjectId(memberId);
 
-        // ✅ ADD: Check if member actually exists in group
+        // ✅ FIX: Check if member actually exists in group
         const memberExists = group.participants.some(
-            p => p.toString() === memberObjId.toString()
+            p => p.toString() === memberObjIdToRemove.toString()
         );
 
         if (!memberExists) {
@@ -300,13 +319,14 @@ export const removeMember = async(req, res) => {
             });
         }
 
-        // Remove member (now we know they exist)
+        // ✅ FIX: Remove member using correct variable name
         group.participants = group.participants.filter(
-            p => p.toString() !== memberObjId.toString()
+            p => p.toString() !== memberObjIdToRemove.toString()
         );
 
         await group.save();
         await group.populate('participants', 'name email');
+        await group.populate('adminId', 'name email');
 
         return res.status(200).json({
             success: true,
@@ -376,7 +396,17 @@ export const getGroupMessages = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            data: messages,
+            data: messages.map(msg => ({
+                _id: msg._id,
+                fromUserId: msg.senderId._id,
+                senderName: msg.senderId.name,
+                senderEmail: msg.senderId.email,
+                message: msg.message,
+                time: msg.createdAt,
+                read: msg.read,
+                chatType: msg.chatType,
+                createdAt: msg.createdAt
+            })),
             count: messages.length,
             totalCount: totalCount,
             page: page,
@@ -477,6 +507,80 @@ export const leaveGroup = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to leave group',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Delete a group
+ * 
+ * @route DELETE /api/v1/groups/:groupId
+ * @param groupId - Group to delete
+ * @access Private (Admin only)
+ * 
+ * Features:
+ * - Only admin can delete group
+ * - Deletes all group messages from database
+ * - Removes group from database
+ * - Returns success message
+ */
+export const deleteGroup = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const userId = toObjectId(req.user.userId);
+
+    // ✅ VALIDATE OBJECTID
+    if (!isValidObjectId(groupId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid group ID format'
+      });
+    }
+
+    const group = await Group.findById(groupId);
+
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found'
+      });
+    }
+
+    // ✅ CHECK: User is admin
+    if (group.adminId.toString() !== userId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admin can delete this group'
+      });
+    }
+
+    // ✅ DELETE ALL MESSAGES IN THIS GROUP
+    const deleteMessagesResult = await Message.deleteMany({
+      groupId: groupId,
+      chatType: 'group'
+    });
+
+    console.log(`🗑️ Deleted ${deleteMessagesResult.deletedCount} messages from group ${groupId}`);
+
+    // ✅ DELETE THE GROUP
+    const deletedGroup = await Group.findByIdAndDelete(groupId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Group deleted successfully',
+      data: {
+        groupId: deletedGroup._id,
+        groupName: deletedGroup.name,
+        messagesDeleted: deleteMessagesResult.deletedCount
+      }
+    });
+
+  } catch (error) {
+    console.error('Delete group error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete group',
       error: error.message
     });
   }

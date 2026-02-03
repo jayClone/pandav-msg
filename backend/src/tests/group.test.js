@@ -4,6 +4,7 @@ import app from '../app.js';
 import User from '@models/User.js';
 import Group from '@models/Group.js';
 import Message from '@models/Message.js';
+import mongoose from 'mongoose';
 import { connectDB, disconnectDB } from '@config/db.js';
 
 /**
@@ -860,7 +861,7 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
       const response = await request(app)
         .delete(`/api/v1/groups/${testGroup._id}/members`)
         .set('Authorization', `Bearer ${tokenA}`)
-        .send({ userId: userB._id.toString() })
+        .send({ memberId: userB._id.toString() })
         .timeout(15000);
 
       expect(response.status).toBe(200);
@@ -1022,7 +1023,7 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
       const removeRes1 = await request(app)
         .delete(`/api/v1/groups/${groupA._id}/members`)
         .set('Authorization', `Bearer ${token1}`)
-        .send({ userId: user2._id })
+        .send({ memberId: user2._id })
         .timeout(15000);
 
       if (!removeRes1.body.success) {
@@ -1032,7 +1033,7 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
       const removeRes2 = await request(app)
         .delete(`/api/v1/groups/${groupA._id}/members`)
         .set('Authorization', `Bearer ${token1}`)
-        .send({ userId: user3._id })
+        .send({ memberId: user3._id })
         .timeout(15000);
 
       if (!removeRes2.body.success) {
@@ -1307,6 +1308,186 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
       expect(response.body.markedCount).toBe(0);  // No new messages to mark
 
       console.log('✅ TC-M-23 PASSED: Idempotent operation');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // DELETE GROUP FEATURE
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('H) DELETE GROUP FEATURE', () => {
+
+    let testGroup;
+    let deleteTestUserA, deleteTestUserB;  // ✅ ADD: Separate users for this test suite
+    let deleteTokenA, deleteTokenB;  // ✅ ADD: Separate tokens
+
+    beforeAll(async () => {
+      // ✅ ADD: Create fresh users for delete tests
+      const regA = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Delete Test User A',
+          email: 'deletetestA@example.com',
+          password: 'DeleteTest123!'
+        })
+        .timeout(15000);
+
+      if (!regA.body.data) {
+        throw new Error('User A registration failed for delete tests');
+      }
+
+      deleteTestUserA = regA.body.data;
+      deleteTokenA = regA.body.token;
+
+      console.log('✅ Delete Test User A created:', deleteTestUserA._id);
+
+      // ✅ CREATE: User B for delete tests
+      const regB = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Delete Test User B',
+          email: 'deletetestB@example.com',
+          password: 'DeleteTest123!'
+        })
+        .timeout(15000);
+
+      if (!regB.body.data) {
+        throw new Error('User B registration failed for delete tests');
+      }
+
+      deleteTestUserB = regB.body.data;
+      deleteTokenB = regB.body.token;
+
+      console.log('✅ Delete Test User B created:', deleteTestUserB._id);
+    });
+
+    beforeEach(async () => {
+      // ✅ FIX: Create fresh group for each test with new users
+      testGroup = await Group.create({
+        name: 'Temporary Group',
+        participants: [deleteTestUserA._id, deleteTestUserB._id],
+        adminId: deleteTestUserA._id
+      });
+
+      console.log('✅ Test group created:', testGroup._id);
+    });
+
+    // TC-G-39: Admin can delete group
+    it('TC-G-39: Admin can delete group successfully', async () => {
+      const response = await request(app)
+        .delete(`/api/v1/groups/${testGroup._id}`)
+        .set('Authorization', `Bearer ${deleteTokenA}`)  // ✅ FIX: Use deleteTokenA
+        .timeout(15000);
+
+      console.log('[TC-G-39] Status:', response.status);
+      console.log('[TC-G-39] Body:', response.body);
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.groupId).toBe(testGroup._id.toString());
+      
+      // Verify group is deleted from DB
+      const groupExists = await Group.findById(testGroup._id);
+      expect(groupExists).toBeNull();
+
+      console.log('✅ TC-G-39 PASSED: Admin deleted group');
+    });
+
+    // TC-G-40: Non-admin cannot delete group
+    it('TC-G-40: Non-admin cannot delete group', async () => {
+      const response = await request(app)
+        .delete(`/api/v1/groups/${testGroup._id}`)
+        .set('Authorization', `Bearer ${deleteTokenB}`)  // ✅ FIX: Use deleteTokenB
+        .timeout(15000);
+
+      console.log('[TC-G-40] Status:', response.status);
+      console.log('[TC-G-40] Body:', response.body);
+
+      expect(response.status).toBe(403);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('Only admin');
+
+      console.log('✅ TC-G-40 PASSED: Non-admin blocked from deleting');
+    });
+
+    // TC-G-41: Deleting group also deletes all messages
+    it('TC-G-41: Deleting group removes all its messages', async () => {
+      // Add messages to group
+      await Message.create({
+        senderId: deleteTestUserA._id,
+        groupId: testGroup._id,
+        message: 'Test message 1',
+        chatType: 'group'
+      });
+
+      await Message.create({
+        senderId: deleteTestUserB._id,
+        groupId: testGroup._id,
+        message: 'Test message 2',
+        chatType: 'group'
+      });
+
+      // Verify messages exist
+      let messageCount = await Message.countDocuments({
+        groupId: testGroup._id
+      });
+      expect(messageCount).toBe(2);
+
+      // Delete group
+      const response = await request(app)
+        .delete(`/api/v1/groups/${testGroup._id}`)
+        .set('Authorization', `Bearer ${deleteTokenA}`)  // ✅ FIX: Use deleteTokenA
+        .timeout(15000);
+
+      console.log('[TC-G-41] Status:', response.status);
+      console.log('[TC-G-41] Body:', response.body);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.messagesDeleted).toBe(2);
+
+      // Verify messages are deleted
+      messageCount = await Message.countDocuments({
+        groupId: testGroup._id
+      });
+      expect(messageCount).toBe(0);
+
+      console.log('✅ TC-G-41 PASSED: Messages deleted with group');
+    });
+
+    // TC-G-42: Cannot delete non-existent group
+    it('TC-G-42: Deleting non-existent group fails gracefully', async () => {
+      const fakeGroupId = new mongoose.Types.ObjectId();  // ✅ Already imported at top
+
+      const response = await request(app)
+        .delete(`/api/v1/groups/${fakeGroupId}`)
+        .set('Authorization', `Bearer ${deleteTokenA}`)  // ✅ FIX: Use deleteTokenA
+        .timeout(15000);
+
+      console.log('[TC-G-42] Status:', response.status);
+      console.log('[TC-G-42] Body:', response.body);
+
+      expect(response.status).toBe(404);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('Group not found');
+
+      console.log('✅ TC-G-42 PASSED: Non-existent group handled');
+    });
+
+    // TC-G-43: Invalid groupId format
+    it('TC-G-43: Invalid groupId format rejected', async () => {
+      const response = await request(app)
+        .delete(`/api/v1/groups/invalid-id`)
+        .set('Authorization', `Bearer ${deleteTokenA}`)  // ✅ FIX: Use deleteTokenA
+        .timeout(15000);
+
+      console.log('[TC-G-43] Status:', response.status);
+      console.log('[TC-G-43] Body:', response.body);
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('Invalid group ID format');
+
+      console.log('✅ TC-G-43 PASSED: Invalid ID rejected');
     });
   });
 });

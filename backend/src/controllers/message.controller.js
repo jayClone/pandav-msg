@@ -84,7 +84,7 @@ export const getChatHistory = async(req, res) =>{
                 {senderId: otherUserId, receiverId: myId}
             ]
         })
-            .populate('senderId', 'name')  // Add this to get sender name
+            .populate('senderId', 'name email')  // Add this to get sender name
             .sort({createdAt: 1}) // Oldest first
             .limit(150)
             .lean(); //lean() for better performance
@@ -102,11 +102,13 @@ export const getChatHistory = async(req, res) =>{
         const formattedMessages = messages.map(msg => ({
             _id: msg._id,
             fromUserId: msg.senderId._id,  
-            senderName: msg.senderId.name,  
+            senderName: msg.senderId.name, 
+            senderEmail: msg.senderId.email, 
             toUserId: msg.receiverId,
             message: msg.message,
             time: msg.createdAt,
             read: msg.read,
+            chatType: msg.chatType,
             createdAt: msg.createdAt
         }))
 
@@ -474,9 +476,17 @@ export const markGroupMessagesAsRead = async (req, res) => {
         groupId: groupId,
         chatType: 'group',
         senderId: { $ne: myObjId },  // Not sent by current user
-        read: false  // Only unread messages
+        'readBy.userId' : { $ne: myObjId }
       },
-      { read: true }
+      {
+        $push: {
+          readBy: {
+            userId: myObjId,
+            readAt: new Date()
+          }
+        },
+        $set: { read: true }  // Also set old read flag for compatibility
+      }
     );
 
     return res.status(200).json({
@@ -494,3 +504,43 @@ export const markGroupMessagesAsRead = async (req, res) => {
     });
   }
 };
+
+
+  export const getMessageReadReceipts = async (req , res) =>{
+    try {
+      const { messageId } = req.params;
+
+      if(!isValidObjectId(messageId)) {
+        return res.status(400).json({
+          success : false,
+          message : "invalid message ID format"
+        })
+      }
+
+      const message = await Message.findById(messageId)
+        .populate('readBy.userId' , 'name email');
+      
+      if (!message) {
+        return res.status(404).json({
+          success: false,
+          message: 'message not found'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          messageId: message._id,
+          readBy: message.readBy || [],
+          readCount: (message.readBy || []).length
+        }
+      });
+
+    } catch (error) {
+      console.error('get read recipt error: ', error.message)
+      return res.status(500).json({
+        success: false,
+        message: "failed to fetch read recipts"
+      });
+    }
+  };

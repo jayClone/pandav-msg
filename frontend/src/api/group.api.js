@@ -46,7 +46,7 @@ const groupApi = {
       throw new Error('Group ID and Member ID are required')
     }
     return API.delete(`/groups/${String(groupId)}/members`, {
-      data: { userId: String(memberId) }
+      data: { memberId: String(memberId) }
     })
   },
 
@@ -59,6 +59,18 @@ const groupApi = {
     }
     return API.post(`/groups/${String(groupId)}/leave`)
   },
+
+  /**
+   * Delete a group (admin only)
+   */
+  deleteGroup: (groupId) => {
+    if (!groupId) {
+      throw new Error('Group ID is required')
+    }
+    return API.delete(`/groups/${String(groupId)}`)
+  },
 }
+
+
 
 export default groupApi
