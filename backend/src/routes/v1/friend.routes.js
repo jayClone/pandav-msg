@@ -3,6 +3,7 @@ import {
   sendFriendRequest,
   acceptFriendRequest,
   rejectFriendRequest,
+  getSentRequests,
   getPendingRequests,
   getFriends,
   checkFriendStatus,
@@ -23,6 +24,9 @@ router.patch('/:requestId/accept', acceptFriendRequest);
 
 // ✅ Reject/Cancel friend request
 router.delete('/:requestId', rejectFriendRequest);
+
+// get sent request
+router.get('/sent', getSentRequests);
 
 // ✅ Get pending requests
 router.get('/pending', getPendingRequests);

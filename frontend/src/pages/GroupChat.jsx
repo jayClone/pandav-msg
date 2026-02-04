@@ -22,6 +22,7 @@ import {
   Trash2,
   AlertTriangle,
 } from 'lucide-react'
+import friendAPI from '@api/friend.api.js'
 
 export default function GroupChat({
   sidebarOpen,
@@ -497,6 +498,23 @@ const handleSendMessage = useCallback(async () => {
       console.error("Failed to fetch available users:", err);
     }
   }, [token]);
+
+  // In the create group modal's member list section:
+  // Instead of fetching all users, fetch only friends
+  useEffect(() => {
+    const fetchFriendsForGroup = async () => {
+      try {
+        const response = await friendAPI.getFriends();
+        setAvailableUsers(response.data.data || []);
+      } catch (error) {
+        console.error('❌ Error fetching friends:', error.message);
+      }
+    };
+
+    if (showCreateGroupModal && token) {
+      fetchFriendsForGroup();
+    }
+  }, [showCreateGroupModal, token]);
 
   // ═══════════════════════════════════════════════════════════════════
   // EFFECTS (FOURTH - NOW fetchAllGroups is defined)

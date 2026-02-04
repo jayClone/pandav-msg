@@ -1,6 +1,7 @@
 import React, {
   useEffect,
   useState,
+  useCallback,
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
@@ -24,6 +25,7 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
+import FriendRequestModal from "@pages/FriendRequestModal";
 
 export default function Layoute({ initialTab = "chats" }) {
   const navigate = useNavigate();
@@ -58,6 +60,7 @@ export default function Layoute({ initialTab = "chats" }) {
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [allUsers, setAllUsers] = useState([]);
+  const [showFriendModal, setShowFriendModal] = useState(false);
 
   // Background images with text colors and fonts
   const bgImages = {
@@ -123,6 +126,17 @@ export default function Layoute({ initialTab = "chats" }) {
     navigate("/login");
   };
 
+  const handleFriendRemoved = useCallback((removedUserId) => {
+    console.log(`✅ [LAYOUT] Friend removed from system:`, removedUserId);
+    
+    // Update allUsers in Chat component
+    setAllUsers(prevUsers => {
+      const filtered = prevUsers.filter(user => user.userId !== removedUserId);
+      console.log(`✅ [LAYOUT] Remaining users:`, filtered.length);
+      return filtered;
+    });
+  }, [setAllUsers]);
+
   return (
     <div className="flex h-screen bg-gray-900">
       {/* LEFT SIDEBAR - Navigation Icons */}
@@ -152,6 +166,7 @@ export default function Layoute({ initialTab = "chats" }) {
           </button>
 
           <button
+            onClick={() => setShowFriendModal(true)}
             className="p-3 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-gray-400 hover:text-green-400"
             title="Add Contact"
           >
@@ -264,6 +279,14 @@ export default function Layoute({ initialTab = "chats" }) {
           />
         </GroupChatErrorBoundary>
       )}
+
+      {/* Friend Request Modal */}
+      <FriendRequestModal
+        isOpen={showFriendModal}
+        onClose={() => setShowFriendModal(false)}
+        token={token}
+        onFriendRemoved={handleFriendRemoved}
+      />
 
       {/* Theme Changer Modal */}
       <ThemeChanger

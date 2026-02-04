@@ -213,6 +213,36 @@ export const rejectFriendRequest = async (req, res) => {
 };
 
 /**
+ * Get sent friend requests (by current user)
+ */
+export const getSentRequests = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+
+    const requests = await Friend.find({
+      senderId: userId,
+      status: 'pending',
+    })
+      .populate('senderId', 'name email _id')
+      .populate('receiverId', 'name email _id')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Sent requests retrieved',
+      data: requests,
+    });
+  } catch (error) {
+    console.error('❌ Error fetching sent requests:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch sent requests',
+      error: error.message,
+    });
+  }
+};
+
+/**
  * Get pending friend requests (received)
  */
 export const getPendingRequests = async (req, res) => {

@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import messageService from "@services/message.service.js";
-import axios from "axios";
+import friendAPI from '@api/friend.api.js';
 import { SOCKET_EVENTS } from "@constants/socketEvents.js";
 import {
   connectSocket,
@@ -28,18 +28,19 @@ import {
   Menu,
   ChevronLeft,
   X,
+  Loader,
 } from "lucide-react";
 
 export default function Chat({
-  allUsers,
-  setAllUsers,
   currentUserName,
   currentUserId,
-  bgImage,
-  bgImages,
+  token,
+  allUsers,
+  setAllUsers,
   sidebarOpen,
   setSidebarOpen,
-  token,
+  bgImage,
+  bgImages,
 }) {
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
@@ -50,6 +51,7 @@ export default function Chat({
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingFriends, setLoadingFriends] = useState(false);
   const [error, setError] = useState("");
   const [unreadCounts, setUnreadCounts] = useState({});
   const [pinnedChats, setPinnedChats] = useState([]);
@@ -60,22 +62,23 @@ export default function Chat({
   const typingTimeoutRef = useRef(null);
   const lastTypingTimeRef = useRef(0);
 
-  // Fetch all users
-  const fetchAllUsers = useCallback(async () => {
+  // ✅ FETCH ONLY FRIENDS (not all users)
+  const fetchFriends = useCallback(async () => {
     try {
-      console.log("🔄 Fetching all users...");
-      const response = await axios.get("/users", {
-        baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      console.log("✅ Users fetched:", response.data.data);
+      console.log("🔄 Fetching friends only...");
+      setLoadingFriends(true);
+
+      // ✅ Call getFriends() - only returns friends, not all users
+      const response = await friendAPI.getFriends();
+
+      console.log("✅ Friends fetched:", response.data.data);
+
       if (response.data.success) {
-        const users = response.data.data || [];
+        const friends = response.data.data || [];
+        
+        // ✅ Only set friends, NOT all users
         setAllUsers(
-          users.map((u) => ({
+          friends.map((u) => ({
             userId: u._id || u.userId,
             name: u.name,
             email: u.email,
@@ -84,16 +87,57 @@ export default function Chat({
             createdAt: u.createdAt,
           }))
         );
+        
+        console.log(`✅ [CHAT] Loaded ${friends.length} friends`);
       }
     } catch (err) {
-      console.error("❌ Failed to fetch all users:", err);
+      console.error("❌ Failed to fetch friends:", err.message);
+      setError("Failed to load friends.");
+    } finally {
+      setLoadingFriends(false);
     }
-  }, [token, setAllUsers]);
+  }, [setAllUsers]);
 
+  // ✅ FETCH FRIENDS ON MOUNT
   useEffect(() => {
     if (!token) return;
-    fetchAllUsers();
-  }, [token, fetchAllUsers]);
+    fetchFriends();
+  }, [token, fetchFriends]);
+
+  // ✅ HANDLE FRIEND REMOVAL - REFETCH FRIENDS
+  const handleFriendRemoved = useCallback((removedUserId) => {
+    console.log(`✅ [CHAT] Friend removed:`, removedUserId);
+    
+    // Remove from UI immediately
+    setAllUsers(prevUsers => {
+      const filtered = prevUsers.filter(user => user.userId !== removedUserId);
+      console.log(`✅ [CHAT] Removed from UI. Remaining:`, filtered.length);
+      return filtered;
+    });
+
+    // Close chat if currently open with removed friend
+    if (selectedUserId === removedUserId) {
+      console.log(`✅ [CHAT] Closing chat with removed friend`);
+      setSelectedUserId(null);
+      setMessages([]);
+    }
+
+    // Clear unread count
+    setUnreadCounts(prev => {
+      const updated = { ...prev };
+      delete updated[removedUserId];
+      return updated;
+    });
+
+    // Remove from pinned
+    setPinnedChats(prev => prev.filter(id => id !== removedUserId));
+
+    // ✅ REFETCH FROM BACKEND - IMPORTANT!
+    setTimeout(() => {
+      console.log(`📡 [CHAT] Refetching friends list from backend...`);
+      fetchFriends();
+    }, 300);
+  }, [selectedUserId, fetchFriends, setAllUsers]);
 
   // Socket event handlers - Main useEffect
   useEffect(() => {
@@ -110,31 +154,23 @@ export default function Chat({
       console.log("📡 [ONLINE_USERS] Received:", users?.length, "users");
       if (users && users.length > 0) {
         setAllUsers((prevUsers) => {
-          if (prevUsers.length === 0) {
-            return users.map((u) => ({
-              userId: u.userId || u._id,
-              name: u.name,
-              email: u.email || "",
-              online: u.online || true,
-              lastSeen: u.lastSeen,
-              createdAt: u.createdAt,
-            }));
-          }
-
-          const updated = prevUsers.map((u) => {
+          // ✅ Only update online status of existing friends
+          const updated = prevUsers.map((friendUser) => {
             const onlineUser = users.find(
-              (ou) => ou.userId === u.userId || ou._id === u.userId
+              (ou) => ou.userId === friendUser.userId || ou._id === friendUser.userId
             );
-            if (onlineUser && u.online !== onlineUser.online) {
-              return { ...u, online: onlineUser.online || true };
+            
+            if (onlineUser) {
+              return { 
+                ...friendUser, 
+                online: onlineUser.online || true 
+              };
             }
-            return u;
+            
+            return friendUser; // Keep existing friend as is
           });
 
-          const hasChanges = updated.some(
-            (u, i) => u.online !== prevUsers[i].online
-          );
-          return hasChanges ? updated : prevUsers;
+          return updated;
         });
       }
     };
@@ -188,14 +224,13 @@ export default function Chat({
       }
     };
 
-    // ✅ MESSAGE SENT CONFIRMATION - Just add to UI with real ID
+    // ✅ MESSAGE SENT CONFIRMATION
     const handleMessageSent = (data) => {
       console.log("✅ [MESSAGE_SENT] Confirmed:", {
         _id: data._id,
         message: data.message.substring(0, 30)
       });
 
-      // ✅ Add message to UI with REAL MongoDB ID
       setMessages((prev) => {
         const messageExists = prev.some((m) => m._id === data._id);
         if (messageExists) {
@@ -219,7 +254,7 @@ export default function Chat({
       });
     };
 
-    // ✅ MESSAGE READ - Simple read status update
+    // ✅ MESSAGE READ
     const handleMessageRead = (data) => {
       console.log("🔵 [MESSAGE_READ]:", data.messageId);
 
@@ -287,9 +322,9 @@ export default function Chat({
       socket.off(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
       socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
     };
-  }, [token, navigate, currentUserId, currentUserName, setAllUsers,selectedUserId]); // ✅ Fixed dependencies
+  }, [token, navigate, currentUserId, currentUserName, setAllUsers, selectedUserId]);
 
-  // ✅ FETCH CHAT HISTORY - Separate useEffect
+  // ✅ FETCH CHAT HISTORY
   useEffect(() => {
     if (!selectedUserId) return;
 
@@ -318,8 +353,6 @@ export default function Chat({
           if (socket && socket.connected) {
             unreadMessages.forEach((msg) => {
               console.log(`📤 [Frontend] Emitting READ_RECEIPT for ${msg._id}`);
-              console.log(`📤 [Frontend] senderId: ${msg.fromUserId}, receiverId: ${currentUserId}`);
-      
               socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
                 messageId: msg._id,
                 senderId: msg.fromUserId,
@@ -349,13 +382,12 @@ export default function Chat({
       [selectedUserId]: 0,
     }));
     messageInputRef.current?.focus();
-  }, [selectedUserId, currentUserId]); // ✅ Fixed dependencies
+  }, [selectedUserId, currentUserId]);
 
-  // ✅ ADD THIS NEW EFFECT: Poll for read status updates
+  // ✅ POLL FOR READ STATUS UPDATES
   useEffect(() => {
     if (!selectedUserId) return;
 
-    // Poll every 2 seconds to check if messages were marked as read
     const pollInterval = setInterval(async () => {
       try {
         const data = await messageService.fetchChatHistory(selectedUserId);
@@ -363,11 +395,9 @@ export default function Chat({
         setMessages((prev) => {
           let hasChanges = false;
           const updated = prev.map((msg) => {
-            // Only check sent messages from current user
             if (msg.fromUserId === currentUserId && !msg.read) {
               const updatedMsg = data.messages.find((m) => m._id === msg._id);
               
-              // If message is marked as read in DB but not in UI
               if (updatedMsg && updatedMsg.read) {
                 console.log(`🔵 [POLL] Blue tick appeared for: ${msg._id}`);
                 hasChanges = true;
@@ -379,11 +409,10 @@ export default function Chat({
 
           return hasChanges ? updated : prev;
         });
-      } catch (err) {
+      } catch  {
         console.debug("[POLL] Read status check failed");
-        console.log(err)
       }
-    }, 2000); // Poll every 2 seconds
+    }, 2000);
 
     return () => clearInterval(pollInterval);
   }, [selectedUserId, currentUserId]);
@@ -397,7 +426,7 @@ export default function Chat({
     }
   }, [messages]);
 
-  // Filtered users
+  // Filtered users (only friends now)
   const filteredUsers = useMemo(() => {
     const usersToFilter = allUsers;
 
@@ -442,16 +471,15 @@ export default function Chat({
 
     if (!selectedUserId || !messageInput.trim()) return;
 
-      console.log("📤 [SEND] Sending message:", messageInput.trim());
+    console.log("📤 [SEND] Sending message:", messageInput.trim());
 
-      // ✅ Just emit to backend - DON'T add to UI yet
-      socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
-        toUserId: selectedUserId,
-        message: messageInput.trim(),
-      });
+    socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
+      toUserId: selectedUserId,
+      message: messageInput.trim(),
+    });
 
-      setMessageInput("");
-    }, [selectedUserId, messageInput]);
+    setMessageInput("");
+  }, [selectedUserId, messageInput]);
 
   // Handle typing
   const handleChatTyping = useCallback(
@@ -566,6 +594,15 @@ export default function Chat({
     [selectedUserId]
   );
 
+  // ✅ EXPORT HANDLER FOR PARENT COMPONENT
+  useEffect(() => {
+    // Make handler available to parent via window
+    window.chatHandleFriendRemoved = handleFriendRemoved;
+    return () => {
+      delete window.chatHandleFriendRemoved;
+    };
+  }, [handleFriendRemoved]);
+
   return (
     <>
       {/* Chat Sidebar */}
@@ -574,7 +611,9 @@ export default function Chat({
       >
         {/* Header */}
         <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between">
-          <h2 className="text-lg sm:text-xl font-bold text-gray-300">Chats</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-gray-300">
+            {loadingFriends ? 'Loading Friends...' : 'Friends'}
+          </h2>
           <button
             onClick={() => setSidebarOpen(false)}
             className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400 sm:hidden"
@@ -589,7 +628,7 @@ export default function Chat({
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search chats..."
+              placeholder="Search friends..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all"
@@ -601,13 +640,21 @@ export default function Chat({
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           <div className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2 px-4">
             <MessageCircle className="w-4 h-4" />
-            Conversations ({filteredUsers.length})
+            Friends ({filteredUsers.length})
           </div>
 
-          {filteredUsers.length === 0 ? (
+          {loadingFriends ? (
+            <div className="flex items-center justify-center h-40">
+              <Loader className="w-8 h-8 text-green-400 animate-spin" />
+            </div>
+          ) : filteredUsers.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">No chats found</p>
+              <p className="text-sm">
+                {allUsers.length === 0 
+                  ? "No friends yet. Add friends using the + button!" 
+                  : "No friends found"}
+              </p>
             </div>
           ) : (
             filteredUsers.map((user) => {
@@ -812,19 +859,15 @@ export default function Chat({
                           {isOwn && (
                             <>
                               {m.sending ? (
-                                // ✅ Single tick - sending
                                 <Check className="w-3.5 h-3.5 text-gray-400" />
                               ) : m.read ? (
-                                // ✅ Double tick - delivered AND read
                                 <CheckCheck className="w-3.5 h-3.5 text-blue-400" />
                               ) : (
-                                // ✅ Double tick - delivered but not read
                                 <CheckCheck className="w-3.5 h-3.5 text-gray-400" />
                               )}
                             </>
                           )}
 
-                          {/* ✅ DELETE BUTTON - Below message, visible on hover */}
                           {isOwn && (
                             <button
                               onClick={() => handleDeleteMessage(m._id)}
@@ -921,7 +964,7 @@ export default function Chat({
               Welcome to Pandav Chat
             </h3>
             <p className="text-gray-500 text-center text-sm sm:text-base max-w-md">
-              Select a conversation from the sidebar to start messaging
+              Select a friend from the sidebar or add a new friend using the + button
             </p>
           </div>
         )}
