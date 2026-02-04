@@ -1,6 +1,7 @@
 import Group from "@models/Group";
 import User from "@models/User"
 import Message from '@models/Message.js';
+import Friend from "app/models/Friend";
 import mongoose from 'mongoose';  // ✅ ADD THIS
 
 // HELPER: Validate MongoDB ObjectId (handles both string and ObjectId)
@@ -77,6 +78,34 @@ export const createGroup = async (req, res) => {
                 message: "Group must have at least 2 participants (creator + at least 1 other)"
             });
         }
+
+        // CHECK IF ALL MEMBERS ARE FRIENDS WITH CREATOR
+        console.log(`🔐 [FRIEND CHECK] Validating group members are friends with creator`);
+        
+        for (const memberId of uniqueMemberIds) {
+            // Skip the creator themselves
+            if (memberId === userIdStr) {
+                continue;
+            }
+
+            // Check if creator is friends with this member
+            const friendship = await Friend.findOne({
+                $or: [
+                    { senderId: userId, receiverId: memberId, status: 'accepted' },
+                    { senderId: memberId, receiverId: userId, status: 'accepted' },
+                ],
+            });
+
+            if (!friendship) {
+                const memberUser = members.find(m => m._id.toString() === memberId);
+                return res.status(403).json({
+                    success: false,
+                    message: `Cannot add ${memberUser?.name || memberId} to group - you must be friends first`,
+                });
+            }
+        }
+
+        console.log(`✅ [FRIEND CHECK] All members are friends with creator`);
 
         //  CREATE GROUP WITH VALIDATED DATA
         const group = await Group.create({
@@ -242,6 +271,26 @@ export const addMember = async(req, res) => {
                 message: 'User not found'
             });
         }
+
+        // ✅ NEW: CHECK IF ADMIN IS FRIENDS WITH NEW MEMBER
+        console.log(`🔐 [FRIEND CHECK] Verifying admin is friends with new member`);
+        
+        const friendship = await Friend.findOne({
+            $or: [
+                { senderId: myId, receiverId: userId, status: 'accepted' },
+                { senderId: userId, receiverId: myId, status: 'accepted' },
+            ],
+        });
+
+        if (!friendship) {
+            return res.status(403).json({
+                success: false,
+                message: `Cannot add ${userExists.name} - you must be friends first`,
+            });
+        }
+
+        console.log(`✅ [FRIEND CHECK] Admin is friends with new member`);
+
 
         // Add member
         group.participants.push(newMemberObjId);

@@ -1096,4 +1096,55 @@ describe('🧪 FRIEND REQUEST FEATURE TESTS', () => {
     console.log('✅ TC-F-35 PASSED: Invalid ID handled gracefully');
     });
   });
+
+  describe('J) GROUP FRIEND-ONLY VALIDATION', () => {
+  it('TC-G-01: Cannot create group with non-friend', async () => {
+    // A and D are NOT friends
+    // Try to create group with D
+    const response = await request(app)
+      .post('/api/v1/groups')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({
+        name: 'Test Group',
+        memberIds: [userD._id]
+      })
+      .timeout(15000);
+
+    expect(response.status).toBe(403);
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toContain('be friends first');
+
+    console.log('✅ TC-G-01 PASSED: Non-friend group creation blocked');
+  });
+
+  it('TC-G-02: Can create group with friends', async () => {
+    // Make A and B friends first
+    const sendRes = await request(app)
+      .post('/api/v1/friends')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ receiverId: userB._id })
+      .timeout(15000);
+
+    await request(app)
+      .patch(`/api/v1/friends/${sendRes.body.data._id}/accept`)
+      .set('Authorization', `Bearer ${tokenB}`)
+      .timeout(15000);
+
+    // Now create group with friend
+    const groupRes = await request(app)
+      .post('/api/v1/groups')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({
+        name: 'Friends Group',
+        memberIds: [userB._id]
+      })
+      .timeout(15000);
+
+    expect(groupRes.status).toBe(201);
+    expect(groupRes.body.success).toBe(true);
+    expect(groupRes.body.data.name).toBe('Friends Group');
+
+    console.log('✅ TC-G-02 PASSED: Friend group creation allowed');
+  });
+});
 });
