@@ -4,6 +4,7 @@ import authRoutes from '@v1/auth.routes.js';
 import messageRoutes from '@v1/message.routes.js'
 import groupRoutes from '@v1/group.routes.js'
 import userRoutes from '@v1/user.routes.js'
+import frienRoutes from '@v1/friend.routes'
 
 const router = express.Router();
 
@@ -62,5 +63,9 @@ router.use('/messages', messageRoutes);
  * @middleware Authorization checks on member operations
  */
 router.use('/groups', groupRoutes);
+
+
+//frinds routes
+router.use('/friends', frienRoutes);
 
 export default router;

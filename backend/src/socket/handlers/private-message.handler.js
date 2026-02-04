@@ -1,11 +1,12 @@
 import { MESSAGES, SOCKET_EVENTS } from "@constants/response.messages.js";
+import Friend from "app/models/Friend";
 import Message from '@models/Message.js';
 
 /**
  * Handle private messages
  */
-export async function handlePrivateMessage(socket, io, data, userId, name, onlineUsers) {
-    const { toUserId, message } = data;
+export async function handlePrivateMessage(socket, io, payload, userId, name, onlineUsers) {
+    const { toUserId, message, uniqueId} = payload;
 
     try {
         // Validation Layer
@@ -25,6 +26,26 @@ export async function handlePrivateMessage(socket, io, data, userId, name, onlin
 
         const trimmedMessage = message.trim();
         const receiverUser = onlineUsers.get(toUserId);
+
+        // friends validation
+        console.log(`[FRIEND-CHECK] varifying friendship between ${userId} and ${toUserId}`);
+
+        const areFriends = await Friend.findOne({
+            $or: [
+                {senderId: userId, receiverId: toUserId, status: 'accepted' },
+                {senderId: toUserId, receiverId: userId, status: 'accepted' },
+            ]
+        });
+
+        if (!areFriends) {
+            console.warn(`⚠️ [BLOCKED] Non-friend message attempt: ${userId} → ${toUserId}`)
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+                message: MESSAGES.FRIEND.CANNOT_MESSAGE 
+            });
+            return;
+        }
+        console.log(`✅ [FRIEND-CHECK] Users are friends, proceeding...`);
+
 
         // Save message to DB
         let savedMessage;

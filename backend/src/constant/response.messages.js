@@ -25,6 +25,17 @@ export const MESSAGES = {
     ALREADY_MEMBER: "User is already a member",
     CANNOT_REMOVE_CREATOR: "Cannot remove group creator",
   },
+
+    FRIEND: {
+    REQUEST_SENT: "Friend request sent successfully",
+    REQUEST_ACCEPTED: "Friend request accepted",
+    REQUEST_REJECTED: "Friend request rejected",
+    ALREADY_FRIENDS: "Already friends",
+    REQUEST_PENDING: "Friend request already pending",
+    NOT_FRIENDS: "You are not friends",
+    FRIEND_REMOVED: "Friend removed successfully",
+    CANNOT_MESSAGE: "You can only message friends",
+  },
 };
 
 export const SOCKET_EVENTS = {
