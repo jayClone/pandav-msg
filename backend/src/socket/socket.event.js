@@ -3,7 +3,7 @@ import { handlePrivateMessage } from './handlers/private-message.handler.js';
 import { handleJoinGroup, handleLeaveGroup } from './handlers/group-room.handler.js';
 import { handleGroupMessage } from './handlers/group-message.handler.js';
 import { handleUserConnect, handleUserDisconnect } from './handlers/user-status.handler.js';
-import Message from '@models/Message.js';
+import { handleReadReceipt } from './handlers/read-receipt.handler.js';
 
 const onlineUsers = new Map();
 
@@ -140,37 +140,16 @@ export function registerSocketEvents(io, socket) {
   // ═══════════════════════════════════════════════════════════════════
   // ✅ READ RECEIPT
   // ═══════════════════════════════════════════════════════════════════
-  socket.on(SOCKET_EVENTS.READ_RECEIPT, async (data) => {
-    console.log(`📥 [SOCKET] Received READ_RECEIPT from ${name}:`, data);
-
-    const { messageId, senderId, receiverId } = data;
+  socket.on(SOCKET_EVENTS.READ_RECEIPT, async (payload) => {
+    console.log(`\n📥 [SOCKET EVENT] READ_RECEIPT received`);
+    console.log(`   From: ${name}`);
+    console.log(`   Payload:`, payload);
     
     try {
-      // ✅ Update message in DB as read
-      const updatedMessage = await Message.findByIdAndUpdate(
-        messageId,
-        { read: true },
-        { new: true }
-      );
-      console.log(`✅ [DB] Message ${messageId} marked as read in database`);
-
-      // ✅ Find original sender
-      const originalSender = onlineUsers.get(senderId);
-      
-      if (originalSender) {
-        // ✅ Send MESSAGE_READ to sender
-        io.to(originalSender.socketId).emit(SOCKET_EVENTS.MESSAGE_READ, {
-          messageId: messageId,
-          readBy: userId,
-          senderId: senderId,
-          readerName: name
-        });
-        console.log(`✅ [SOCKET] MESSAGE_READ sent to sender ${originalSender.name}`);
-      } else {
-        console.log(`⚠️ [SOCKET] Sender ${senderId} is offline`);
-      }
-    } catch (err) {
-      console.error(`❌ [ERROR] Failed to mark message as read:`, err.message);
+      await handleReadReceipt(socket, io, payload, userId, name);
+    } catch (error) {
+      console.error('❌ Error in read receipt handler:', error.message);
+      socket.emit('error', { message: 'Failed to process read receipt' });
     }
   });
 

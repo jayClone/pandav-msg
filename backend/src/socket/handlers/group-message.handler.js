@@ -8,123 +8,47 @@ import Group from "@models/Group.js";
  */
 export async function handleGroupMessage(socket, io, payload, userId, name) {
   try {
-    console.log('🔵 handleGroupMessage called');
-    console.log('   Payload:', payload);
-    console.log('   User:', { userId, name });
+    const { groupId, message } = payload;
 
-    const { groupId, message } = payload || {};
-
-    // ✅ Validate required fields
-    if (!groupId) {
-      console.error('❌ Missing groupId');
-      socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-        message: MESSAGES.GROUP.GROUP_ID_REQUIRED 
-      });
+    if (!groupId || !message?.trim()) {
+      console.error('❌ Missing required fields');
       return;
     }
-
-    if (!message || !message.trim()) {
-      console.error('❌ Empty message');
-      socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-        message: MESSAGES.GROUP.MESSAGE_EMPTY 
-      });
-      return;
-    }
-
-    const trimmedMessage = message.trim();
-
-    console.log(`📝 [1/4] Validating group membership...`);
-
-    // ✅ Verify user is member of group
-    const group = await Group.findById(groupId);
-    
-    if (!group) {
-      console.error('❌ Group not found:', groupId);
-      socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-        message: MESSAGES.GROUP.GROUP_NOT_FOUND 
-      });
-      return;
-    }
-
-    console.log('   Group participants:', group.participants.map(p => p.toString()));
-    console.log('   User ID:', userId.toString());
-
-    // ✅ Check if user is member
-    const isMember = group.participants?.some(
-      (participant) => {
-        const participantId = typeof participant === 'object' 
-          ? participant.toString() 
-          : String(participant);
-        const userIdStr = String(userId);
-        return participantId === userIdStr;
-      }
-    );
-
-    console.log('   Is member:', isMember);
-
-    if (!isMember) {
-      console.error('❌ User is not a member of this group');
-      socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-        message: MESSAGES.GROUP.USER_NOT_MEMBER 
-      });
-      return;
-    }
-
-    console.log(`✅ [2/4] User verified as group member`);
-    console.log(`📝 [3/4] Saving message to DB...`);
 
     // ✅ Save to database
     const savedMessage = await Message.create({
       senderId: userId,
       groupId: groupId,
-      message: trimmedMessage,
+      message: message.trim(),
       chatType: 'group',
-      createdAt: new Date(),
-      read: false
+      delivered: true,
     });
 
-    if (!savedMessage) {
-      throw new Error('Failed to save message to database');
-    }
+    // ✅ POPULATE to get proper structure
+    const populatedMessage = await Message.findById(savedMessage._id)
+      .populate('senderId', 'name email _id')
+      .populate('readBy.userId', 'name email _id');
 
-    console.log(`✅ [4/4] Message saved with ID: ${savedMessage._id}`);
+    console.log('✅ Message saved:', populatedMessage._id);
 
-    // ✅ Prepare payload for broadcast
-    const messagePayload = {
-      _id: savedMessage._id,
-      messageId: savedMessage._id,
+    // ✅ BROADCAST WITH FULL DATA including readBy (even if empty initially)
+    io.to(groupId.toString()).emit(SOCKET_EVENTS.GROUP_MESSAGE, {
+      _id: populatedMessage._id,
       groupId: groupId,
       fromUserId: userId,
       fromUserName: name,
-      message: trimmedMessage,
-      createdAt: savedMessage.createdAt.toISOString(),
-      time: savedMessage.createdAt.toISOString(),
+      message: message.trim(),
+      createdAt: populatedMessage.createdAt,
+      delivered: true,
+      read: false,
+      readBy: populatedMessage.readBy || [],  // ✅ Include readBy array (empty initially)
       senderId: userId,
       senderName: name,
-      chatType: 'group'
-    };
+    });
 
-    console.log(`🔵 [5/5] Message payload prepared:`, messagePayload);
-
-    // ✅ Get room members
-    const room = io.sockets.adapter.rooms.get(groupId);
-    const membersInRoom = room ? room.size : 0;
-    
-    console.log(`📊 Members in room ${groupId}: ${membersInRoom}`);
-    console.log(`📤 Broadcasting 'group_message' to room: ${groupId}`);
-
-    // ✅ Broadcast to ALL users in the group room
-    io.to(groupId).emit(SOCKET_EVENTS.GROUP_MESSAGE, messagePayload);
-
-    console.log(`✅ [COMPLETE] Message broadcast successfully`);
-    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+    console.log('✅ Message broadcasted to group:', groupId);
 
   } catch (error) {
-    console.error('[❌ ERROR] Group message failed:', error.message);
-    console.error(error.stack);
-    socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-      message: MESSAGES.SOCKET.SOMETHING_WENT_WRONG,
-      error: error.message 
-    });
+    console.error('❌ Error in handleGroupMessage:', error.message);
   }
 }

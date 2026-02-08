@@ -5,23 +5,23 @@ const messageSchema = new mongoose.Schema(
     senderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Sender ID is required']
+      required: true,
     },
-
     receiverId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
+      ref: 'User',
     },
 
     groupId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Group'
+      ref: 'Group',
     },
 
     chatType: {
       type: String,
       enum: ['private', 'group'],
-      default: 'private'
+      default: 'private',
+      required: true
     },
 
     message: {
@@ -30,25 +30,50 @@ const messageSchema = new mongoose.Schema(
       trim: true 
     },
 
+    // ✅ For backward compatibility with private chat
     read: {
       type: Boolean,
       default: false
     },
     
-    readBy: [{
-      userId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
+    // ✅ Detailed read receipt tracking
+    readBy: [
+      {
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        readAt: {
+          type: Date,
+          default: Date.now,
+        },
       },
-      readAt: Date
-    }],
+    ],
 
+    // ✅ Track delivery status for private messages
+    delivered: {
+      type: Boolean,
+      default: false
+    },
+
+    // ✅ Allow message deletion (soft delete)
+    deleted: {
+      type: Boolean,
+      default: false
+    },
+
+    deletedAt: {
+      type: Date,
+      default: null
+    }
   },
   { timestamps: true }
 );
 
-// Indexes only
+// Performance indexes
 messageSchema.index({ groupId: 1, createdAt: 1 });
-messageSchema.index({ senderId: 1, receiverId: 1 });
+messageSchema.index({ senderId: 1, receiverId: 1, createdAt: 1 });
+messageSchema.index({ 'readBy.userId': 1 });
+messageSchema.index({ groupId: 1, deleted: 1 });
 
 export default mongoose.model('Message', messageSchema);

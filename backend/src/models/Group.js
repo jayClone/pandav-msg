@@ -1,46 +1,67 @@
 import mongoose from "mongoose";
 
 const groupSchema = new mongoose.Schema(
-    {
-
+  {
     name: {
       type: String,
-      required: [true, 'Group name is required'],
+      required: [true, "Group name is required"],
       trim: true,
-      minlength: [3, 'Group name must be at least 3 characters'],
-      maxlength: [50, 'Group name cannot exceed 50 characters']
+      minlength: [3, "Group name must be at least 3 characters"],
+      maxlength: [50, "Group name cannot exceed 50 characters"],
     },
 
     participants: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'User',
-      required: [true, 'Participants are required'],
+      ref: "User",
+      required: [true, "Participants are required"],
       validate: {
-        validator: function(v) {
+        validator: function (v) {
           return v.length >= 1;
         },
-        message: 'Group must have at least 1 participants'
-      }
+        message: "Group must have at least 1 participant",
+      },
     },
 
     adminId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: [true, 'Admin is required']
+      ref: "User",
+      required: [true, "Admin is required"],
     },
-        
+
+    // ✅ NEW: Track online members in real-time
+    onlineMembers: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: "User",
+      default: [],
+    },
+
+    // ✅ NEW: Track read receipts per message
+    messageReadReceipts: [
+      {
+        messageId: mongoose.Schema.Types.ObjectId,
+        readBy: [
+          {
+            userId: mongoose.Schema.Types.ObjectId,
+            readAt: Date,
+          },
+        ],
+      },
+    ],
+
     createdAt: {
       type: Date,
-      default: Date.now
-    }
-},
-    {
-        timestamps: true
-    }
+      default: Date.now,
+    },
+  },
+  {
+    timestamps: true,
+  }
 );
 
-// Index for faster queries
+// Indexes for performance
 groupSchema.index({ participants: 1 });
 groupSchema.index({ adminId: 1 });
+groupSchema.index({ onlineMembers: 1 });
+groupSchema.index({ "messageReadReceipts.messageId": 1 });
 
-export default mongoose.model("Group", groupSchema)
+export default mongoose.model("Group", groupSchema);

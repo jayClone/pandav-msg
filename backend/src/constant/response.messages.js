@@ -38,6 +38,7 @@ export const MESSAGES = {
   },
 };
 
+// UPDATE SOCKET_EVENTS
 export const SOCKET_EVENTS = {
   ONLINE_USERS: "online_users",
   PRIVATE_MESSAGE: "private_message",
@@ -51,4 +52,6 @@ export const SOCKET_EVENTS = {
   JOIN_GROUP: "join_group",
   LEAVE_GROUP: "leave_group",
   READ_RECEIPT: "read_receipt",
+  USER_CAME_ONLINE: "user_came_online",    // ✅ NEW
+  USER_WENT_OFFLINE: "user_went_offline",  // ✅ NEW
 };

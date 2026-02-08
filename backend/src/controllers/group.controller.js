@@ -402,7 +402,7 @@ export const getGroupMessages = async (req, res) => {
         const limit = parseInt(req.query.limit) || 50;
         const skip = (page - 1) * limit;
 
-        //  VALIDATE OBJECTID
+        // VALIDATE OBJECTID
         if (!isValidObjectId(groupId)) {
             return res.status(400).json({
                 success: false,
@@ -426,12 +426,14 @@ export const getGroupMessages = async (req, res) => {
             });
         }
 
-        // Fetch messages
+        // ✅ FETCH MESSAGES WITH readBy POPULATED
         const messages = await Message.find({
             groupId: groupId,
-            chatType: 'group'
+            chatType: 'group',
+            deleted: { $ne: true }  // Exclude soft-deleted messages
         })
-            .populate('senderId', 'name email')
+            .populate('senderId', 'name email _id')
+            .populate('readBy.userId', 'name email _id')  // ✅ CRITICAL: Populate readBy
             .sort({ createdAt: 1 })
             .skip(skip)
             .limit(limit)
@@ -440,22 +442,33 @@ export const getGroupMessages = async (req, res) => {
         // Get total count
         const totalCount = await Message.countDocuments({
             groupId: groupId,
-            chatType: 'group'
+            chatType: 'group',
+            deleted: { $ne: true }
         });
+
+        // ✅ FORMAT RESPONSE WITH PROPER readBy DATA
+        const formattedMessages = messages.map(msg => ({
+            _id: msg._id,
+            fromUserId: msg.senderId._id,
+            senderName: msg.senderId.name,
+            senderEmail: msg.senderId.email,
+            message: msg.message,
+            time: msg.createdAt,
+            read: msg.read,
+            readBy: msg.readBy ? msg.readBy.map(r => ({
+                userId: r.userId?._id || r.userId,
+                userName: r.userId?.name || 'Unknown',
+                readAt: r.readAt,
+            })) : [],  // ✅ RETURN readBy ARRAY
+            readCount: msg.readBy?.length || 0,  // ✅ ADD readCount
+            chatType: msg.chatType,
+            createdAt: msg.createdAt,
+            delivered: msg.delivered,
+        }));
 
         return res.status(200).json({
             success: true,
-            data: messages.map(msg => ({
-                _id: msg._id,
-                fromUserId: msg.senderId._id,
-                senderName: msg.senderId.name,
-                senderEmail: msg.senderId.email,
-                message: msg.message,
-                time: msg.createdAt,
-                read: msg.read,
-                chatType: msg.chatType,
-                createdAt: msg.createdAt
-            })),
+            data: formattedMessages,
             count: messages.length,
             totalCount: totalCount,
             page: page,

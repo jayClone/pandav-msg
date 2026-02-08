@@ -59,13 +59,166 @@ export default function GroupChat({
   const [selectedUsersToAdd, setSelectedUsersToAdd] = useState([]);
   const [searchUsersToAdd, setSearchUsersToAdd] = useState("");
   const [messageReadStatus, setMessageReadStatus] = useState({});
-  const [lastMessages,] = useState({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingGroup, setDeletingGroup] = useState(false);
+  const [onlineCount, setOnlineCount] = useState(0); // ✅ ADD THIS
+  const [lastMessages, setLastMessages] = useState({}); // ✅ ADD THIS
 
-  // ✅ FIX: ADD REFS HERE
   const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // HELPER FUNCTION: Format time
+  // ═══════════════════════════════════════════════════════════════════
+  const formatTime = useCallback((timestamp) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now - date;
+
+    if (diff < 60000) return "Just now";
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000)
+      return date.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }, []);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // HELPER FUNCTION: Handle message read
+  // ═══════════════════════════════════════════════════════════════════
+  const handleMessageRead = useCallback((messageId, readByData) => {
+    console.log('📖 Handling message read:', { messageId, readByData });
+    
+    setMessageReadStatus((prev) => ({
+      ...prev,
+      [messageId]: {
+        readBy: readByData || [],
+        readCount: readByData?.length || 0,
+        lastReadAt: new Date(),
+      },
+    }));
+
+    // Update messages array
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg._id === messageId 
+          ? { ...msg, readBy: readByData || [], read: true } 
+          : msg
+      )
+    );
+  }, []);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // HELPER FUNCTION: Render message with ticks
+  // ═══════════════════════════════════════════════════════════════════
+  const renderMessage = useCallback((msg, index) => {
+    const isOwnMessage = msg.fromUserId === currentUserId;
+  
+    // ✅ PRIORITY: Use messageReadStatus first, fallback to msg.readBy
+    const readStatus = messageReadStatus[msg._id] || (msg.readBy?.length > 0 ? {
+      readBy: msg.readBy,
+      readCount: msg.readBy.length,
+    } : null);
+  
+    // Check if all members (except sender) have read the message
+    const totalOtherMembers = members.filter(m => {
+      const memberId = m._id || m.userId;
+      const msgSenderId = msg.fromUserId;
+      return memberId?.toString() !== msgSenderId?.toString();
+    }).length;
+  
+    const readCount = readStatus?.readCount || 0;
+    const isReadByAll = readCount >= totalOtherMembers && totalOtherMembers > 0;
+
+    return (
+      <div
+        key={`${msg._id}-${index}`}
+        className={`flex gap-3 ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'} mb-4 group`}
+      >
+        {/* Avatar - Only show for other users' messages */}
+        {!isOwnMessage && (
+          <div className="w-8 h-8 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1">
+            {msg.fromUserName?.charAt(0).toUpperCase() || '?'}
+          </div>
+        )}
+
+        {/* Message Container */}
+        <div className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'} max-w-xs`}>
+          {/* Sender Name - Only for other users */}
+          {!isOwnMessage && (
+            <p className="text-xs text-gray-400 mb-1 font-semibold px-3">
+              {msg.fromUserName}
+            </p>
+          )}
+
+          {/* Message Box */}
+          <div
+            className={`px-4 py-2.5 rounded-2xl shadow-lg ${
+              isOwnMessage
+                ? 'bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm'
+                : 'bg-gray-700 text-gray-100 rounded-tl-sm'
+            }`}
+          >
+            <p className="text-sm leading-relaxed">{msg.message}</p>
+          </div>
+
+          {/* Time & Read Status Row */}
+          <div className={`flex items-center gap-2 mt-1 px-3 ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
+            <span className="text-xs text-gray-500">{formatTime(msg.time)}</span>
+
+            {/* TICKS - Only show for own messages */}
+            {isOwnMessage && (
+              <div className="flex items-center gap-1">
+                {!readStatus ? (
+                  // ✅ SINGLE TICK - Message sent but not read
+                  <span className="text-gray-400 text-sm font-bold">✓</span>
+                ) : isReadByAll ? (
+                  // ✅ DOUBLE BLUE TICK - Read by ALL members
+                  <span className="text-blue-400 text-sm font-bold">✓✓</span>
+                ) : (
+                  // ✅ DOUBLE GRAY TICK - Read by some members
+                  <span className="text-gray-400 text-sm font-bold">✓✓</span>
+                )}
+
+                {/* Show read count badge */}
+                {readStatus && readCount > 0 && (
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                    isReadByAll 
+                      ? 'bg-blue-500/20 text-blue-400' 
+                      : 'bg-gray-600/20 text-gray-400'
+                  }`}>
+                    {readCount}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Show who read it - Visible on hover */}
+          {isOwnMessage && readStatus && readStatus.readBy?.length > 0 && (
+            <div className="mt-2 text-xs text-gray-400 bg-gray-800/70 px-3 py-2 rounded-lg hidden group-hover:block whitespace-nowrap max-w-xs">
+              {readStatus.readBy.length === 1 ? (
+                <p>✓ Read by {readStatus.readBy[0].userName}</p>
+              ) : readStatus.readBy.length === 2 ? (
+                <p>✓✓ Read by {readStatus.readBy.map(r => r.userName).join(' & ')}</p>
+              ) : (
+                <>
+                  <p className="font-semibold mb-1">Read by {readStatus.readBy.length}:</p>
+                  {readStatus.readBy.map((r) => (
+                    <p key={r.userId} className="ml-2">
+                      • {r.userName}
+                    </p>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }, [currentUserId, messageReadStatus, members, formatTime]);
 
   // ═══════════════════════════════════════════════════════════════════
   // MEMOIZED VALUES (SECOND)
@@ -160,10 +313,23 @@ export default function GroupChat({
   // ✅ FIX: Now handleSelectGroup is actually used
   const handleSelectGroup = useCallback(async (group) => {
     setSelectedGroup(group);
-    
-    // Fetch group messages
+    setMembers([]); 
+    setMessageReadStatus({}); // Reset first
+  
     try {
       setLoading(true);
+      const groupDetails = await groupService.getGroup(group.id);
+      
+      const groupMembers = groupDetails.members || groupDetails.participants || [];
+      setMembers(groupMembers);
+      setOnlineCount(groupMembers.length); // ✅ Set online count
+      
+      console.log('✅ Group members loaded:', groupMembers.length);
+    } catch (err) {
+      console.error('❌ Failed to fetch group details:', err);
+    }
+  
+    try {
       const response = await axios.get(
         `/groups/${group.id}/messages`,
         {
@@ -176,18 +342,44 @@ export default function GroupChat({
       );
 
       if (response.data.success) {
-        const msgs = response.data.data || [];
-        setMessages(
-          msgs.map((msg) => ({
-            _id: msg._id,
-            fromUserId: msg.senderId?._id || msg.senderId || msg.fromUserId,
-            fromUserName: msg.senderId?.name || msg.fromUserName,
-            message: msg.message,
-            time: msg.createdAt,
-            read: msg.read || true,
-            chatType: msg.chatType,
-          }))
-        );
+        const formattedMessages = (response.data.data || []).map((msg) => ({
+          _id: msg._id,
+          message: msg.message,
+          fromUserId: msg.fromUserId || msg.senderId,
+          fromUserName: msg.senderName,
+          time: msg.time || msg.createdAt,
+          pending: false,
+          read: msg.read,
+          readBy: msg.readBy || [],
+        }));
+        setMessages(formattedMessages);
+
+        // ✅ CRITICAL: Initialize readStatus from fetched messages
+        const initialReadStatus = {};
+        formattedMessages.forEach((msg) => {
+          if (msg.readBy && msg.readBy.length > 0) {
+            initialReadStatus[msg._id] = {
+              readBy: msg.readBy,
+              readCount: msg.readBy.length,
+              lastReadAt: new Date(msg.readBy[msg.readBy.length - 1].readAt),
+            };
+          }
+        });
+        setMessageReadStatus(initialReadStatus);
+
+        console.log('✅ Messages loaded with read status:', Object.keys(initialReadStatus).length);
+        
+        // ✅ SET LAST MESSAGE FOR THIS GROUP
+        if (formattedMessages.length > 0) {
+          const lastMsg = formattedMessages[formattedMessages.length - 1];
+          setLastMessages((prev) => ({
+            ...prev,
+            [group.id]: {
+              message: lastMsg.message,
+              userName: lastMsg.fromUserName,
+            }
+          }));
+        }
       }
     } catch (err) {
       console.error("❌ Failed to fetch group messages:", err);
@@ -196,13 +388,11 @@ export default function GroupChat({
       setLoading(false);
     }
 
-    // Join socket room
     const socket = getSocket();
     if (socket?.connected) {
       socket.emit(SOCKET_EVENTS.JOIN_GROUP, { groupId: group.id });
     }
 
-    // Reset unread count
     setUnreadCounts((prev) => ({
       ...prev,
       [group.id]: 0,
@@ -211,41 +401,40 @@ export default function GroupChat({
     messageInputRef.current?.focus();
   }, [token]);
 
-const handleSendMessage = useCallback(async () => {
-  const socket = getSocket();
-  
-  if (!socket?.connected) {
-    console.warn('⚠️ Socket not connected');
-    return;
-  }
-  
-  if (!selectedGroup || !newMessage.trim()) return;
-
-  const messageText = newMessage.trim();
-  setNewMessage("");
-  
-  try {
-    console.log("📤 Sending message via Socket:", {
-      groupId: selectedGroup.id,
-      message: messageText,
-    });
+  const handleSendMessage = useCallback(async () => {
+    const socket = getSocket();
     
-    // ✅ Use SOCKET_EVENTS constant
-    socket.emit(SOCKET_EVENTS.GROUP_MESSAGE, {
-      groupId: selectedGroup.id,
-      message: messageText,
-      fromUserId: currentUserId,
-      fromUserName: currentUserName,
-    });
-
-    console.log('✅ Message emitted to socket');
-    messageInputRef.current?.focus();
+    if (!socket?.connected) {
+      console.warn('⚠️ Socket not connected');
+      return;
+    }
     
-  } catch (err) {
-    console.error("❌ Failed to send message:", err);
-    setNewMessage(messageText);
-  }
-}, [selectedGroup, newMessage, currentUserId, currentUserName]);
+    if (!selectedGroup || !newMessage.trim()) return;
+
+    const messageText = newMessage.trim();
+    setNewMessage("");
+    
+    try {
+      console.log("📤 Sending message via Socket:", {
+        groupId: selectedGroup.id,
+        message: messageText,
+      });
+      
+      socket.emit(SOCKET_EVENTS.GROUP_MESSAGE, {
+        groupId: selectedGroup.id,
+        message: messageText,
+        fromUserId: currentUserId,
+        fromUserName: currentUserName,
+      });
+
+      console.log('✅ Message emitted to socket');
+      messageInputRef.current?.focus();
+      
+    } catch (err) {
+      console.error("❌ Failed to send message:", err);
+      setNewMessage(messageText);
+    }
+  }, [selectedGroup, newMessage, currentUserId, currentUserName]);
 
   const togglePinGroup = useCallback((groupId) => {
     setPinnedGroups((prev) =>
@@ -254,21 +443,6 @@ const handleSendMessage = useCallback(async () => {
         : [...prev, groupId]
     );
   }, []);
-
-  const formatTime = (timestamp) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diff = now - date;
-
-    if (diff < 60000) return "Just now";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000)
-      return date.toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  };
 
   const handleCreateGroup = async () => {
     if (!groupName.trim()) {
@@ -328,15 +502,6 @@ const handleSendMessage = useCallback(async () => {
         : [...prev, userId]
     );
   };
-
-  // const filteredUsers = useMemo(() => {
-  //   return availableUsers.filter(
-  //     (user) =>
-  //       (user.name.toLowerCase().includes(searchUsers.toLowerCase()) ||
-  //         user.email.toLowerCase().includes(searchUsers.toLowerCase())) &&
-  //       !selectedMembers.includes(user.userId || user._id)
-  //   );
-  // }, [availableUsers, searchUsers, selectedMembers]);
 
   const fetchUsersToAdd = useCallback(async () => {
     try {
@@ -410,43 +575,38 @@ const handleSendMessage = useCallback(async () => {
   };
 
   const handleRemoveMember = async (memberId) => {
+    if (!selectedGroup) return;
+  
     if (!confirm("Are you sure you want to remove this member from the group?")) {
       return;
     }
 
     setRemoveMemberLoading(memberId);
     try {
-      await groupService.removeMember(selectedGroup.id, memberId);
+      console.log('🗑️ Removing member:', memberId);
+      
+      const updatedGroup = await groupService.removeMember(
+        selectedGroup.id,
+        memberId
+      );
 
-      const updatedGroup = await groupService.getGroup(selectedGroup.id);
-      setMembers(updatedGroup.members || updatedGroup.participants || []);
-
+      const updatedMembers = (updatedGroup.members || updatedGroup.participants || []);
+      setMembers(updatedMembers);
+      setOnlineCount(updatedMembers.length); // ✅ Update online count
+      
       setGroups((prev) =>
         prev.map((g) =>
           g.id === selectedGroup.id
-            ? {
-                ...g,
-                membersCount:
-                  updatedGroup.members?.length ||
-                  updatedGroup.participants?.length ||
-                  0,
-              }
+            ? { ...g, membersCount: updatedMembers.length }
             : g
         )
       );
 
-      setSelectedGroup((prev) => ({
-        ...prev,
-        membersCount:
-          updatedGroup.members?.length ||
-          updatedGroup.participants?.length ||
-          0,
-      }));
-
-      alert("Member removed successfully!");
+      console.log('✅ Member removed successfully');
+      alert('✅ Member removed from group');
     } catch (err) {
-      console.error("Failed to remove member:", err);
-      alert("Failed to remove member: " + (err.message || "Unknown error"));
+      console.error('❌ Failed to remove member:', err);
+      alert('Failed to remove member: ' + (err.response?.data?.message || err.message));
     } finally {
       setRemoveMemberLoading(null);
     }
@@ -474,28 +634,17 @@ const handleSendMessage = useCallback(async () => {
     }
   };
 
-  const handleMessageRead = useCallback((messageId, readers) => {
-    setMessageReadStatus((prev) => ({
-      ...prev,
-      [messageId]: readers,
-    }));
-  }, []);
-
-
   const fetchAvailableUsers = useCallback(async () => {
     try {
-      const response = await axios.get("/users", {
+      await axios.get("/users", {
         baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
-      if (response.data.success) {
-        setAvailableUsers(response.data.data);
-      }
     } catch (err) {
-      console.error("Failed to fetch available users:", err);
+      console.error("Failed to fetch users:", err);
     }
   }, [token]);
 
@@ -582,11 +731,22 @@ const handleSendMessage = useCallback(async () => {
           fromUserName: data.fromUserName || 'Unknown',
           message: data.message,
           time: data.createdAt || new Date().toISOString(),
+          pending: false,
           read: false,
+          readBy: data.readBy || [], // ✅ Include readBy from socket
         };
 
         console.log('✅ Adding message:', newMsg._id);
         setMessages((prev) => [...prev, newMsg]);
+        
+        // ✅ Update last message
+        setLastMessages((prev) => ({
+          ...prev,
+          [data.groupId]: {
+            message: data.message,
+            userName: data.fromUserName,
+          }
+        }));
       } else {
         setUnreadCounts((prev) => ({
           ...prev,
@@ -605,19 +765,46 @@ const handleSendMessage = useCallback(async () => {
     const socket = getSocket();
     if (!socket) return;
 
-    socket.on(SOCKET_EVENTS.READ_RECEIPT, (data) => {
+    socket.on('message_read', (data) => {
       console.log('📖 Message read receipt:', data);
       
-      // ✅ USE handleMessageRead HERE
-      if (data.messageId && data.readers) {
-        handleMessageRead(data.messageId, data.readers);
+      // ✅ FIXED: Call handleMessageRead with correct data
+      if (data.messageId && data.readBy) {
+        handleMessageRead(data.messageId, data.readBy);
       }
     });
 
     return () => {
-      socket.off(SOCKET_EVENTS.READ_RECEIPT);
+      socket.off('message_read');
     };
   }, [handleMessageRead]);
+
+  // ✅ Emit read receipts when viewing messages
+  useEffect(() => {
+    if (!selectedGroup?._id && !selectedGroup?.id) return;
+    if (messages.length === 0) return;
+
+    const socket = getSocket();
+    if (!socket?.connected) return;
+
+    const timer = setTimeout(() => {
+      console.log('📤 [GROUP] Checking messages for read receipt');
+
+      messages.forEach((msg) => {
+        if (msg.fromUserId !== currentUserId && !messageReadStatus[msg._id]) {
+          console.log(`📤 Emitting read receipt for: ${msg._id}`);
+          
+          socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
+            messageId: msg._id,
+            groupId: selectedGroup._id || selectedGroup?.id,
+            timestamp: new Date(),
+          });
+        }
+      });
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [messages, selectedGroup?._id, selectedGroup?.id, currentUserId, messageReadStatus]);
 
   // ✅ Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -693,9 +880,7 @@ const handleSendMessage = useCallback(async () => {
               const id = group.id;
               const isPinned = pinnedGroups.includes(id);
               const unreadCount = unreadCounts[id] || 0;
-              const lastMsg = lastMessages[id];
-              // Count online members (for now we'll show total members, this can be enhanced with real online tracking)
-              const onlineCount = group.membersCount;
+              const lastMsg = lastMessages[id]; // ✅ FIX: Use lastMessages state
 
               return (
                 <div
@@ -732,7 +917,7 @@ const handleSendMessage = useCallback(async () => {
                         </p>
                       ) : (
                         <p className="text-xs text-gray-500 mt-1">
-                          👥 {onlineCount} members online
+                          👥 {group.membersCount} members online
                         </p>
                       )}
                     </div>
@@ -787,7 +972,7 @@ const handleSendMessage = useCallback(async () => {
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                     <p className="text-xs text-green-400 font-medium">
-                      {members.length} online • {members.length} members
+                      {onlineCount} online • {members.length} members
                     </p>
                   </div>
                 </div>
@@ -862,11 +1047,11 @@ const handleSendMessage = useCallback(async () => {
                               {memberName.charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="text-sm font-semibold text-gray-200 truncate">
+                              <p className="font-medium text-gray-300 truncate">
                                 {memberName}
                               </p>
                               <p className="text-xs text-gray-500 truncate">
-                                {member.email || 'No email'}
+                                {member.email}
                               </p>
                             </div>
                           </div>
@@ -913,67 +1098,7 @@ const handleSendMessage = useCallback(async () => {
                   </p>
                 </div>
               ) : (
-                messages.map((msg, index) => {
-                  const isOwn = msg.fromUserId === currentUserId;
-                  const showAvatar =
-                    index === 0 ||
-                    messages[index - 1].fromUserId !== msg.fromUserId;
-
-                  return (
-                    <div
-                      key={msg._id || index}
-                      className={`flex gap-3 ${isOwn ? "flex-row-reverse" : "flex-row"} group animate-in fade-in slide-in-from-bottom-2 duration-300 ${
-                        msg.pending ? "opacity-70" : "opacity-100"  // ✅ Show pending state
-                      }`}
-                    >
-                      {/* Avatar */}
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg ${
-                          isOwn
-                            ? "bg-linear-to-br from-blue-500 to-purple-600"
-                            : "bg-linear-to-br from-purple-500 to-pink-600"
-                        }`}
-                      >
-                        {(msg?.fromUserName || 'U').charAt(0).toUpperCase()}
-                      </div>
-
-                      <div className={`flex flex-col ${isOwn ? "items-end" : "items-start"} max-w-[70%]`}>
-                        {showAvatar && !isOwn && (
-                          <p className="text-xs text-gray-400 mb-1">
-                            {msg.fromUserName}
-                          </p>
-                        )}
-                        
-                        <div
-                          className={`px-4 py-2.5 rounded-2xl shadow-lg backdrop-blur-sm transition-all ${
-                            isOwn
-                              ? "bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm"
-                              : "glass-effect text-white  rounded-tl-sm border border-[rgb(var(--border-secondary))]"
-                          } ${msg.pending ? "border-2 border-yellow-500/50" : ""}`}  // ✅ Show pending border
-                        >
-                          <p className="wrap-break-word  leading-relaxed">{msg.message}</p>
-                        </div>
-
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-xs text-gray-500 font-medium">
-                            {formatTime(msg.time)}
-                            {msg.pending && " (sending...)"}  {/* ✅ Show pending text */}
-                          </span>
-                          {isOwn && !msg.pending && (  /* ✅ Only show checks if sent */
-                            <div className="flex items-center gap-1">
-                              {messageReadStatus[msg._id] &&
-                              Object.keys(messageReadStatus[msg._id]).length > 0 ? (
-                                <CheckCheck className="w-4 h-4 text-green-400" />
-                              ) : (
-                                <Check className="w-4 h-4 text-gray-500" />
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
+                messages.map((msg, index) => renderMessage(msg, index))
               )}
               <div ref={messagesEndRef} />
             </div>
