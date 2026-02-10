@@ -9,6 +9,7 @@ import { useNavigate } from "react-router-dom";
 import messageService from "@services/message.service.js";
 import friendAPI from '@api/friend.api.js';
 import { SOCKET_EVENTS } from "@constants/socketEvents.js";
+import { applyTheme, saveTheme } from "@utils/themeUtils.js";
 import {
   connectSocket,
   getSocket,
@@ -30,6 +31,7 @@ import {
   X,
   Loader,
 } from "lucide-react";
+import ThemeChanger from "@/components/ThemeChanger";
 
 export default function Chat({
   currentUserName,
@@ -39,8 +41,6 @@ export default function Chat({
   setAllUsers,
   sidebarOpen,
   setSidebarOpen,
-  bgImage,
-  bgImages,
 }) {
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
@@ -58,9 +58,16 @@ export default function Chat({
   const [typingUsers, setTypingUsers] = useState({});
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showThemeChanger, setShowThemeChanger] = useState(false);
 
   const typingTimeoutRef = useRef(null);
   const lastTypingTimeRef = useRef(0);
+
+  // ✅ APPLY SAVED THEME ON MOUNT
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('selectedTheme') || 'dark';
+    applyTheme(savedTheme);
+  }, []);
 
   // ✅ FETCH ONLY FRIENDS (not all users)
   const fetchFriends = useCallback(async () => {
@@ -605,18 +612,29 @@ export default function Chat({
 
   return (
     <>
+      {/* Theme Changer Modal */}
+      <ThemeChanger
+        isOpen={showThemeChanger}
+        onClose={() => setShowThemeChanger(false)}
+        onThemeChange={(themeName) => {
+          console.log("🎨 [CHAT] Theme changed to:", themeName);
+          applyTheme(themeName);
+          saveTheme(themeName);
+        }}
+      />
+
       {/* Chat Sidebar */}
       <div
         className={`${sidebarOpen ? "w-full  sm:w-72 md:w-80" : "w-0"} bg-[rgb(var(--bg-secondary))] sm:glass-effect border-r border-[rgb(var(--border-secondary))] flex flex-col transition-all duration-300 overflow-hidden absolute sm:relative sm:z-0 z-40 h-full sm:h-auto`}
       >
         {/* Header */}
         <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between">
-          <h2 className="text-lg sm:text-xl font-bold text-gray-300">
+          <h2 className="text-lg sm:text-xl font-bold text-[rgb(var(--text-primary))]">
             {loadingFriends ? 'Loading Friends...' : 'Friends'}
           </h2>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400 sm:hidden"
+            className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 sm:hidden"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -625,20 +643,20 @@ export default function Chat({
         {/* Search Bar */}
         <div className="p-4 space-y-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[rgb(var(--text-muted))]" />
             <input
               type="text"
               placeholder="Search friends..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all"
+              className="w-full pl-10 pr-4 py-2.5 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))] focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all"
             />
           </div>
         </div>
 
         {/* Chat List */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-          <div className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2 px-4">
+          <div className="p-3 text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider flex items-center gap-2 px-4">
             <MessageCircle className="w-4 h-4" />
             Friends ({filteredUsers.length})
           </div>
@@ -648,7 +666,7 @@ export default function Chat({
               <Loader className="w-8 h-8 text-green-400 animate-spin" />
             </div>
           ) : filteredUsers.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
+            <div className="p-8 text-center text-[rgb(var(--text-muted))]">
               <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p className="text-sm">
                 {allUsers.length === 0 
@@ -695,7 +713,7 @@ export default function Chat({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <h5 className="font-semibold text-gray-600 truncate">
+                          <h5 className="font-semibold text-[rgb(var(--text-primary))] truncate">
                             {name}
                           </h5>
                           {isPinned && (
@@ -704,7 +722,7 @@ export default function Chat({
                         </div>
                       </div>
                       <p
-                        className={`text-xs mt-1 ${isOnline ? "text-green-500" : "text-gray-500"}`}
+                        className={`text-xs mt-1 ${isOnline ? "text-green-500" : "text-[rgb(var(--text-muted))]"}`}
                       >
                         {typingUsers[id] ? (
                           <span className="text-green-400">Typing...</span>
@@ -734,7 +752,7 @@ export default function Chat({
                     className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
                       isPinned
                         ? "text-green-400 bg-green-500/20"
-                        : "text-gray-400 hover:bg-[rgb(var(--bg-hover))] hover:text-green-400"
+                        : "text-[rgb(var(--text-muted))] hover:bg-[rgb(var(--bg-hover))] hover:text-green-400"
                     }`}
                   >
                     <Pin className="w-3.5 h-3.5" />
@@ -753,28 +771,44 @@ export default function Chat({
             {/* Chat Header */}
             <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2 sm:gap-3">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                {/* Back button for chat area */}
+                <button
+                  onClick={() => setSelectedUserId(null)}
+                  className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400"
+                  title="Back"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
                 <button
                   onClick={() => setSidebarOpen(true)}
-                  className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400 sm:hidden"
+                  className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 sm:hidden"
                 >
                   <Menu className="w-5 h-5" />
                 </button>
                 <div className="relative shrink-0">
-                  <div className="w-10 sm:w-11 h-10 sm:h-11 rounded-full bg-linear-to-br from-green-500 to-teal-600 flex items-center justify-center text-gray-100 font-bold shadow-lg glow-green text-sm sm:text-base">
+                  <div className="w-10 sm:w-11 h-10 sm:h-11 rounded-full bg-linear-to-br from-green-500 to-teal-600 flex items-center justify-center text-white font-bold shadow-lg glow-green text-sm sm:text-base">
                     {getDisplayName(selectedUserId).charAt(0).toUpperCase()}
                   </div>
-                  <div className="absolute bottom-0 right-0 w-2.5 sm:w-3 h-2.5 sm:h-3 bg-green-400 border-2 border-[rgb(var(--bg-primary))] rounded-full pulse-glow"></div>
+                  <div className={`absolute bottom-0 right-0 w-2.5 sm:w-3 h-2.5 sm:h-3 border-2 border-[rgb(var(--bg-primary))] rounded-full pulse-glow ${
+                    allUsers.find(u => u.userId === selectedUserId)?.online 
+                      ? 'bg-green-400' 
+                      : 'bg-gray-400'
+                  }`}></div>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-semibold text-gray-700 text-base sm:text-lg truncate">
+                  <h3 className="font-semibold text-[rgb(var(--text-primary))] text-base sm:text-lg truncate">
                     {getDisplayName(selectedUserId)}
                   </h3>
                   <p className="text-xs text-green-400 font-medium">
-                    {typingUsers[selectedUserId] ? "Typing..." : "Active Now"}
+                    {typingUsers[selectedUserId] 
+                      ? "Typing..." 
+                      : allUsers.find(u => u.userId === selectedUserId)?.online
+                      ? "Active Now"
+                      : "Offline"}
                   </p>
                 </div>
               </div>
-              <button className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400 shrink-0">
+              <button className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 shrink-0">
                 <MoreVertical className="w-5 h-5" />
               </button>
             </div>
@@ -785,16 +819,16 @@ export default function Chat({
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-3"></div>
-                    <p className="text-sm text-gray-500">Loading messages...</p>
+                    <p className="text-sm text-[rgb(var(--text-muted))]">Loading messages...</p>
                   </div>
                 </div>
               ) : currentChatMessages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                <div className="flex flex-col items-center justify-center h-full text-[rgb(var(--text-muted))]">
                   <div className="w-24 h-24 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-6 shadow-lg">
                     <MessageCircle className="w-12 h-12 text-green-500/50" />
                   </div>
                   <h3 className="text-xl font-bold mb-2">Start Conversation</h3>
-                  <p className="text-gray-500 text-center max-w-md">
+                  <p className="text-[rgb(var(--text-muted))] text-center max-w-md">
                     Send a message to {getDisplayName(selectedUserId)}!
                   </p>
                 </div>
@@ -832,17 +866,14 @@ export default function Chat({
                       >
                         {/* Message Box */}
                         <div
-                          className={`px-4 py-2.5 rounded-2xl shadow-lg backdrop-blur-sm transition-all group/message hover:shadow-xl ${
+                          className={`px-4 py-2.5 rounded-2xl shadow-lg transition-all group/message hover:shadow-xl ${
                             isOwn
                               ? "bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm"
-                              : "glass-effect text-white rounded-tl-sm border border-[rgb(var(--border-secondary))]"
+                              : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-primary))] rounded-tl-sm border border-[rgb(var(--border-secondary))]"
                           }`}
                         >
                           <p
                             className="wrap-break-word leading-relaxed"
-                            style={{
-                              color: bgImages[bgImage].textColor,
-                            }}
                           >
                             {m.message}
                           </p>
@@ -852,7 +883,7 @@ export default function Chat({
                         <div
                           className={`flex items-center gap-2 mt-1.5 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
                         >
-                          <span className="text-xs text-gray-500 font-medium">
+                          <span className="text-xs text-[rgb(var(--text-muted))] font-medium">
                             {formatTime(m.time)}
                           </span>
                           
@@ -901,10 +932,10 @@ export default function Chat({
               )}
               <div className="flex items-end gap-2 sm:gap-3">
                 <div className="hidden sm:flex gap-1">
-                  <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-gray-400 hover:text-green-400">
+                  <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400">
                     <Smile className="w-5 h-5" />
                   </button>
-                  <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-gray-400 hover:text-green-400">
+                  <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400">
                     <Paperclip className="w-5 h-5" />
                   </button>
                   <input
@@ -933,7 +964,7 @@ export default function Chat({
                     onBlur={() => handleChatTyping(false)}
                     placeholder="Type a message..."
                     rows={1}
-                    className="w-full px-4 py-3 bg-transparent text-gray-300 placeholder-gray-500 resize-none focus:outline-none max-h-32 custom-scrollbar"
+                    className="w-full px-4 py-3 bg-transparent text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))] resize-none focus:outline-none max-h-32 custom-scrollbar"
                     style={{ minHeight: "48px" }}
                   />
                 </div>
@@ -947,7 +978,7 @@ export default function Chat({
                   className={`p-2 sm:p-3 rounded-xl transition-all shadow-lg shrink-0 ${
                     messageInput.trim()
                       ? "bg-linear-to-br from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-black glow-green"
-                      : "bg-[rgb(var(--bg-tertiary))] text-gray-500 cursor-not-allowed"
+                      : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-muted))] cursor-not-allowed"
                   }`}
                 >
                   <Send className="w-4 sm:w-5 h-4 sm:h-5" />
@@ -956,14 +987,14 @@ export default function Chat({
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 p-4">
+          <div className="flex-1 flex flex-col items-center justify-center text-[rgb(var(--text-muted))] p-4">
             <div className="w-24 sm:w-32 h-24 sm:h-32 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-4 sm:mb-6 shadow-2xl">
               <MessageCircle className="w-12 sm:w-16 h-12 sm:h-16 text-green-500/50" />
             </div>
             <h3 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-3 gradient-text text-center">
               Welcome to Pandav Chat
             </h3>
-            <p className="text-gray-500 text-center text-sm sm:text-base max-w-md">
+            <p className="text-[rgb(var(--text-muted))] text-center text-sm sm:text-base max-w-md">
               Select a friend from the sidebar or add a new friend using the + button
             </p>
           </div>

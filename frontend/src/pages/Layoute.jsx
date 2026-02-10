@@ -8,6 +8,7 @@ import { jwtDecode } from "jwt-decode";
 import {
   disconnectSocket,
 } from "@socket/socketClient.js";
+import { applyTheme } from "@utils/themeUtils.js";
 import ThemeChanger from "@components/ThemeChanger";
 import Chat from "./Chat";
 import GroupChat from "./GroupChat";
@@ -51,8 +52,14 @@ export default function Layoute({ initialTab = "chats" }) {
   const [theme, ] = useState("dark");
   const [bgImage, setBgImage] = useState(() => {
     const savedTheme = localStorage.getItem("selectedTheme");
-    return savedTheme || "default";
+    return savedTheme || "dark";
   });
+
+  // ✅ APPLY THEME ON MOUNT
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("selectedTheme") || "dark";
+    applyTheme(savedTheme);
+  }, []);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -62,15 +69,8 @@ export default function Layoute({ initialTab = "chats" }) {
   const [allUsers, setAllUsers] = useState([]);
   const [showFriendModal, setShowFriendModal] = useState(false);
 
-  // Background images with text colors and fonts
+  // Background images with text colors and fonts - Dark and Light only
   const bgImages = {
-    default: {
-      bg: "linear-gradient(135deg, rgba(0,20,40,0.95) 0%, rgba(15,35,60,0.95) 100%)",
-      textColor: "#e5e7eb",
-      fontFamily: "'Inter', sans-serif",
-      fontSize: "14px",
-      fontWeight: "500"
-    },
     dark: {
       bg: "linear-gradient(135deg, rgba(0,20,40,0.95) 0%, rgba(15,35,60,0.95) 100%)",
       textColor: "#e5e7eb",
@@ -78,39 +78,11 @@ export default function Layoute({ initialTab = "chats" }) {
       fontSize: "14px",
       fontWeight: "500"
     },
-    forest: {
-      bg: "linear-gradient(135deg, rgba(34,139,34,0.15) 0%, rgba(0,50,0,0.2) 100%)",
-      textColor: "#111211",
-      fontFamily: "'Segoe UI', sans-serif",
-      fontSize: "15px",
-      fontWeight: "600"
-    },
-    ocean: {
-      bg: "linear-gradient(135deg, #001a4d 0%, #003d99 50%, #0066cc 100%)",
-      textColor: "#e0e7ff",
-      fontFamily: "'Poppins', sans-serif",
+    light: {
+      bg: "linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%)",
+      textColor: "#1f2937",
+      fontFamily: "'Inter', sans-serif",
       fontSize: "14px",
-      fontWeight: "500"
-    },
-    sunset: {
-      bg: "linear-gradient(135deg, #1a0033 0%, #330066 25%, #660099 50%, #cc6600 75%, #ff9900 100%)",
-      textColor: "#fef3c7",
-      fontFamily: "'Georgia', serif",
-      fontSize: "16px",
-      fontWeight: "600"
-    },
-    minimal: {
-      bg: "linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%)",
-      textColor: "#d1d5db",
-      fontFamily: "'Helvetica Neue', sans-serif",
-      fontSize: "13px",
-      fontWeight: "400"
-    },
-    night: {
-      bg: "linear-gradient(135deg, #0d0221 0%, #14213d 100%)",
-      textColor: "#cbd5e1",
-      fontFamily: "'Roboto', sans-serif",
-      fontSize: "15px",
       fontWeight: "500"
     },
   };
@@ -118,6 +90,7 @@ export default function Layoute({ initialTab = "chats" }) {
   // Save theme to localStorage when it changes
   useEffect(() => {
     localStorage.setItem("selectedTheme", bgImage);
+    applyTheme(bgImage);
   }, [bgImage]);
 
   const handleLogout = () => {
@@ -138,9 +111,9 @@ export default function Layoute({ initialTab = "chats" }) {
   }, [setAllUsers]);
 
   return (
-    <div className="flex h-screen bg-gray-900">
+    <div className={`flex h-screen ${bgImage === "dark" ? "bg-gray-900" : "bg-slate-50"}`}>
       {/* LEFT SIDEBAR - Navigation Icons */}
-      <div className="hidden sm:flex sm:w-16 md:w-20 sm:glass-effect bg-[rgb(var(--bg-secondary))] sm:bg-transparent border-r border-[rgb(var(--border-secondary))] flex-col items-center py-3 sm:py-4 gap-4 sm:gap-6">
+      <div className={`hidden sm:flex sm:w-16 md:w-20 sm:glass-effect bg-[rgb(var(--bg-secondary))] sm:bg-transparent border-r border-[rgb(var(--border-secondary))] flex-col items-center py-3 sm:py-4 gap-4 sm:gap-6 transition-colors duration-300`}>
         <div
           className="w-12 h-12 rounded-full bg-linear-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-lg shadow-lg glow-green cursor-pointer hover:scale-110 transition-transform"
           title={currentUserName}
@@ -151,7 +124,7 @@ export default function Layoute({ initialTab = "chats" }) {
         <nav className="flex flex-col gap-4">
           <button
             onClick={() => setActiveTab("chats")}
-            className={`p-3 rounded-xl transition-all ${activeTab === "chats" ? "text-green-400 glow-green bg-[rgb(var(--bg-hover))]" : "text-gray-400 hover:text-green-400"}`}
+            className={`p-3 rounded-xl transition-all ${activeTab === "chats" ? "text-green-400 glow-green bg-[rgb(var(--bg-hover))]" : `text-[rgb(var(--text-muted))] hover:text-green-400`}`}
             title="Chats"
           >
             <MessageCircle className="w-6 h-6" />
@@ -159,7 +132,7 @@ export default function Layoute({ initialTab = "chats" }) {
 
           <button
             onClick={() => setActiveTab("groups")}
-            className={`p-3 rounded-xl transition-all ${activeTab === "groups" ? "text-green-400 glow-green bg-[rgb(var(--bg-hover))]" : "text-gray-400 hover:text-green-400"}`}
+            className={`p-3 rounded-xl transition-all ${activeTab === "groups" ? "text-green-400 glow-green bg-[rgb(var(--bg-hover))]" : `text-[rgb(var(--text-muted))] hover:text-green-400`}`}
             title="Groups"
           >
             <Users className="w-6 h-6" />
@@ -167,7 +140,7 @@ export default function Layoute({ initialTab = "chats" }) {
 
           <button
             onClick={() => setShowFriendModal(true)}
-            className="p-3 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-gray-400 hover:text-green-400"
+            className={`p-3 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400`}
             title="Add Contact"
           >
             <Plus className="w-6 h-6" />
@@ -177,10 +150,10 @@ export default function Layoute({ initialTab = "chats" }) {
         <div className="mt-auto flex flex-col gap-4">
           <button
             onClick={() => setShowThemeModal(true)}
-            className="p-3 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-gray-400 hover:text-green-400"
-            title="Theme"
+            className={`p-3 rounded-xl transition-all ${bgImage === "dark" ? "text-green-400 glow-green bg-[rgb(var(--bg-hover))]" : "text-[rgb(var(--text-muted))] hover:text-green-400 hover:bg-[rgb(var(--bg-hover))]"}`}
+            title={`Theme: ${bgImage === "dark" ? "Dark" : "Light"}`}
           >
-            {theme === "dark" ? (
+            {bgImage === "dark" ? (
               <Moon className="w-6 h-6" />
             ) : (
               <Sun className="w-6 h-6" />
@@ -189,7 +162,7 @@ export default function Layoute({ initialTab = "chats" }) {
 
           <button
             onClick={() => setShowSettings(!showSettings)}
-            className="p-3 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-gray-400 hover:text-green-400"
+            className={`p-3 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400`}
             title="Settings"
           >
             <Settings className="w-6 h-6" />
@@ -197,7 +170,7 @@ export default function Layoute({ initialTab = "chats" }) {
 
           <button
             onClick={handleLogout}
-            className="p-3 hover:bg-red-500/20 rounded-xl transition-all text-gray-400 hover:text-red-400"
+            className="p-3 hover:bg-red-500/20 rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-red-400"
             title="Logout"
           >
             <LogOut className="w-6 h-6" />
@@ -207,9 +180,9 @@ export default function Layoute({ initialTab = "chats" }) {
 
       {/* Settings Panel */}
       {showSettings && !showThemeSettings && (
-        <div className="p-4 bg-[rgb(var(--bg-secondary))]/50 border-r border-[rgb(var(--border-secondary))] space-y-2 animate-in slide-in-from-left w-56">
+        <div className={`p-4 bg-[rgb(var(--bg-secondary))]/50 border-r border-[rgb(var(--border-secondary))] space-y-2 animate-in slide-in-from-left w-56 transition-colors duration-300`}>
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-400 flex items-center gap-2">
+            <span className={`text-sm text-[rgb(var(--text-muted))] flex items-center gap-2`}>
               {soundEnabled ? (
                 <Volume2 className="w-4 h-4" />
               ) : (
@@ -227,7 +200,7 @@ export default function Layoute({ initialTab = "chats" }) {
             </button>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-400 flex items-center gap-2">
+            <span className={`text-sm text-[rgb(var(--text-muted))] flex items-center gap-2`}>
               {notificationsEnabled ? (
                 <Bell className="w-4 h-4" />
               ) : (

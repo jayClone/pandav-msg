@@ -1,55 +1,37 @@
 import React, { useState } from 'react'
-import { X, Moon, Sun, Palette } from 'lucide-react'
+import { X, Moon, Sun } from 'lucide-react'
 
 export default function ThemeChanger({ isOpen, onClose, onThemeChange }) {
   const [selectedTheme, setSelectedTheme] = useState('dark')
 
   const themes = {
     dark: {
-      name: 'Dark',
+      name: 'Dark Theme',
+      icon: Moon,
       bg: 'linear-gradient(135deg, rgba(0,20,40,0.95) 0%, rgba(15,35,60,0.95) 100%)',
-      color: '#000000',
-      fontFamily: "'Inter', sans-serif",
-      fontSize: '14px',
-      fontWeight: '500'
+      color: '#1a1a2e',
+      description: 'Professional dark theme for comfortable night viewing'
     },
-    forest: {
-      name: 'Forest',
-      bg: 'linear-gradient(135deg, rgba(34,139,34,0.15) 0%, rgba(0,50,0,0.2) 100%)',
-      color: '#228b22',
-      fontFamily: "'Segoe UI', sans-serif",
-      fontSize: '15px',
-      fontWeight: '600'
-    },
-    ocean: {
-      name: 'Ocean',
-      bg: 'linear-gradient(135deg, #001a4d 0%, #003d99 50%, #0066cc 100%)',
-      color: '#0066cc',
-      fontFamily: "'Poppins', sans-serif",
-      fontSize: '14px',
-      fontWeight: '500'
-    },
-    minimal: {
-      name: 'Minimal',
-      bg: 'linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%)',
-      color: '#1a1f3a',
-      fontFamily: "'Helvetica Neue', sans-serif",
-      fontSize: '13px',
-      fontWeight: '400'
-    },
-    night: {
-      name: 'Night',
-      bg: 'linear-gradient(135deg, #0d0221 0%, #14213d 100%)',
-      color: '#0d0221',
-      fontFamily: "'Roboto', sans-serif",
-      fontSize: '15px',
-      fontWeight: '500'
+    light: {
+      name: 'Light Theme',
+      icon: Sun,
+      bg: 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%)',
+      color: '#ffffff',
+      description: 'Clean light theme for daytime productivity'
     }
   }
 
-  const handleApplyTheme = () => {
+  const handleApplyTheme = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
     onThemeChange(selectedTheme)
     onClose()
+  }
+
+  const handleThemeSelect = (key, e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setSelectedTheme(key)
   }
 
   if (!isOpen) return null
@@ -57,13 +39,16 @@ export default function ThemeChanger({ isOpen, onClose, onThemeChange }) {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
       {/* Modal Container */}
-      <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl border border-[rgb(var(--border-secondary))] max-w-md w-full mx-4 overflow-hidden animate-in fade-in zoom-in duration-300">
+      <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl border border-[rgb(var(--border-secondary))] max-w-lg w-full mx-4 overflow-hidden animate-in fade-in zoom-in duration-300">
         
         {/* Header */}
-        <div className="bg-linear-to-r from-green-600/20 to-emerald-600/20 px-6 py-4 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between">
+        <div className="bg-linear-to-r from-green-600/20 to-emerald-600/20 px-6 py-5 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Palette className="w-5 h-5 text-green-400" />
-            <h2 className="text-lg font-bold text-gray-300">Change Theme</h2>
+            <Sun className="w-6 h-6 text-green-400" />
+            <div>
+              <h2 className="text-xl font-bold text-gray-200">Theme Settings</h2>
+              <p className="text-xs text-gray-400 mt-1">Choose your preferred color theme</p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -74,59 +59,59 @@ export default function ThemeChanger({ isOpen, onClose, onThemeChange }) {
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-4">
           
-          {/* Theme Grid */}
-          <div className="grid grid-cols-2 gap-3">
-            {Object.entries(themes).map(([key, theme]) => (
-              <button
-                key={key}
-                onClick={() => setSelectedTheme(key)}
-                className={`group relative p-4 rounded-xl border-2 transition-all overflow-hidden ${
-                  selectedTheme === key
-                    ? 'border-green-500 shadow-lg glow-green'
-                    : 'border-gray-600 hover:border-green-500/50'
-                }`}
-              >
-                {/* Background Preview */}
-                <div
-                  className="absolute inset-0 rounded-lg"
-                  style={{ background: theme.bg }}
-                />
-
-                {/* Content */}
-                <div className="relative z-10 text-center">
+          {/* Theme Grid - 2 columns for Dark and Light */}
+          <div className="grid grid-cols-2 gap-4">
+            {Object.entries(themes).map(([key, theme]) => {
+              const IconComponent = theme.icon
+              return (
+                <button
+                  key={key}
+                  onClick={(e) => handleThemeSelect(key, e)}
+                  className={`group relative p-5 rounded-xl border-2 transition-all overflow-hidden ${
+                    selectedTheme === key
+                      ? 'border-green-500 shadow-lg glow-green bg-[rgb(var(--bg-tertiary))]/50'
+                      : 'border-gray-600 hover:border-green-500/50 bg-[rgb(var(--bg-hover))]/20'
+                  }`}
+                >
+                  {/* Background Preview */}
                   <div
-                    className="w-8 h-8 rounded-full mx-auto mb-2 shadow-lg border-2 border-white/20"
-                    style={{ background: theme.color }}
+                    className="absolute inset-0 rounded-lg opacity-20"
+                    style={{ background: theme.bg }}
                   />
-                  <p className="text-xs font-semibold text-white drop-shadow-lg">
-                    {theme.name}
-                  </p>
-                </div>
 
-                {/* Selected Indicator */}
-                {selectedTheme === key && (
-                  <div className="absolute inset-0 border-2 border-green-400 rounded-lg glow-green" />
-                )}
-              </button>
-            ))}
+                  {/* Content */}
+                  <div className="relative z-10 text-center space-y-3">
+                    <div className="flex justify-center">
+                      <IconComponent className={`w-10 h-10 ${selectedTheme === key ? 'text-green-400' : 'text-gray-400'} transition-colors`} />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-200 text-sm">
+                        {theme.name}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-2 leading-snug">
+                        {theme.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Selected Indicator */}
+                  {selectedTheme === key && (
+                    <div className="absolute top-2 right-2 w-3 h-3 bg-green-400 rounded-full animate-pulse" />
+                  )}
+                </button>
+              )
+            })}
           </div>
 
-          {/* Preview */}
-          <div className="p-4 rounded-xl border border-[rgb(var(--border-secondary))] bg-[rgb(var(--bg-tertiary))]/50">
-            <p className="text-xs text-gray-400 mb-2">Preview:</p>
+          {/* Preview Section */}
+          <div className="pt-4 border-t border-[rgb(var(--border-secondary))]">
+            <p className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wide">Live Preview</p>
             <div
-              className="h-24 rounded-lg border border-[rgb(var(--border-secondary))] shadow-lg"
+              className="h-20 rounded-lg border-2 border-[rgb(var(--border-secondary))] shadow-lg transition-all"
               style={{ background: themes[selectedTheme].bg }}
             />
-          </div>
-
-          {/* Theme Description */}
-          <div className="p-3 rounded-xl bg-green-500/10 border border-green-500/30">
-            <p className="text-xs text-green-300">
-              <span className="font-semibold">Selected:</span> {themes[selectedTheme].name}
-            </p>
           </div>
         </div>
 
