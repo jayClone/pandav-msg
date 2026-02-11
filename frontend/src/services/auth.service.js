@@ -7,11 +7,16 @@ const authService = {
     register: async (userData) => {
         try {
             const response = await API.post('/auth/register', userData);
+            
+            // ✅ FIX: Only store token if request succeeded
             if (response.data.token) {
                 localStorage.setItem('token', response.data.token);
             }
+            
             return response.data;
         } catch (error) {
+            // ✅ FIX: Don't store anything on error
+            console.error("❌ Registration error:", error.response?.data);
             throw error.response?.data || { message: 'Registration failed' };
         }
     },
@@ -21,13 +26,28 @@ const authService = {
      */
     login: async (credentials) => {
         try {
+            console.log("🔐 Attempting login...");
+            
             const response = await API.post('/auth/login', credentials);
+            
+            // ✅ FIX: Only store token if request succeeded
             if (response.data.token) {
+                console.log("✅ Token received, storing...");
                 localStorage.setItem('token', response.data.token);
             }
+            
             return response.data;
         } catch (error) {
-            throw error.response?.data || { message: 'Login failed' };
+            // ✅ FIX: Clear any partial token on error
+            localStorage.removeItem('token');
+            
+            console.error("❌ Login error:", error.response?.data?.message || error.message);
+            
+            // ✅ FIX: Throw error so component can display it
+            throw error.response?.data || { 
+                message: 'Login failed',
+                status: error.response?.status 
+            };
         }
     },
 
@@ -39,6 +59,7 @@ const authService = {
             const response = await API.get('/auth/current');
             return response.data;
         } catch (error) {
+            console.error("❌ Get user error:", error.response?.data);
             throw error.response?.data || { message: 'Failed to fetch user' };
         }
     },
@@ -47,6 +68,7 @@ const authService = {
      * Logout user
      */
     logout: () => {
+        console.log("🚪 Logging out...");
         localStorage.removeItem('token');
         return Promise.resolve();
     },

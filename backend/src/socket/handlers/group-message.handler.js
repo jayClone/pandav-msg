@@ -22,6 +22,7 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
       message: message.trim(),
       chatType: 'group',
       delivered: true,
+      readBy: [],  // ✅ Start with EMPTY readBy array
     });
 
     // ✅ POPULATE to get proper structure
@@ -31,7 +32,7 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
 
     console.log('✅ Message saved:', populatedMessage._id);
 
-    // ✅ BROADCAST WITH FULL DATA including readBy (even if empty initially)
+    // ✅ BROADCAST WITH EMPTY readBy (only receiver marks as read)
     io.to(groupId.toString()).emit(SOCKET_EVENTS.GROUP_MESSAGE, {
       _id: populatedMessage._id,
       groupId: groupId,
@@ -41,7 +42,7 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
       createdAt: populatedMessage.createdAt,
       delivered: true,
       read: false,
-      readBy: populatedMessage.readBy || [],  // ✅ Include readBy array (empty initially)
+      readBy: [],  // ✅ START EMPTY - Let receivers mark as read
       senderId: userId,
       senderName: name,
     });

@@ -1,13 +1,9 @@
-import React, { useCallback, useMemo, useEffect, useState, useRef } from 'react';
-import axios from 'axios';
-import groupService from '@services/group.service.js';
-import { SOCKET_EVENTS } from '@constants/socketEvents.js';
-import { applyTheme, saveTheme } from '@utils/themeUtils.js';
-import {
-  connectSocket,
-  getSocket,
-  isSocketConnected,
-} from '@socket/socketClient.js';
+import React, { useCallback, useMemo, useEffect, useState, useRef } from 'react'
+import axios from 'axios'
+import groupService from '@services/group.service.js'
+// import messageService from '@services/message.service.js'
+import { SOCKET_EVENTS } from '@constants/socketEvents.js'
+import { connectSocket, getSocket } from '@socket/socketClient.js'
 import {
   Plus,
   Search,
@@ -25,10 +21,8 @@ import {
   Loader,
   Trash2,
   AlertTriangle,
-  Palette,
 } from 'lucide-react'
 import friendAPI from '@api/friend.api.js'
-import ThemeChanger from '@/components/ThemeChanger'
 
 export default function GroupChat({
   sidebarOpen,
@@ -67,27 +61,11 @@ export default function GroupChat({
   const [messageReadStatus, setMessageReadStatus] = useState({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingGroup, setDeletingGroup] = useState(false);
-  // Remove onlineCount state, use a memoized function instead
-    // ═══════════════════════════════════════════════════════════════════
-    // MEMOIZED: Count online members
-    // ═══════════════════════════════════════════════════════════════════
-    // Function to count online members
-    const getOnlineMembersCount = () => members.filter((m) => m.online).length;
-    const onlineMembersCount = useMemo(
-      () => getOnlineMembersCount(),
-      [members]
-    );
+  const [onlineCount, setOnlineCount] = useState(0); // ✅ ADD THIS
   const [lastMessages, setLastMessages] = useState({}); // ✅ ADD THIS
-  const [showThemeChanger, setShowThemeChanger] = useState(false);
 
   const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
-
-  // ✅ APPLY SAVED THEME ON MOUNT
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('selectedTheme') || 'dark';
-    applyTheme(savedTheme);
-  }, []);
 
   // ═══════════════════════════════════════════════════════════════════
   // HELPER FUNCTION: Format time
@@ -161,7 +139,7 @@ export default function GroupChat({
       >
         {/* Avatar - Only show for other users' messages */}
         {!isOwnMessage && (
-          <div className="w-8 h-8 rounded-full bg-linear-to-br from-green-500 to-white-300 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1">
+          <div className="w-8 h-8 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1">
             {msg.fromUserName?.charAt(0).toUpperCase() || '?'}
           </div>
         )}
@@ -170,7 +148,7 @@ export default function GroupChat({
         <div className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'} max-w-xs`}>
           {/* Sender Name - Only for other users */}
           {!isOwnMessage && (
-            <p className="text-xs text-[rgb(var(--text-muted))] mb-1 font-semibold px-3">
+            <p className="text-xs text-gray-400 mb-1 font-semibold px-3">
               {msg.fromUserName}
             </p>
           )}
@@ -180,7 +158,7 @@ export default function GroupChat({
             className={`px-4 py-2.5 rounded-2xl shadow-lg ${
               isOwnMessage
                 ? 'bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm'
-                : 'bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-primary))] rounded-tl-sm'
+                : 'bg-gray-700 text-gray-100 rounded-tl-sm'
             }`}
           >
             <p className="text-sm leading-relaxed">{msg.message}</p>
@@ -188,20 +166,20 @@ export default function GroupChat({
 
           {/* Time & Read Status Row */}
           <div className={`flex items-center gap-2 mt-1 px-3 ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
-            <span className="text-xs text-[rgb(var(--text-muted))]">{formatTime(msg.time)}</span>
+            <span className="text-xs text-gray-500">{formatTime(msg.time)}</span>
 
             {/* TICKS - Only show for own messages */}
             {isOwnMessage && (
               <div className="flex items-center gap-1">
                 {!readStatus ? (
                   // ✅ SINGLE TICK - Message sent but not read
-                  <span className="text-[rgb(var(--text-muted))] text-sm font-bold">✓</span>
+                  <span className="text-gray-400 text-sm font-bold">✓</span>
                 ) : isReadByAll ? (
-                    // ✅ DOUBLE BLUE TICK - Read by ALL members
-                    <span className="text-blue-400 text-sm font-bold">✓✓</span>
-                  ) : (
+                  // ✅ DOUBLE BLUE TICK - Read by ALL members
+                  <span className="text-blue-400 text-sm font-bold">✓✓</span>
+                ) : (
                   // ✅ DOUBLE GRAY TICK - Read by some members
-                  <span className="text-[rgb(var(--text-muted))] text-sm font-bold">✓✓</span>
+                  <span className="text-gray-400 text-sm font-bold">✓✓</span>
                 )}
 
                 {/* Show read count badge */}
@@ -209,7 +187,7 @@ export default function GroupChat({
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                     isReadByAll 
                       ? 'bg-blue-500/20 text-blue-400' 
-                      : 'bg-[rgb(var(--bg-hover))]/20 text-[rgb(var(--text-muted))]'
+                      : 'bg-gray-600/20 text-gray-400'
                   }`}>
                     {readCount}
                   </span>
@@ -220,7 +198,7 @@ export default function GroupChat({
 
           {/* Show who read it - Visible on hover */}
           {isOwnMessage && readStatus && readStatus.readBy?.length > 0 && (
-            <div className="mt-2 text-xs text-[rgb(var(--text-muted))] bg-[rgb(var(--bg-secondary))]/70 px-3 py-2 rounded-lg hidden group-hover:block whitespace-nowrap max-w-xs">
+            <div className="mt-2 text-xs text-gray-400 bg-gray-800/70 px-3 py-2 rounded-lg hidden group-hover:block whitespace-nowrap max-w-xs">
               {readStatus.readBy.length === 1 ? (
                 <p>✓ Read by {readStatus.readBy[0].userName}</p>
               ) : readStatus.readBy.length === 2 ? (
@@ -332,42 +310,25 @@ export default function GroupChat({
     }
   }, [token]);
 
-// ✅ FIX: Now handleSelectGroup is actually used
-const handleSelectGroup = useCallback(async (group) => {
+  // ✅ FIX: Now handleSelectGroup is actually used
+  const handleSelectGroup = useCallback(async (group) => {
     setSelectedGroup(group);
+    setMembers([]); 
     setMessageReadStatus({}); // Reset first
-    let groupMembers = [];
+  
     try {
       setLoading(true);
       const groupDetails = await groupService.getGroup(group.id);
-      groupMembers = groupDetails.members || groupDetails.participants || [];
-      // Set all members as offline first
-      groupMembers = groupMembers.map((member) => ({
-        ...member,
-        online: false,
-      }));
-      // Set online: true for those in groupDetails.onlineMembers
-      if (Array.isArray(groupDetails.onlineMembers)) {
-        const onlineIds = groupDetails.onlineMembers.map((id) => id.toString());
-        groupMembers = groupMembers.map((member) => {
-          const memberId = (member._id || member.userId || '').toString();
-          return {
-            ...member,
-            online: onlineIds.includes(memberId),
-          };
-        });
-      }
+      
+      const groupMembers = groupDetails.members || groupDetails.participants || [];
       setMembers(groupMembers);
+      setOnlineCount(groupMembers.length); // ✅ Set online count
+      
       console.log('✅ Group members loaded:', groupMembers.length);
     } catch (err) {
       console.error('❌ Failed to fetch group details:', err);
-      setMembers([]);
     }
-    // Only emit join group event; do not set online status from socket instance
-    const socket = getSocket();
-    if (isSocketConnected() && socket) {
-      socket.emit(SOCKET_EVENTS.JOIN_GROUP, { groupId: group.id });
-    }
+  
     try {
       const response = await axios.get(
         `/groups/${group.id}/messages`,
@@ -427,7 +388,10 @@ const handleSelectGroup = useCallback(async (group) => {
       setLoading(false);
     }
 
-
+    const socket = getSocket();
+    if (socket?.connected) {
+      socket.emit(SOCKET_EVENTS.JOIN_GROUP, { groupId: group.id });
+    }
 
     setUnreadCounts((prev) => ({
       ...prev,
@@ -711,54 +675,39 @@ const handleSelectGroup = useCallback(async (group) => {
     fetchAllGroups();
   }, [token, fetchAllGroups]);
 
-  // ✅ Connect socket and listen for group-specific online events
+  // ✅ Connect socket when component mounts
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      console.warn('⚠️ No token available for socket');
+      return;
+    }
+
+    console.log('🔌 Connecting socket...');
     const socket = connectSocket(token);
-    // Connection events
+  
+    console.log('🔌 Socket connected:', {
+      id: socket?.id,
+      connected: socket?.connected,
+      url: socket?.io?.uri
+    });
+
+    // ✅ Listen for connection events
     socket.on('connect', () => {
       console.log('✅ Socket connected successfully');
     });
+
     socket.on('disconnect', () => {
       console.log('❌ Socket disconnected');
     });
+
     socket.on('connect_error', (error) => {
       console.error('❌ Socket connection error:', error.message);
     });
-    // Listen for group-specific online events
-    socket.on('user_came_online', (data) => {
-      // Only update if for current group
-      if (!selectedGroup || data.groupId !== selectedGroup.id) return;
-      setMembers((prevMembers) =>
-        prevMembers.map((member) => {
-          const memberId = (member._id || member.userId || '').toString();
-          if (memberId === data.userId.toString()) {
-            return { ...member, online: true };
-          }
-          return member;
-        })
-      );
-    });
-    socket.on('user_went_offline', (data) => {
-      if (!selectedGroup || data.groupId !== selectedGroup.id) return;
-      setMembers((prevMembers) =>
-        prevMembers.map((member) => {
-          const memberId = (member._id || member.userId || '').toString();
-          if (memberId === data.userId.toString()) {
-            return { ...member, online: false };
-          }
-          return member;
-        })
-      );
-    });
+
     return () => {
-      socket.off('user_came_online');
-      socket.off('user_went_offline');
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('connect_error');
+      // Don't disconnect on unmount - keep connection alive
     };
-  }, [token, selectedGroup?.id]);
+  }, [token])
 
   // ✅ Listen for group messages using SOCKET_EVENTS
   useEffect(() => {
@@ -818,6 +767,8 @@ const handleSelectGroup = useCallback(async (group) => {
 
     socket.on('message_read', (data) => {
       console.log('📖 Message read receipt:', data);
+      
+      // ✅ FIXED: Call handleMessageRead with correct data
       if (data.messageId && data.readBy) {
         handleMessageRead(data.messageId, data.readBy);
       }
@@ -828,7 +779,7 @@ const handleSelectGroup = useCallback(async (group) => {
     };
   }, [handleMessageRead]);
 
-  // ✅ Emit read receipts when viewing messages (500ms debounce)
+  // ✅ Emit read receipts when viewing messages
   useEffect(() => {
     if (!selectedGroup?._id && !selectedGroup?.id) return;
     if (messages.length === 0) return;
@@ -836,20 +787,32 @@ const handleSelectGroup = useCallback(async (group) => {
     const socket = getSocket();
     if (!socket?.connected) return;
 
+    // ✅ CRITICAL: Only emit read receipts for messages user can actually see
     const timer = setTimeout(() => {
       messages.forEach((msg) => {
-        if (msg.fromUserId !== currentUserId && !messageReadStatus[msg._id]) {
+        // ✅ CRITICAL: Skip if sender is current user
+        if (msg.fromUserId === currentUserId) {
+          console.log(`⏭️  Skipping own message: ${msg._id}`);
+          return;  // Don't mark own messages as read
+        }
+
+        // ✅ Only emit read receipt for messages not already read by this user
+        const alreadyRead = msg.readBy?.some(
+          (r) => r.userId === currentUserId || r.userId?._id === currentUserId
+        );
+
+        if (!alreadyRead && msg._id) {
+          console.log(`📖 Emitting read receipt for message: ${msg._id}`);
           socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
             messageId: msg._id,
-            groupId: selectedGroup._id || selectedGroup?.id,
-            timestamp: new Date(),
+            groupId: selectedGroup._id || selectedGroup.id,
           });
         }
       });
-    }, 500);
+    }, 500);  // Small delay to ensure UI is rendered
 
     return () => clearTimeout(timer);
-  }, [messages, selectedGroup?._id, selectedGroup?.id, currentUserId, messageReadStatus]);
+  }, [messages, selectedGroup?._id, selectedGroup?.id, currentUserId]);
 
   // ✅ Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -865,24 +828,13 @@ const handleSelectGroup = useCallback(async (group) => {
 
   return (
     <>
-      {/* Theme Changer Modal */}
-      <ThemeChanger
-        isOpen={showThemeChanger}
-        onClose={() => setShowThemeChanger(false)}
-        onThemeChange={(themeName) => {
-          console.log("🎨 [GROUP CHAT] Theme changed to:", themeName);
-          applyTheme(themeName);
-          saveTheme(themeName);
-        }}
-      />
-
       {/* Groups Sidebar */}
       <div
         className={`${sidebarOpen ? "w-full  sm:w-72 md:w-80" : "w-0"} bg-[rgb(var(--bg-secondary))] sm:glass-effect border-r border-[rgb(var(--border-secondary))] flex flex-col transition-all duration-300 overflow-hidden absolute sm:relative sm:z-0 z-40 h-full sm:h-auto`}
       >
         {/* Header */}
         <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between">
-          <h2 className="text-lg sm:text-xl font-bold text-[rgb(var(--text-primary))]">Groups</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-gray-300">Groups</h2>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowCreateGroupModal(true)}
@@ -903,26 +855,26 @@ const handleSelectGroup = useCallback(async (group) => {
         {/* Search Bar */}
         <div className="p-4 space-y-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[rgb(var(--text-muted))]" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               placeholder="Search groups..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))] focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all"
+              className="w-full pl-10 pr-4 py-2.5 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all"
             />
           </div>
         </div>
 
         {/* Groups List */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-          <div className="p-3 text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider flex items-center gap-2 px-4">
+          <div className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2 px-4">
             <Users className="w-4 h-4" />
             Groups ({filteredGroups.length})
           </div>
 
           {filteredGroups.length === 0 ? (
-            <div className="p-8 text-center text-[rgb(var(--text-muted))]">
+            <div className="p-8 text-center text-gray-500">
               <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p className="text-sm">No groups found</p>
             </div>
@@ -949,7 +901,7 @@ const handleSelectGroup = useCallback(async (group) => {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg bg-linear-to-br from-green-500 to-white-300 relative">
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center text-gray-100 font-bold text-lg shadow-lg bg-linear-to-br from-purple-500 to-pink-600 relative">
                       {(group?.name || 'G').charAt(0).toUpperCase()}
                       <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-[rgb(var(--bg-secondary))]"></div>
                     </div>
@@ -957,7 +909,7 @@ const handleSelectGroup = useCallback(async (group) => {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <h5 className="font-semibold text-[rgb(var(--text-primary))] truncate">
+                          <h5 className="font-semibold text-gray-600 truncate">
                             {group.name}
                           </h5>
                           {isPinned && (
@@ -968,11 +920,11 @@ const handleSelectGroup = useCallback(async (group) => {
                       
                       {/* Last Message Preview */}
                       {lastMsg ? (
-                        <p className="text-xs text-[rgb(var(--text-muted))] truncate mt-1">
+                        <p className="text-xs text-gray-400 truncate mt-1">
                           <span className="font-medium text-green-400">{lastMsg.userName}:</span> {lastMsg.message}
                         </p>
                       ) : (
-                        <p className="text-xs text-[rgb(var(--text-muted))] mt-1">
+                        <p className="text-xs text-gray-500 mt-1">
                           👥 {group.membersCount} members online
                         </p>
                       )}
@@ -1012,38 +964,30 @@ const handleSelectGroup = useCallback(async (group) => {
             {/* Group Header */}
             <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2 sm:gap-3">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                {/* Back button for chat area */}
-                <button
-                  onClick={() => setSelectedGroup(null)}
-                  className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400"
-                  title="Back"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
                 <button
                   onClick={() => setSidebarOpen(true)}
                   className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400 sm:hidden"
                 >
                   <Menu className="w-5 h-5" />
                 </button>
-                <div className="w-10 sm:w-11 h-10 sm:h-11 rounded-full bg-linear-to-br from-green-500 to-white-300 flex items-center justify-center text-gray-100 font-bold shadow-lg text-sm sm:text-base">
+                <div className="w-10 sm:w-11 h-10 sm:h-11 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-gray-100 font-bold shadow-lg text-sm sm:text-base">
                   {(safeSelectedGroup?.name || 'G').charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-semibold text-[rgb(var(--text-primary))] text-base sm:text-lg truncate">
+                  <h3 className="font-semibold text-gray-700 text-base sm:text-lg truncate">
                     {safeSelectedGroup?.name || 'Group'}
                   </h3>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                   <p className="text-xs text-green-400 font-medium">
-  {onlineMembersCount} active {onlineMembersCount === 1 ? 'user' : 'users'} • {members.length} total
-</p>
+                    <p className="text-xs text-green-400 font-medium">
+                      {onlineCount} online • {members.length} members
+                    </p>
                   </div>
                 </div>
               </div>
               <button
                 onClick={() => setShowMembersPreview(!showMembersPreview)}
-                className=" hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 shrink-0"
+                className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400 shrink-0"
               >
                 <Users className="w-5 h-5" />
               </button>
@@ -1106,21 +1050,16 @@ const handleSelectGroup = useCallback(async (group) => {
                           key={memberId}
                           className="flex items-center justify-between gap-3 p-3 bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 rounded-xl border border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30 transition-all group"
                         >
-                          <div className="flex items-center gap-3 min-w-0 flex-1 flex-row-reverse">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             <div className="w-10 h-10 rounded-full bg-linear-to-r from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shrink-0 shadow-lg text-sm">
                               {memberName.charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium text-gray-300 truncate">
-                                  {memberName}
-                                </p>
-                                {member.online && (
-                                  <span className="w-2 h-2 bg-green-500 rounded-full shrink-0 animate-pulse" title="Online"></span>
-                                )}
-                              </div>
+                              <p className="font-medium text-gray-300 truncate">
+                                {memberName}
+                              </p>
                               <p className="text-xs text-gray-500 truncate">
-                                {member.online ? 'Active now' : 'Offline'}
+                                {member.email}
                               </p>
                             </div>
                           </div>
@@ -1132,7 +1071,7 @@ const handleSelectGroup = useCallback(async (group) => {
                             {removeMemberLoading === memberId ? (
                               <Loader className="w-4 h-4 animate-spin" />
                             ) : (
-                              <Trash2 className="w-4 h-4" />
+                              <X className="w-4 h-4" />
                             )}
                           </button>
                         </div>
@@ -1144,16 +1083,27 @@ const handleSelectGroup = useCallback(async (group) => {
             )}
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 space-y-4">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 custom-scrollbar">
               {loading ? (
                 <div className="flex items-center justify-center h-full">
-                  <Loader className="w-8 h-8 animate-spin text-green-500" />
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-3"></div>
+                    <p className="text-sm text-gray-500">
+                      Loading messages...
+                    </p>
+                  </div>
                 </div>
               ) : messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-[rgb(var(--text-muted))]">
-                  <MessageCircle className="w-16 h-16 opacity-20 mb-4" />
-                  <p className="text-lg font-semibold mb-2">No messages yet</p>
-                  <p className="text-sm">Start the conversation!</p>
+                <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                  <div className="w-24 h-24 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-6 shadow-lg">
+                    <MessageCircle className="w-12 h-12 text-green-500/50" />
+                  </div>
+                  <h3 className="text-xl font-bold mb-2">
+                    {safeSelectedGroup.name}
+                  </h3>
+                  <p className="text-gray-500 text-center max-w-md">
+                    No messages yet. Start the conversation!
+                  </p>
                 </div>
               ) : (
                 messages.map((msg, index) => renderMessage(msg, index))
@@ -1161,45 +1111,64 @@ const handleSelectGroup = useCallback(async (group) => {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Message Input Area */}
-            <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] border-t border-[rgb(var(--border-secondary))] flex gap-2 sm:gap-3">
-              <button className="p-2 sm:p-3 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-gray-400 hover:text-green-400 shrink-0">
-                <Paperclip className="w-5 h-5" />
-              </button>
-              <input
-                ref={messageInputRef}
-                type="text"
-                placeholder="Type a message..."
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                className="flex-1 px-4 py-2 sm:py-3 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))] focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all"
-              />
-              <button className="p-2 sm:p-3 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-gray-400 hover:text-green-400 shrink-0">
-                <Smile className="w-5 h-5" />
-              </button>
-              <button
-                onClick={handleSendMessage}
-                disabled={!newMessage.trim()}
-                className={`p-2 sm:p-3 rounded-xl transition-all shadow-lg shrink-0 ${
-                  newMessage.trim()
-                    ? "bg-linear-to-br from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-black glow-green"
-                    : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-muted))] cursor-not-allowed"
-                }`}
-              >
-                <Send className="w-4 sm:w-5 h-4 sm:h-5" />
-              </button>
+            {/* Input Area */}
+            <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))]">
+              {error && (
+                <div className="mb-3 p-2 sm:p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-xs sm:text-sm">
+                  {error}
+                </div>
+              )}
+              <div className="flex items-end gap-2 sm:gap-3">
+                <div className="hidden sm:flex gap-1">
+                  <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-gray-400 hover:text-green-400">
+                    <Smile className="w-5 h-5" />
+                  </button>
+                  <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-gray-400 hover:text-green-400">
+                    <Paperclip className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="flex-1 glass-effect rounded-2xl border border-[rgb(var(--border-secondary))] focus-within:border-green-500/50 focus-within:ring-2 focus-within:ring-green-500/20 transition-all">
+                  <textarea
+                    ref={messageInputRef}
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    placeholder="Type a message..."
+                    rows={1}
+                    className="w-full px-4 py-3 bg-transparent text-gray-300 placeholder-gray-500 resize-none focus:outline-none max-h-32 custom-scrollbar"
+                    style={{ minHeight: "48px" }}
+                  />
+                </div>
+
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!newMessage.trim()}
+                  className={`p-2 sm:p-3 rounded-xl transition-all shadow-lg shrink-0 ${
+                    newMessage.trim()
+                      ? "bg-linear-to-br from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-black glow-green"
+                      : "bg-[rgb(var(--bg-tertiary))] text-gray-500 cursor-not-allowed"
+                  }`}
+                >
+                  <Send className="w-4 sm:w-5 h-4 sm:h-5" />
+                </button>
+              </div>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-[rgb(var(--text-muted))] p-4">
-            <div className="w-24 sm:w-32 h-24 sm:h-32 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-4 sm:mb-6 shadow-2xl">
-              <Users className="w-12 sm:w-16 h-12 sm:h-16 text-green-500/50" />
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 p-4">
+            <div className="w-24 sm:w-32 h-24 sm:h-32 rounded-full bg-linear-to-br from-purple-500/20 to-pink-600/20 flex items-center justify-center mb-4 sm:mb-6 shadow-2xl">
+              <Users className="w-12 sm:w-16 h-12 sm:h-16 text-purple-500/50" />
             </div>
             <h3 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-3 gradient-text text-center">
               Select a Group
             </h3>
-            <p className="text-[rgb(var(--text-muted))] text-center text-sm sm:text-base max-w-md">
+            <p className="text-gray-500 text-center text-sm sm:text-base max-w-md">
               Choose a group from the sidebar to view and send messages
             </p>
           </div>
@@ -1212,7 +1181,7 @@ const handleSelectGroup = useCallback(async (group) => {
           <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-[rgb(var(--border-secondary))]">
             {/* Modal Header */}
             <div className="p-4 sm:p-6 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between sticky top-0 bg-[rgb(var(--bg-secondary))]">
-              <h3 className="text-xl font-bold text-[rgb(var(--text-primary))]">Create Group</h3>
+              <h3 className="text-xl font-bold text-gray-300">Create Group</h3>
               <button
                 onClick={() => {
                   setShowCreateGroupModal(false);
@@ -1220,7 +1189,7 @@ const handleSelectGroup = useCallback(async (group) => {
                   setSelectedMembers([]);
                   setSearchUsers("");
                 }}
-                className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-red-400"
+                className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-red-400"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1230,7 +1199,7 @@ const handleSelectGroup = useCallback(async (group) => {
             <div className="p-4 sm:p-6 space-y-4">
               {/* Group Name Input */}
               <div>
-                <label className="text-sm font-semibold text-[rgb(var(--text-secondary))] block mb-2">
+                <label className="text-sm font-semibold text-gray-400 block mb-2">
                   Group Name
                 </label>
                 <input
@@ -1238,23 +1207,23 @@ const handleSelectGroup = useCallback(async (group) => {
                   placeholder="Enter group name"
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
-                  className="w-full px-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))] focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent"
                 />
               </div>
 
               {/* User Search */}
               <div>
-                <label className="text-sm font-semibold text-[rgb(var(--text-secondary))] block mb-2">
+                <label className="text-sm font-semibold text-gray-400 block mb-2">
                   Add Members
                 </label>
                 <div className="relative mb-3">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[rgb(var(--text-muted))]" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
                   <input
                     type="text"
                     placeholder="Search users..."
                     value={searchUsers}
                     onChange={(e) => setSearchUsers(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))] focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                    className="w-full pl-10 pr-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
                   />
                 </div>
               </div>
@@ -1262,7 +1231,7 @@ const handleSelectGroup = useCallback(async (group) => {
               {/* Selected Members */}
               {selectedMembers.length > 0 && (
                 <div className="bg-[rgb(var(--bg-hover))]/30 rounded-lg p-3">
-                  <p className="text-xs text-[rgb(var(--text-muted))] mb-2 font-semibold">
+                  <p className="text-xs text-gray-400 mb-2 font-semibold">
                     Selected Members ({selectedMembers.length})
                   </p>
                   <div className="flex flex-wrap gap-2">
@@ -1292,7 +1261,7 @@ const handleSelectGroup = useCallback(async (group) => {
               {/* Users List - PROPERLY FIXED */}
               <div className="space-y-2">
                 {availableUsers.length === 0 ? (
-                  <div className="text-center py-8 text-[rgb(var(--text-muted))]">
+                  <div className="text-center py-8 text-gray-500">
                     <p className="text-sm">
                       {searchUsers
                         ? "No users found"
@@ -1316,7 +1285,7 @@ const handleSelectGroup = useCallback(async (group) => {
                           onClick={() => {
                             toggleMemberSelection(userId);
                           }}
-                          className={`w-full p-3 rounded-lg text-left transition-all flex items-center gap-3 flex-row-reverse ${
+                          className={`w-full p-3 rounded-lg text-left transition-all flex items-center gap-3 ${
                             isSelected
                               ? "bg-green-500/20 border border-green-500/30"
                               : "hover:bg-[rgb(var(--bg-hover))]/50 border border-[rgb(var(--border-secondary))]/50"
@@ -1326,10 +1295,10 @@ const handleSelectGroup = useCallback(async (group) => {
                             {userName.charAt(0).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-[rgb(var(--text-primary))] truncate">
+                            <p className="font-medium text-gray-300 truncate">
                               {user.name}
                             </p>
-                            <p className="text-xs text-[rgb(var(--text-muted))] truncate">
+                            <p className="text-xs text-gray-500 truncate">
                               {user.email}
                             </p>
                           </div>
@@ -1352,7 +1321,7 @@ const handleSelectGroup = useCallback(async (group) => {
                   setSelectedMembers([]);
                   setSearchUsers("");
                 }}
-                className="flex-1 px-4 py-2 bg-[rgb(var(--bg-hover))] text-[rgb(var(--text-primary))] rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
+                className="flex-1 px-4 py-2 bg-[rgb(var(--bg-hover))] text-gray-300 rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
               >
                 Cancel
               </button>
@@ -1363,7 +1332,7 @@ const handleSelectGroup = useCallback(async (group) => {
                   // ✅ CORRECT: Check if we have valid input
                   !creatingGroup && groupName.trim() && selectedMembers.length > 0
                     ? "bg-linear-to-br from-green-600 to-emerald-700 text-black hover:from-green-500 hover:to-emerald-600 glow-green cursor-pointer"
-                    : "bg-[rgb(var(--bg-hover))] text-[rgb(var(--text-muted))] cursor-not-allowed opacity-50"
+                    : "bg-gray-600 text-gray-400 cursor-not-allowed opacity-50"
                 }`}
               >
                 {creatingGroup && <Loader className="w-4 h-4 animate-spin" />}
@@ -1484,7 +1453,7 @@ const handleSelectGroup = useCallback(async (group) => {
                                 : [...prev, userId]
                             );
                           }}
-                          className={`w-full p-3 rounded-lg text-left transition-all flex items-center gap-3 flex-row-reverse ${
+                          className={`w-full p-3 rounded-lg text-left transition-all flex items-center gap-3 ${
                             isSelected
                               ? "bg-green-500/20 border border-green-500/30"
                               : "hover:bg-[rgb(var(--bg-hover))]/50 border border-[rgb(var(--border-secondary))]/50"

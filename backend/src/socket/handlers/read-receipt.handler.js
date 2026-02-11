@@ -9,6 +9,7 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
     console.log(`   Message ID: ${messageId}`);
     console.log(`   Group ID: ${groupId || 'Private'}`);
     console.log(`   User: ${name} (${userId})`);
+    console.log(`   Socket: ${socket.id}`);
 
     if (!messageId) {
       console.error('❌ Missing messageId');
@@ -23,6 +24,14 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
       return;
     }
 
+    // ✅ CRITICAL FIX: Verify the user reading is the RECEIVER, not sender
+    console.log(`[CHECK] Sender: ${message.senderId}, Reader: ${userId}`);
+    
+    if (message.senderId.toString() === userId.toString()) {
+      console.log('⚠️  Sender cannot mark their own message as read');
+      return;  // ✅ FIX: Sender should NOT mark as read
+    }
+
     // ✅ CHECK: Already marked as read by this user
     const userAlreadyRead = message.readBy?.some(
       (r) => r.userId?.toString() === userId.toString()
@@ -35,7 +44,7 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
 
     console.log('✅ [1/3] Validation passed');
 
-    // ✅ UPDATE MESSAGE IN DB - CRITICAL FIX
+    // ✅ UPDATE MESSAGE IN DB
     const updatedMessage = await Message.findByIdAndUpdate(
       messageId,
       {
@@ -67,15 +76,15 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
       readCount: updatedMessage.readBy.length,
     };
 
-    console.log(`✅ [3/3] Broadcasting read receipt`);
+    console.log(`✅ [3/3] Broadcasting read receipt to:`);
 
     // ✅ BROADCAST TO ALL CONNECTIONS
     if (groupId) {
-      console.log(`📤 Broadcasting to GROUP: ${groupId}`);
+      console.log(`   📤 GROUP: ${groupId}`);
       readReceiptData.groupId = groupId;
       io.to(groupId.toString()).emit('message_read', readReceiptData);
     } else {
-      console.log(`📤 Broadcasting to PRIVATE chat`);
+      console.log(`   📤 TO SENDER: ${message.senderId}`);
       io.to(message.senderId.toString()).emit('message_read', readReceiptData);
     }
 
