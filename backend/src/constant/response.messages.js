@@ -52,6 +52,6 @@ export const SOCKET_EVENTS = {
   JOIN_GROUP: "join_group",
   LEAVE_GROUP: "leave_group",
   READ_RECEIPT: "read_receipt",
-  USER_CAME_ONLINE: "user_came_online",    // ✅ NEW
-  USER_WENT_OFFLINE: "user_went_offline",  // ✅ NEW
+  USER_CAME_ONLINE: "user_came_online",    
+  USER_WENT_OFFLINE: "user_went_offline",  
 };

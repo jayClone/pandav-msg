@@ -10,17 +10,16 @@ import {
   Users,
   Pin,
   MessageCircle,
-  Menu,
   ChevronLeft,
   Send,
   Check,
-  CheckCheck,
   Paperclip,
   Smile,
   X,
   Loader,
   Trash2,
   AlertTriangle,
+  LogOut, UserPlus, MoreVertical
 } from 'lucide-react'
 import friendAPI from '@api/friend.api.js'
 
@@ -826,6 +825,72 @@ export default function GroupChat({
     }
   }, [token, showCreateGroupModal, fetchAvailableUsers]);
 
+  // ✅ ADD: Leave Group Handler
+  const handleLeaveGroup = async () => {
+    if (!selectedGroup?._id && !selectedGroup?.id) {
+      setError("No group selected");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to leave "${selectedGroup.name}"? You can rejoin if invited again.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const groupId = selectedGroup._id || selectedGroup.id;
+      console.log("🚪 [LEAVE GROUP] Attempting to leave group:", groupId);
+
+      const response = await groupService.leaveGroup(groupId);
+
+      if (response.success) {
+        console.log("✅ [LEAVE GROUP] Successfully left group");
+
+        // ✅ Remove group from list
+        setGroups((prevGroups) =>
+          prevGroups.filter((g) => (g._id || g.id) !== groupId)
+        );
+
+        // ✅ Clear selected group
+        setSelectedGroup(null);
+        setMessages([]);
+        setMembers([]);
+
+        // ✅ Clear unread count
+        setUnreadCounts((prev) => {
+          const updated = { ...prev };
+          delete updated[groupId];
+          return updated;
+        });
+
+        // ✅ Remove from pinned
+        setPinnedGroups((prev) => prev.filter((id) => id !== groupId));
+
+        // ✅ Show success message
+        setError(null);
+        alert(`✅ You have left the group "${selectedGroup.name}"`);
+
+        // ✅ Refetch groups from backend
+        setTimeout(() => {
+          console.log("📡 Refetching groups...");
+          fetchAllGroups();
+        }, 300);
+      }
+    } catch (err) {
+      console.error("❌ Leave group error:", err);
+      const errorMessage =
+        err?.response?.data?.message || err?.message || "Failed to leave group";
+      setError(errorMessage);
+      alert(`❌ Error: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       {/* Groups Sidebar */}
@@ -961,44 +1026,89 @@ export default function GroupChat({
       <div className="flex-1 flex flex-col bg-[rgb(var(--bg-primary))]">
         {selectedGroup ? (
           <>
-            {/* Group Header */}
-            <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2 sm:gap-3">
-              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400 sm:hidden"
-                >
-                  <Menu className="w-5 h-5" />
-                </button>
-                <div className="w-10 sm:w-11 h-10 sm:h-11 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-gray-100 font-bold shadow-lg text-sm sm:text-base">
-                  {(safeSelectedGroup?.name || 'G').charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-semibold text-gray-700 text-base sm:text-lg truncate">
-                    {safeSelectedGroup?.name || 'Group'}
-                  </h3>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            {/* Group Header with Options */}
+            {selectedGroup && (
+              <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2 sm:gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                  {/* Back button */}
+                  <button
+                    onClick={() => {
+                      setSelectedGroup(null);
+                      setMessages([]);
+                      setMembers([]);
+                    }}
+                    className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400"
+                    title="Back to groups"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+
+                  {/* Group info */}
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-[rgb(var(--text-primary))] text-base sm:text-lg truncate">
+                      {selectedGroup.name}
+                    </h3>
                     <p className="text-xs text-green-400 font-medium">
-                      {onlineCount} online • {members.length} members
+                      {onlineCount} online · {members.length} members
                     </p>
                   </div>
                 </div>
+
+                {/* Group Actions Dropdown */}
+                <div className="relative group">
+                  <button className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400">
+                    <MoreVertical className="w-5 h-5" />
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  <div className="absolute right-0 mt-2 w-48 bg-[rgb(var(--bg-secondary))] border border-[rgb(var(--border-secondary))] rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                    {/* Add Member */}
+                    {selectedGroup.adminId === currentUserId && (
+                      <button
+                        onClick={() => {
+                          setShowAddMemberModal(true);
+                          fetchUsersToAdd();
+                        }}
+                        className="w-full px-4 py-2 text-left hover:bg-[rgb(var(--bg-hover))] text-sm text-[rgb(var(--text-primary))] flex items-center gap-2 border-b border-[rgb(var(--border-secondary))]"
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        Add Member
+                      </button>
+                    )}
+
+                    {/* View Members */}
+                    <button
+                      onClick={() => setShowMembersPreview(true)}
+                      className="w-full px-4 py-2 text-left hover:bg-[rgb(var(--bg-hover))] text-sm text-[rgb(var(--text-primary))] flex items-center gap-2 border-b border-[rgb(var(--border-secondary))]"
+                    >
+                      <Users className="w-4 h-4" />
+                      View Members ({members.length})
+                    </button>
+
+                    {/* ✅ LEAVE GROUP BUTTON */}
+                    <button
+                      onClick={() => handleLeaveGroup()}
+                      disabled={loading}
+                      className="w-full px-4 py-2 text-left hover:bg-amber-500/20 text-sm text-amber-400 flex items-center gap-2 border-b border-[rgb(var(--border-secondary))] transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      {loading ? "Leaving..." : "Leave Group"}
+                    </button>
+
+                    {/* Delete Group (Admin Only) */}
+                    {selectedGroup.adminId === currentUserId && (
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="w-full px-4 py-2 text-left hover:bg-red-500/20 text-sm text-red-400 flex items-center gap-2 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete Group
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
-              <button
-                onClick={() => setShowMembersPreview(!showMembersPreview)}
-                className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400 shrink-0"
-              >
-                <Users className="w-5 h-5" />
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 shrink-0"
-                title="Delete Group"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
-            </div>
+            )}
 
             {/* Members Preview */}
             {showMembersPreview && (
