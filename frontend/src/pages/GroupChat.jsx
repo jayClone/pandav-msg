@@ -62,6 +62,7 @@ export default function GroupChat({
   const [deletingGroup, setDeletingGroup] = useState(false);
   const [onlineCount, setOnlineCount] = useState(0); // ✅ ADD THIS
   const [lastMessages, setLastMessages] = useState({}); // ✅ ADD THIS
+  const [groupOnlineMembers, setGroupOnlineMembers] = useState([]); // ✅ ADD NEW STATE FOR ONLINE MEMBERS
 
   const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -825,6 +826,51 @@ export default function GroupChat({
     }
   }, [token, showCreateGroupModal, fetchAvailableUsers]);
 
+  // ✅ ADD THIS EFFECT: Listen for online members updates
+useEffect(() => {
+  if (!selectedGroup?.id && !selectedGroup?._id) return;
+  
+  const socket = getSocket();
+  if (!socket?.connected) return;
+
+  console.log("📡 [LISTEN] Setting up group_online_members listener");
+
+  const handleGroupOnlineMembers = (data) => {
+    console.log(`🟢 [ONLINE] Group ${data.groupId} has ${data.onlineCount}/${data.totalMembers} members online:`, 
+      data.onlineMembers.map(u => u.name).join(', ')
+    );
+    
+    setGroupOnlineMembers(data.onlineMembers || []);
+    setOnlineCount(data.onlineCount || 0);
+  };
+
+  socket.on('group_online_members', handleGroupOnlineMembers);
+
+  return () => {
+    socket.off('group_online_members', handleGroupOnlineMembers);
+  };
+}, [selectedGroup?.id, selectedGroup?._id]);
+
+// ✅ LISTEN FOR USER JOIN EVENTS
+useEffect(() => {
+  const socket = getSocket();
+  if (!socket?.connected) return;
+
+  socket.on('user_joined_group', (data) => {
+    console.log('👤 User joined group:', data.userName);
+    setOnlineCount(data.onlineCount || 0);
+  });
+
+  socket.on('user_left_group', (data) => {
+    console.log('👤 User left group:', data.userName);
+  });
+
+  return () => {
+    socket.off('user_joined_group');
+    socket.off('user_left_group');
+  };
+}, []);
+
   // ✅ ADD: Leave Group Handler
   const handleLeaveGroup = async () => {
     if (!selectedGroup?._id && !selectedGroup?.id) {
@@ -1048,8 +1094,13 @@ export default function GroupChat({
                     <h3 className="font-semibold text-[rgb(var(--text-primary))] text-base sm:text-lg truncate">
                       {selectedGroup.name}
                     </h3>
-                    <p className="text-xs text-green-400 font-medium">
-                      {onlineCount} online · {members.length} members
+                    {/* ✅ UPDATED: Show actual online count */}
+                    <p className={`text-xs font-medium ${onlineCount > 0 ? 'text-green-400' : 'text-gray-500'}`}>
+                      {onlineCount > 0 ? (
+                        <>🟢 {onlineCount} online · {members.length} members</>
+                      ) : (
+                        <>🔴 All offline · {members.length} members</>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -1154,6 +1205,11 @@ export default function GroupChat({
 
                       const memberId = member._id || member.userId;
                       const memberName = member.name || member.email || 'Unknown User';
+                      const isOnline = groupOnlineMembers?.some(
+                        u => (u.userId === memberId || u.userId === member._id || u.userId === member.userId)
+                      );
+
+                      console.log(`[MEMBER] ${memberName} - Online: ${isOnline}`);
 
                       return (
                         <div
@@ -1161,29 +1217,46 @@ export default function GroupChat({
                           className="flex items-center justify-between gap-3 p-3 bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 rounded-xl border border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30 transition-all group"
                         >
                           <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <div className="w-10 h-10 rounded-full bg-linear-to-r from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shrink-0 shadow-lg text-sm">
-                              {memberName.charAt(0).toUpperCase()}
+                            <div className="relative">
+                              <div className="w-10 h-10 rounded-full bg-linear-to-r from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shrink-0 shadow-lg text-sm">
+                                {memberName.charAt(0).toUpperCase()}
+                              </div>
+                              {/* ✅ SHOW ACTUAL ONLINE STATUS */}
+                              <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-[rgb(var(--bg-secondary))] rounded-full transition-all ${
+                                isOnline ? 'bg-green-400 animate-pulse shadow-lg shadow-green-400/50' : 'bg-gray-500'
+                              }`}></div>
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="font-medium text-gray-300 truncate">
-                                {memberName}
-                              </p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium text-gray-300 truncate">
+                                  {memberName}
+                                </p>
+                                {/* ✅ SHOW ONLINE BADGE */}
+                                {isOnline && (
+                                  <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-bold whitespace-nowrap animate-pulse">
+                                    ● Online
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-xs text-gray-500 truncate">
                                 {member.email}
                               </p>
                             </div>
                           </div>
-                          <button
-                            onClick={() => handleRemoveMember(memberId)}
-                            disabled={removeMemberLoading === memberId}
-                            className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 disabled:opacity-50 shrink-0 opacity-0 group-hover:opacity-100"
-                          >
-                            {removeMemberLoading === memberId ? (
-                              <Loader className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <X className="w-4 h-4" />
-                            )}
-                          </button>
+                          {/* ✅ ONLY SHOW REMOVE BUTTON FOR ADMIN */}
+                          {selectedGroup?.adminId === currentUserId && memberId !== currentUserId && (
+                            <button
+                              onClick={() => handleRemoveMember(memberId)}
+                              disabled={removeMemberLoading === memberId}
+                              className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 disabled:opacity-50 shrink-0 opacity-0 group-hover:opacity-100"
+                            >
+                              {removeMemberLoading === memberId ? (
+                                <Loader className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <X className="w-4 h-4" />
+                              )}
+                            </button>
+                          )}
                         </div>
                       );
                     })
