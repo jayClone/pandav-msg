@@ -3,8 +3,10 @@ import {
   getAllUsers,
   getUserProfile,
   searchUsers
-} from '@controllers/user.controller.js';
-import { protect } from '@middlewares/auth.js';
+} from '../../controllers/user.controller.js';
+import { protect } from '../../middlewares/auth.js';
+import { asyncHandler } from '../../utils/asyncHandler.js';
+
 
 const router = express.Router();
 
@@ -14,7 +16,7 @@ const router = express.Router();
  * @access Private
  * Returns: Array of users with online status
  */
-router.get('/', protect, getAllUsers);
+router.get('/', protect, asyncHandler(getAllUsers));
 
 /**
  * @route GET /api/v1/users/search
@@ -22,13 +24,13 @@ router.get('/', protect, getAllUsers);
  * @access Private
  * Query: q=searchTerm
  */
-router.get('/search', protect, searchUsers);
+router.get('/search', protect, asyncHandler(searchUsers));
 
 /**
  * @route GET /api/v1/users/:userId
  * @desc Get specific user profile
  * @access Private
  */
-router.get('/:userId', protect, getUserProfile);
+router.get('/:userId', protect, asyncHandler(getUserProfile));
 
 export default router;

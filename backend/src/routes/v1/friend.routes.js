@@ -8,8 +8,10 @@ import {
   getFriends,
   checkFriendStatus,
   removeFriend,
-} from '@controllers/friend.controller.js';
-import { protect } from '@middlewares/auth.js';
+} from '../../controllers/friend.controller.js';
+import { protect } from '../../middlewares/auth.js';
+import { asyncHandler } from '../../utils/asyncHandler.js';
+
 
 const router = express.Router();
 
@@ -17,27 +19,27 @@ const router = express.Router();
 router.use(protect);
 
 // ✅ Send friend request
-router.post('/', sendFriendRequest);
+router.post('/', asyncHandler(sendFriendRequest));
 
 // ✅ Accept friend request
-router.patch('/:requestId/accept', acceptFriendRequest);
+router.patch('/:requestId/accept', asyncHandler(acceptFriendRequest));
 
 // ✅ Reject/Cancel friend request
-router.delete('/:requestId', rejectFriendRequest);
+router.delete('/:requestId', asyncHandler(rejectFriendRequest));
 
 // get sent request
-router.get('/sent', getSentRequests);
+router.get('/sent', asyncHandler(getSentRequests));
 
 // ✅ Get pending requests
-router.get('/pending', getPendingRequests);
+router.get('/pending', asyncHandler(getPendingRequests));
 
 // ✅ Get friends list
-router.get('/', getFriends);
+router.get('/', asyncHandler(getFriends));
 
 // ✅ Check friendship status
-router.get('/check/:otherUserId', checkFriendStatus);
+router.get('/check/:otherUserId', asyncHandler(checkFriendStatus));
 
 // ✅ Remove friend
-router.delete('/:friendId/remove', removeFriend);
+router.delete('/:friendId/remove', asyncHandler(removeFriend));
 
 export default router;

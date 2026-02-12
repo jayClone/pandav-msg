@@ -1,6 +1,5 @@
-import Friend from '@models/Friend.js';
-import User from '@models/User.js';
-import { MESSAGES } from '@constants/response.messages.js';
+import Friend from '../models/Friend.js';
+import User from '../models/User.js';
 import mongoose from 'mongoose';
 
 /**

@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { MESSAGES } from '@constants/response.messages.js';
+import { MESSAGES } from '../constant/response.messages.js';
 
 export function socketAuthMiddleware(socket, next) {
     try {

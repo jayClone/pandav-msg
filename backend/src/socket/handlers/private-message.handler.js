@@ -1,6 +1,6 @@
-import { MESSAGES, SOCKET_EVENTS } from "@constants/response.messages.js";
-import Friend from "app/models/Friend";
-import Message from '@models/Message.js';
+import { MESSAGES, SOCKET_EVENTS } from "../../constant/response.messages.js";
+import Friend from "../../models/Friend";
+import Message from '../../models/Message.js';
 
 /**
  * Handle private messages

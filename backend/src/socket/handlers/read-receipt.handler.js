@@ -1,5 +1,4 @@
-import Message from '@models/Message.js';
-import Group from '@models/Group.js';
+import Message from '../../models/Message.js';
 
 export async function handleReadReceipt(socket, io, payload, userId, name) {
   try {

@@ -1,7 +1,7 @@
-import Group from "@models/Group";
-import User from "@models/User"
-import Message from '@models/Message.js';
-import Friend from "app/models/Friend";
+import Group from "../models/Group";
+import User from "../models/User"
+import Message from '../models/Message.js';
+import Friend from "../models/Friend";
 import mongoose from 'mongoose';  // ✅ ADD THIS
 
 // HELPER: Validate MongoDB ObjectId (handles both string and ObjectId)

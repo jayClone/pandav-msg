@@ -1,6 +1,6 @@
-import { SOCKET_EVENTS } from "@constants/response.messages.js";
-import Group from "@models/Group.js";
-import User from "@models/User.js";
+import { SOCKET_EVENTS } from "../../constant/response.messages.js";
+import Group from "../../models/Group.js";
+import User from "../../models/User.js";
 
 // ✅ Track online users per group (in-memory)
 const groupOnlineUsers = new Map(); // groupId -> Set of userIds

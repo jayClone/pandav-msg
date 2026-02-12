@@ -1,53 +1,59 @@
-import { Server } from 'socket.io'
-import { socketAuthMiddleware } from '@socket/socket.auth.js'
-import { registerSocketEvents } from '@socket/socket.event.js'
+import { Server } from 'socket.io';
+import { socketAuthMiddleware } from './socket.auth.js';
+import { registerSocketEvents } from './socket.event.js';
 
 export function createSocketServer(httpServer) {
   // Get CORS origin based on environment
   const getOrigin = () => {
-    const isDevelopment = process.env.NODE_ENV === 'development';
-    
-    if (isDevelopment) {
-      return ['http://localhost:3000', 'http://localhost:5173'];
+    const origins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:3001'
+    ];
+
+    if (process.env.NODE_ENV === 'production') {
+      origins.push(process.env.CLIENT_URL);
     }
-    return process.env.CLIENT_URL;
+
+    return origins;
   };
 
-  console.log(`\n🔌 ================================`);
-  console.log(`[SOCKET] Initializing Socket.IO`);
-  console.log(`   CORS Origin: ${getOrigin()}`);
-  console.log(`🔌 ================================\n`);
-
-  // Create Socket.IO server attached to HTTP server
   const io = new Server(httpServer, {
     cors: {
-      origin: getOrigin(),  // ✅ Dynamic origin
-      credentials: true
+      origin: getOrigin(),
+      methods: ['GET', 'POST'],
+      credentials: true,
+      allowEIO3: true
     },
     transports: ['websocket', 'polling'],
     pingInterval: 25000,
     pingTimeout: 60000,
   });
 
-  // ✅ JWT auth for socket
-  io.use(socketAuthMiddleware);
-  
-  // ✅ Listen for new connections
-  io.on("connection", (socket) => {
-    console.log(`✅ [SOCKET] New client connected: ${socket.id}`);
-    
-    try {
-      // ✅ Register all event handlers
-      registerSocketEvents(io, socket);
-    } catch (error) {
-      console.error(`❌ [SOCKET] Error registering events: ${error.message}`);
-      socket.emit('error', { message: 'Failed to initialize socket' });
-    }
+  // ✅ MOVE onlineUsers HERE - shared across all connections
+  const onlineUsers = new Map();
+
+  io.use((socket, next) => {
+    socketAuthMiddleware(socket, next);
   });
 
-  // ✅ Error handler
-  io.on("error", (error) => {
-    console.error(`❌ [SOCKET] Server error:`, error);
+  console.log(`\n🔌 ================================`);
+  console.log(`[SOCKET] Initializing Socket.IO`);
+  console.log(`   CORS Origin: ${getOrigin().join(',')}`);
+  console.log(`🔌 ================================\n`);
+
+  io.on('connection', (socket) => {
+    console.log(`✅ User connected: ${socket.id}`);
+
+    // ✅ Pass onlineUsers to registerSocketEvents
+    registerSocketEvents(io, socket, onlineUsers);
+
+    socket.on('disconnect', () => {
+      console.log(`❌ User disconnected: ${socket.id}`);
+      const { userId } = socket.user;
+      onlineUsers.delete(userId);
+      io.emit('onlineUsers', Array.from(onlineUsers.values()));
+    });
   });
 
   console.log(`[SOCKET] Socket.IO Initialized Successfully\n`);

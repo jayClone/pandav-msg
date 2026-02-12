@@ -1,6 +1,6 @@
-import { SOCKET_EVENTS } from "@constants/response.messages.js";
-import User from "@models/User.js";
-import Group from '@models/Group.js';
+import { SOCKET_EVENTS } from "../../constant/response.messages.js";
+import User from "../../models/User.js";
+import Group from '../../models/Group.js';
 
 /**
  * Handle user connect

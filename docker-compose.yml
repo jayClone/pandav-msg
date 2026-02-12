@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: pandav-mongo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: pandav_chat
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - pandav-network
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: pandav-backend
+    ports:
+      - "5000:5000"
+    environment:
+      MONGO_URI: mongodb://mongodb:27017/pandav_chat
+      PORT: 5000
+      JWT_SECRET: your_super_secret_key_min_32_chars_long_!!!
+      JWT_EXPIRE: 7d
+      NODE_ENV: development
+      API_VERSION: v1
+      CLIENT_URL: http://localhost:5173
+    depends_on:
+      - mongodb
+    networks:
+      - pandav-network
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: pandav-frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - pandav-network
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+
+networks:
+  pandav-network:
+    driver: bridge

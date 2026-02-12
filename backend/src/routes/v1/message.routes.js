@@ -8,8 +8,10 @@ import {
   deleteMessage,
   markGroupMessagesAsRead,
   getMessageReadReceipts
-} from '@controllers/message.controller.js';
-import { protect } from '@middlewares/auth.js';
+} from '../../controllers/message.controller.js';
+import { protect } from '../../middlewares/auth.js';
+import { asyncHandler } from '../../utils/asyncHandler.js';
+
 
 const router = express.Router();
 
@@ -20,7 +22,7 @@ const router = express.Router();
  * @param {string} receiverId - User to receive message
  * @param {string} message - Message content
  */
-router.post('/private', protect, sendPrivateMessage);
+router.post('/private', protect, asyncHandler(sendPrivateMessage));
 
 /**
  * @route POST /api/v1/messages/group
@@ -29,28 +31,28 @@ router.post('/private', protect, sendPrivateMessage);
  * @param {string} groupId - Group to receive message
  * @param {string} message - Message content
  */
-router.post('/group', protect, sendGroupMessage);
+router.post('/group', protect, asyncHandler(sendGroupMessage));
 
 /**
  * @route GET /api/v1/messages/:userId
  * @desc Get chat history with specific user
  * @access Private
  */
-router.get('/:userId', protect, getChatHistory);
+router.get('/:userId', protect, asyncHandler(getChatHistory));
 
 /**
  * @route GET /api/v1/messages/conversations/all
  * @desc Get all conversations with unread counts
  * @access Private
  */
-router.get('/conversations/all', protect, getConversations);
+router.get('/conversations/all', protect, asyncHandler(getConversations));
 
 /**
  * @route PUT /api/v1/messages/read/:userId
  * @desc Mark all messages from user as read (private)
  * @access Private
  */
-router.put('/read/:userId', protect, markAsRead);
+router.put('/read/:userId', protect, asyncHandler(markAsRead));
 
 /**
  * @route GET /api/v1/messages/:messageId/read-receipts
@@ -71,6 +73,6 @@ router.put('/group/:groupId/read', protect, markGroupMessagesAsRead);
  * @desc Delete a message
  * @access Private
  */
-router.delete('/:messageId', protect, deleteMessage);
+router.delete('/:messageId', protect, asyncHandler(deleteMessage));
 
 export default router;

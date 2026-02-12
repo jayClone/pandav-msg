@@ -1,5 +1,6 @@
 import express from 'express';
-import { healthCheck } from '@controllers/health.controller.js';
+import { healthCheck } from '../../controllers/health.controller.js';
+import { asyncHandler } from '../../utils/asyncHandler.js';
 
 const router = express.Router();
 /**
@@ -7,6 +8,6 @@ const router = express.Router();
  * @desc Health check endpoint
  * @access Public
  */
-router.get('/', healthCheck);
+router.get('/', asyncHandler(healthCheck));
 
 export default router;

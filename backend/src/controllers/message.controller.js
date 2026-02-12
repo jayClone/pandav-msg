@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
-import Message from '@models/Message.js'
-import User from '@models/User.js';
-import Group from '@models/Group.js';  // ✅ ADD THIS IMPORT
+import Message from '../models/Message.js'
+import User from '../models/User.js';
+import Group from '../models/Group.js';  
 
 
 /**
