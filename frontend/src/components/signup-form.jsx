@@ -81,11 +81,10 @@ export function SignupForm({ ...props }) {
 
   // ✅ FIX: Properly receive OTP param and log it
   const handleOTPSuccess = async (otpCode) => {
-    console.log('🔓 [SIGNUP] handleOTPSuccess called with OTP:', otpCode);  // ✅ LOG THIS
-
+    console.log('✅ [SIGNUP] OTP Success with code:', otpCode);
+    
     if (!otpCode) {
-      console.error('❌ [SIGNUP] OTP is missing!');
-      setError('OTP verification failed. Please try again.');
+      setError('OTP verification failed');
       setStep('otp');
       return;
     }
@@ -94,25 +93,16 @@ export function SignupForm({ ...props }) {
     setError("")
 
     try {
-      console.log('📝 [SIGNUP] Registering with OTP:', {
-        name: form.name,
-        email: form.email,
-        otp: otpCode  // ✅ USE THE PARAMETER
-      });
-
-      // ✅ PASS OTP CODE FROM PARAMETER
       const response = await authService.register({
         name: form.name,
         email: form.email,
         password: form.password,
-        otp: otpCode  // ✅ THIS IS THE OTP CODE
+        otp: otpCode  // ✅ PASS THE OTP
       })
 
       if (response.success || response.token) {
-        setMsg("✅ Account created! Redirecting to login...")
-        setTimeout(() => {
-          navigate("/login")
-        }, 1500)
+        setMsg("✅ Account created! Redirecting...")
+        setTimeout(() => navigate("/login"), 1500)
       } else {
         setError(response.message || "Registration failed")
         setStep('otp')

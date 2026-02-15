@@ -6,15 +6,22 @@ const otpAPI = {
    */
   sendOTP: async (email, name, purpose = 'registration') => {
     try {
+      console.log('📧 [OTP-API] Sending OTP request...');
+      
       const response = await API.post('/otp/send-otp', {
-        email,
-        name,
+        email: email.trim().toLowerCase(),
+        name: name.trim(),
         purpose
       });
+
+      console.log('✅ [OTP-API] Response:', response.data);
       return response.data;
     } catch (error) {
-      console.error('❌ Send OTP error:', error.response?.data);
-      throw error.response?.data || { message: 'Failed to send OTP' };
+      console.error('❌ [OTP-API] Error:', error.response?.data || error.message);
+      throw error.response?.data || { 
+        success: false,
+        message: error.message || 'Failed to send OTP' 
+      };
     }
   },
 
@@ -23,15 +30,22 @@ const otpAPI = {
    */
   verifyOTP: async (email, otp, purpose = 'registration') => {
     try {
+      console.log('🔍 [OTP-API] Verifying OTP...');
+      
       const response = await API.post('/otp/verify-otp', {
-        email,
-        otp,
+        email: email.trim().toLowerCase(),
+        otp: otp.toString(),
         purpose
       });
+
+      console.log('✅ [OTP-API] Verified:', response.data);
       return response.data;
     } catch (error) {
-      console.error('❌ Verify OTP error:', error.response?.data);
-      throw error.response?.data || { message: 'Failed to verify OTP' };
+      console.error('❌ [OTP-API] Verify error:', error.response?.data || error.message);
+      throw error.response?.data || { 
+        success: false,
+        message: error.message || 'Failed to verify OTP' 
+      };
     }
   },
 
@@ -40,15 +54,22 @@ const otpAPI = {
    */
   resendOTP: async (email, name, purpose = 'registration') => {
     try {
+      console.log('🔄 [OTP-API] Resending OTP...');
+      
       const response = await API.post('/otp/resend-otp', {
-        email,
-        name,
+        email: email.trim().toLowerCase(),
+        name: name.trim(),
         purpose
       });
+
+      console.log('✅ [OTP-API] Resent:', response.data);
       return response.data;
     } catch (error) {
-      console.error('❌ Resend OTP error:', error.response?.data);
-      throw error.response?.data || { message: 'Failed to resend OTP' };
+      console.error('❌ [OTP-API] Resend error:', error.response?.data || error.message);
+      throw error.response?.data || { 
+        success: false,
+        message: error.message || 'Failed to resend OTP' 
+      };
     }
   }
 };
