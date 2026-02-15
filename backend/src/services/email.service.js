@@ -1,138 +1,100 @@
-import nodemailer from 'nodemailer';
+import sgMail from '@sendgrid/mail';
 import logger from '../config/logger.js';
 
-// ✅ Configure Gmail SMTP
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
-  }
-});
-
-// ✅ Verify SMTP connection on startup
-transporter.verify((error, success) => {
-  if (error) {
-    logger.error('❌ Email service error:', error.message);
-    console.error('📧 Email Config:', {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASSWORD ? '***' : 'NOT SET'
-    });
-  } else {
-    logger.info('✅ Email service ready');
-    console.log('✅ Email service connected successfully');
-  }
-});
+// ✅ Initialize SendGrid
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 export class EmailService {
-  // ✅ Send OTP email
   static async sendOTPEmail(email, otp, name, purpose = 'registration') {
     try {
-      const subject = '🔐 Your Pandav MSG Verification Code';
-      const html = this.getOTPTemplate(otp, name, purpose);
+      if (!process.env.SENDGRID_API_KEY) {
+        logger.error('❌ SENDGRID_API_KEY not set');
+        throw new Error('Email service not configured');
+      }
 
-      const result = await transporter.sendMail({
-        from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM_EMAIL}>`,
+      const msg = {
         to: email,
-        subject,
-        html
-      });
+        from: process.env.SENDGRID_FROM_EMAIL || 'noreply@pandav-msg.com',
+        subject: '🔐 Your Pandav MSG Verification Code',
+        html: this.getOTPTemplate(otp, name, purpose),
+        replyTo: process.env.SENDGRID_REPLY_EMAIL || 'support@pandav-msg.com'
+      };
+
+      console.log('📧 Sending OTP via SendGrid to:', email);
+      const response = await sgMail.send(msg);
 
       logger.info(`✅ OTP email sent to ${email}`);
-      return { success: true, messageId: result.messageId };
+      return { success: true, messageId: response[0].headers['x-message-id'] };
     } catch (error) {
-      logger.error(`❌ Failed to send OTP email: ${error.message}`);
-      throw new Error(`Failed to send email: ${error.message}`);
+      logger.error(`❌ Failed to send OTP: ${error.message}`);
+      return {
+        success: false,
+        message: `Email error: ${error.message}`
+      };
     }
   }
 
-  // ✅ Send welcome email
   static async sendWelcomeEmail(email, name) {
     try {
-      const html = this.getWelcomeTemplate(name);
-
-      const result = await transporter.sendMail({
-        from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM_EMAIL}>`,
+      const msg = {
         to: email,
+        from: process.env.SENDGRID_FROM_EMAIL || 'noreply@pandav-msg.com',
         subject: '👋 Welcome to Pandav MSG!',
-        html
-      });
+        html: this.getWelcomeTemplate(name),
+        replyTo: process.env.SENDGRID_REPLY_EMAIL
+      };
 
+      const response = await sgMail.send(msg);
       logger.info(`✅ Welcome email sent to ${email}`);
-      return { success: true, messageId: result.messageId };
+      return { success: true };
     } catch (error) {
-      logger.error(`❌ Failed to send welcome email: ${error.message}`);
-      throw error;
+      logger.error(`⚠️ Welcome email failed: ${error.message}`);
+      return { success: false };
     }
   }
 
-  // ✅ OTP Email Template
   static getOTPTemplate(otp, name, purpose = 'registration') {
     return `
       <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5; }
-          .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }
-          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 30px; text-align: center; }
-          .content { padding: 40px 30px; }
-          .otp-box { background: #f0f0f0; border-left: 4px solid #667eea; padding: 20px; margin: 20px 0; border-radius: 4px; }
-          .otp-code { font-size: 36px; font-weight: bold; color: #667eea; letter-spacing: 4px; text-align: center; margin: 20px 0; font-family: monospace; }
-          .footer { background-color: #f9f9f9; padding: 20px; text-align: center; border-top: 1px solid #eee; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>🔐 Pandav MSG</h1>
+      <html>
+      <head><meta charset="UTF-8"></head>
+      <body style="font-family: Arial; background-color: #f5f5f5; margin: 0; padding: 20px;">
+        <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px;">
+          <h1 style="color: #22c55e; text-align: center;">🔐 Pandav MSG</h1>
+          <p>Hi ${name},</p>
+          <p>Your verification code is:</p>
+          <div style="background: #f0f9ff; border-left: 4px solid #22c55e; padding: 20px; margin: 20px 0; text-align: center;">
+            <h2 style="color: #22c55e; font-family: monospace; letter-spacing: 4px; margin: 0;">${otp}</h2>
           </div>
-          <div class="content">
-            <p>Hi ${name},</p>
-            <p>Your verification code is:</p>
-            <div class="otp-box">
-              <div class="otp-code">${otp}</div>
-            </div>
-            <p>This code expires in ${process.env.OTP_EXPIRY_MINUTES || 10} minutes.</p>
-            <p style="color: #666; font-size: 14px;">Never share this code with anyone.</p>
-          </div>
-          <div class="footer">
-            <p>© 2024 Pandav MSG. All rights reserved.</p>
-          </div>
+          <p><strong>⏱️ Expires in ${process.env.OTP_EXPIRY_MINUTES || 10} minutes</strong></p>
+          <p style="color: #d32f2f;">🔒 Never share this code with anyone.</p>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+          <p style="color: #666; font-size: 12px; text-align: center;">© 2024 Pandav MSG. All rights reserved.</p>
         </div>
       </body>
       </html>
     `;
   }
 
-  // ✅ Welcome Email Template
   static getWelcomeTemplate(name) {
     return `
       <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5; }
-          .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }
-          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 30px; text-align: center; }
-          .content { padding: 40px 30px; }
-          .footer { background-color: #f9f9f9; padding: 20px; text-align: center; border-top: 1px solid #eee; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>👋 Welcome to Pandav MSG!</h1>
-          </div>
-          <div class="content">
-            <p>Hi ${name},</p>
-            <p>Your account has been created successfully. Start chatting now!</p>
-          </div>
-          <div class="footer">
-            <p>© 2024 Pandav MSG. All rights reserved.</p>
-          </div>
+      <html>
+      <head><meta charset="UTF-8"></head>
+      <body style="font-family: Arial; background-color: #f5f5f5; margin: 0; padding: 20px;">
+        <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px;">
+          <h1 style="color: #22c55e; text-align: center;">👋 Welcome to Pandav MSG!</h1>
+          <p>Hi ${name},</p>
+          <p>Your account has been created successfully! 🎉</p>
+          <p>Start connecting with your friends and enjoy secure messaging.</p>
+          <p style="text-align: center;">
+            <a href="${process.env.FRONTEND_URL || 'https://pandav-msg-frontend.vercel.app'}/login" 
+               style="display: inline-block; padding: 12px 30px; background: #22c55e; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">
+              Login to Pandav MSG
+            </a>
+          </p>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+          <p style="color: #666; font-size: 12px; text-align: center;">© 2024 Pandav MSG. All rights reserved.</p>
         </div>
       </body>
       </html>
