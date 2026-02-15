@@ -6,42 +6,72 @@ export default function FriendRequestModal({
   isOpen, 
   onClose, 
   token,
-  onFriendRemoved  // ✅ ADD THIS PROP
+  onFriendRemoved
 }) {
   const [allUsers, setAllUsers] = useState([]);
   const [friendsList, setFriendsList] = useState([]);
-  const [pendingRequests, setPendingRequests] = useState([]);  // ✅ RECEIVED
-  const [sentRequests, setSentRequests] = useState([]);        // ✅ SENT - NEW
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [sentRequests, setSentRequests] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [sendingRequest, setSendingRequest] = useState({});
   const [activeTab, setActiveTab] = useState('contacts');
 
-  // Fetch all data on modal open
   useEffect(() => {
     if (isOpen && token) {
       fetchAllData();
     }
   }, [isOpen, token]);
 
+  // ✅ Close modal on escape key
+  useEffect(() => {
+    if (isOpen) {
+      const handleEscape = (e) => {
+        if (e.key === 'Escape') onClose();
+      };
+      window.addEventListener('keydown', handleEscape);
+      return () => window.removeEventListener('keydown', handleEscape);
+    }
+  }, [isOpen, onClose]);
+
   const fetchAllData = async () => {
     try {
       setLoadingUsers(true);
       const usersRes = await friendAPI.getAllUsers();
-      setAllUsers(usersRes.data.data || []);
+      setAllUsers(usersRes.data.data?.map(user => ({
+        _id: user._id,
+        name: user.name
+      })) || []);
 
       const friendsRes = await friendAPI.getFriends();
-      setFriendsList(friendsRes.data.data || []);
+      setFriendsList(friendsRes.data.data?.map(friend => ({
+        _id: friend._id,
+        name: friend.name
+      })) || []);
 
-      // ✅ Fetch RECEIVED requests
       const pendingRes = await friendAPI.getPendingRequests();
-      setPendingRequests(pendingRes.data.data || []);
+      setPendingRequests(pendingRes.data.data?.map(req => ({
+        _id: req._id,
+        senderId: {
+          _id: req.senderId._id,
+          name: req.senderId.name
+        }
+      })) || []);
 
-      // ✅ Fetch SENT requests - NEW
       const sentRes = await friendAPI.getSentRequests();
-      setSentRequests(sentRes.data.data || []);
+      setSentRequests(sentRes.data.data?.map(req => ({
+        _id: req._id,
+        senderId: {
+          _id: req.senderId._id,
+          name: req.senderId.name
+        },
+        receiverId: {
+          _id: req.receiverId._id,
+          name: req.receiverId.name
+        }
+      })) || []);
 
-      console.log('✅ Friend data loaded');
+      console.log('✅ Friend data loaded (emails removed)');
     } catch (error) {
       console.error('❌ Error loading friend data:', error.message);
     } finally {
@@ -49,17 +79,15 @@ export default function FriendRequestModal({
     }
   };
 
-  // Send friend request
   const handleSendRequest = async (userId) => {
     try {
       setSendingRequest(prev => ({ ...prev, [userId]: true }));
       await friendAPI.sendFriendRequest(userId);
       
-      // ✅ Add to SENT requests (not pending)
       setSentRequests(prev => [...prev, {
         _id: `temp-${userId}`,
         senderId: { _id: 'current-user' },
-        receiverId: { _id: userId, name: 'User', email: 'user@email.com' }
+        receiverId: { _id: userId, name: 'User' }
       }]);
 
       console.log('✅ Friend request sent');
@@ -71,7 +99,6 @@ export default function FriendRequestModal({
     }
   };
 
-  // Cancel sent request
   const handleCancelRequest = async (requestId) => {
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
@@ -86,7 +113,6 @@ export default function FriendRequestModal({
     }
   };
 
-  // Accept received request
   const handleAcceptRequest = async (requestId) => {
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
@@ -96,8 +122,7 @@ export default function FriendRequestModal({
       setPendingRequests(prev => prev.filter(r => r._id !== requestId));
       setFriendsList(prev => [...prev, {
         _id: acceptedRequest.senderId._id,
-        name: acceptedRequest.senderId.name,
-        email: acceptedRequest.senderId.email
+        name: acceptedRequest.senderId.name
       }]);
 
       console.log('✅ Friend request accepted');
@@ -109,7 +134,6 @@ export default function FriendRequestModal({
     }
   };
 
-  // Reject received request
   const handleRejectRequest = async (requestId) => {
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
@@ -124,7 +148,6 @@ export default function FriendRequestModal({
     }
   };
 
-  // Remove friend
   const handleRemoveFriend = async (userId) => {
     if (!window.confirm('Remove this friend?')) return;
 
@@ -133,7 +156,6 @@ export default function FriendRequestModal({
       await friendAPI.removeFriend(userId);
       setFriendsList(prev => prev.filter(f => f._id !== userId));
       
-      // ✅ NOTIFY PARENT - CALL THE CALLBACK
       if (onFriendRemoved) {
         onFriendRemoved(userId);
         console.log('✅ [MODAL] Notified parent about friend removal:', userId);
@@ -148,7 +170,6 @@ export default function FriendRequestModal({
     }
   };
 
-  // Filter users based on tab and search
   const getFilteredUsers = () => {
     let filtered = allUsers;
 
@@ -156,22 +177,20 @@ export default function FriendRequestModal({
       filtered = allUsers.filter(user => {
         const isFriend = friendsList.some(f => f._id === user._id);
         const hasSentRequest = sentRequests.some(r => r.receiverId._id === user._id);
-        return !isFriend && !hasSentRequest;  // ✅ Hide users with sent requests
+        return !isFriend && !hasSentRequest;
       });
     } else if (activeTab === 'friends') {
       filtered = friendsList;
     } else if (activeTab === 'pending-received') {
-      // ✅ RECEIVED requests
       return pendingRequests.filter(r => {
-        const displayName = (r.senderId?.name || r.senderId?.email || '').toString();
+        const displayName = (r.senderId?.name || 'Unknown').toString();
         return displayName
           .toLowerCase()
           .includes(searchQuery.toLowerCase());
       });
     } else if (activeTab === 'pending-sent') {
-      // ✅ SENT requests - NEW
       return sentRequests.filter(r => {
-        const displayName = (r.receiverId?.name || r.receiverId?.email || '').toString();
+        const displayName = (r.receiverId?.name || 'Unknown').toString();
         return displayName
           .toLowerCase()
           .includes(searchQuery.toLowerCase());
@@ -179,7 +198,7 @@ export default function FriendRequestModal({
     }
 
     return filtered.filter(user => {
-      const displayName = user.name || user.email || '';
+      const displayName = user.name || 'Unknown';
       return displayName.toLowerCase().includes(searchQuery.toLowerCase());
     });
   };
@@ -189,44 +208,48 @@ export default function FriendRequestModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-[rgb(var(--bg-secondary))] rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col border border-[rgb(var(--border-secondary))]">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
+      {/* ✅ RESPONSIVE MODAL */}
+      <div className="bg-[rgb(var(--bg-secondary))] rounded-xl w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col border border-[rgb(var(--border-secondary))] shadow-2xl">
         
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-[rgb(var(--border-secondary))]">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <UserPlus className="w-6 h-6 text-green-400" />
-            Friends & Contacts
+        {/* ✅ RESPONSIVE HEADER */}
+        <div className="flex items-center justify-between p-3 sm:p-6 border-b border-[rgb(var(--border-secondary))] flex-shrink-0">
+          <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2 truncate">
+            <UserPlus className="w-5 h-5 sm:w-6 sm:h-6 text-green-400 flex-shrink-0" />
+            <span className="hidden sm:inline">Friends & Contacts</span>
+            <span className="sm:hidden">Friends</span>
           </h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all"
+            className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all flex-shrink-0"
+            aria-label="Close"
           >
-            <X className="w-6 h-6 text-gray-400" />
+            <X className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 p-4 border-b border-[rgb(var(--border-secondary))] bg-[rgb(var(--bg-primary))] flex-wrap">
+        {/* ✅ RESPONSIVE TABS - Scrollable on small screens */}
+        <div className="flex gap-1 p-2 sm:p-4 border-b border-[rgb(var(--border-secondary))] bg-[rgb(var(--bg-primary))] overflow-x-auto scrollbar-hide flex-shrink-0">
           <button
             onClick={() => {
               setActiveTab('contacts');
               setSearchQuery('');
             }}
-            className={`px-4 py-2 rounded-lg transition-all text-sm ${
+            className={`px-2 sm:px-4 py-2 rounded-lg transition-all text-xs sm:text-sm whitespace-nowrap flex-shrink-0 ${
               activeTab === 'contacts'
                 ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                 : 'text-gray-400 hover:bg-[rgb(var(--bg-hover))]'
             }`}
           >
-            All Contacts
+            <span className="hidden sm:inline">All Contacts</span>
+            <span className="sm:hidden">Contacts</span>
           </button>
           <button
             onClick={() => {
               setActiveTab('friends');
               setSearchQuery('');
             }}
-            className={`px-4 py-2 rounded-lg transition-all text-sm ${
+            className={`px-2 sm:px-4 py-2 rounded-lg transition-all text-xs sm:text-sm whitespace-nowrap flex-shrink-0 ${
               activeTab === 'friends'
                 ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                 : 'text-gray-400 hover:bg-[rgb(var(--bg-hover))]'
@@ -239,49 +262,51 @@ export default function FriendRequestModal({
               setActiveTab('pending-received');
               setSearchQuery('');
             }}
-            className={`px-4 py-2 rounded-lg transition-all text-sm ${
+            className={`px-2 sm:px-4 py-2 rounded-lg transition-all text-xs sm:text-sm whitespace-nowrap flex-shrink-0 ${
               activeTab === 'pending-received'
                 ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                 : 'text-gray-400 hover:bg-[rgb(var(--bg-hover))]'
             }`}
           >
-            Received ({pendingRequests.length})
+            <span className="hidden sm:inline">Received</span>
+            <span className="sm:hidden">In</span> ({pendingRequests.length})
           </button>
           <button
             onClick={() => {
               setActiveTab('pending-sent');
               setSearchQuery('');
             }}
-            className={`px-4 py-2 rounded-lg transition-all text-sm ${
+            className={`px-2 sm:px-4 py-2 rounded-lg transition-all text-xs sm:text-sm whitespace-nowrap flex-shrink-0 ${
               activeTab === 'pending-sent'
                 ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                 : 'text-gray-400 hover:bg-[rgb(var(--bg-hover))]'
             }`}
           >
-            Sent ({sentRequests.length})
+            <span className="hidden sm:inline">Sent</span>
+            <span className="sm:hidden">Out</span> ({sentRequests.length})
           </button>
         </div>
 
-        {/* Search Bar */}
-        <div className="p-4 border-b border-[rgb(var(--border-secondary))]">
+        {/* ✅ RESPONSIVE SEARCH BAR */}
+        <div className="p-2 sm:p-4 border-b border-[rgb(var(--border-secondary))] flex-shrink-0">
           <input
             type="text"
-            placeholder="Search users..."
+            placeholder="Search by name..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-2 bg-[rgb(var(--bg-hover))] text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/50 border border-[rgb(var(--border-secondary))]"
+            className="w-full px-3 sm:px-4 py-2 bg-[rgb(var(--bg-hover))] text-white text-sm sm:text-base rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/50 border border-[rgb(var(--border-secondary))]"
           />
         </div>
 
-        {/* Content */}
+        {/* ✅ RESPONSIVE CONTENT */}
         <div className="flex-1 overflow-y-auto">
           {loadingUsers ? (
             <div className="flex items-center justify-center h-40">
               <Loader className="w-8 h-8 text-green-400 animate-spin" />
             </div>
           ) : filteredUsers.length === 0 ? (
-            <div className="flex items-center justify-center h-40 text-gray-400">
-              <p>
+            <div className="flex items-center justify-center h-40 text-gray-400 px-4 text-center">
+              <p className="text-sm sm:text-base">
                 {activeTab === 'contacts' && 'All your contacts are already friends or requests pending!'}
                 {activeTab === 'friends' && 'No friends yet'}
                 {activeTab === 'pending-received' && 'No pending requests received'}
@@ -289,109 +314,108 @@ export default function FriendRequestModal({
               </p>
             </div>
           ) : (
-            <div className="space-y-2 p-4">
+            <div className="space-y-2 p-2 sm:p-4">
               {activeTab === 'pending-received' ? (
-                // ✅ RECEIVED REQUESTS - Accept/Reject
+                // ✅ RESPONSIVE RECEIVED REQUESTS
                 pendingRequests.map((request) => (
                   <div
                     key={request._id}
-                    className="flex items-center justify-between p-4 bg-[rgb(var(--bg-hover))] rounded-lg border border-[rgb(var(--border-secondary))] hover:border-green-500/30 transition-all"
+                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 p-3 sm:p-4 bg-[rgb(var(--bg-hover))] rounded-lg border border-[rgb(var(--border-secondary))] hover:border-green-500/30 transition-all"
                   >
-                    <div className="flex items-center gap-3 flex-1">
-                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white font-bold">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white font-bold flex-shrink-0">
                         {request.senderId?.name?.charAt(0).toUpperCase() || 'U'}
                       </div>
-                      <div>
-                        <p className="text-white font-medium">{request.senderId?.name || 'Unknown'}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white font-medium text-sm sm:text-base truncate">{request.senderId?.name || 'Unknown'}</p>
                         <p className="text-xs text-gray-400">Sent a request</p>
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 w-full sm:w-auto">
                       <button
                         onClick={() => handleAcceptRequest(request._id)}
                         disabled={sendingRequest[request._id]}
-                        className="px-3 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-all disabled:opacity-50 flex items-center gap-2 text-sm"
+                        className="flex-1 sm:flex-none px-3 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-xs sm:text-sm"
                       >
                         {sendingRequest[request._id] ? (
                           <Loader className="w-4 h-4 animate-spin" />
                         ) : (
                           <Check className="w-4 h-4" />
                         )}
-                        Accept
+                        <span className="hidden sm:inline">Accept</span>
                       </button>
                       <button
                         onClick={() => handleRejectRequest(request._id)}
                         disabled={sendingRequest[request._id]}
-                        className="px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all disabled:opacity-50 text-sm"
+                        className="flex-1 sm:flex-none px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all disabled:opacity-50 text-xs sm:text-sm"
                       >
-                        Reject
+                        <span className="hidden sm:inline">Reject</span>
+                        <span className="sm:hidden">Decline</span>
                       </button>
                     </div>
                   </div>
                 ))
               ) : activeTab === 'pending-sent' ? (
-                // ✅ SENT REQUESTS - Cancel Only
+                // ✅ RESPONSIVE SENT REQUESTS
                 sentRequests.map((request) => (
                   <div
                     key={request._id}
-                    className="flex items-center justify-between p-4 bg-[rgb(var(--bg-hover))] rounded-lg border border-[rgb(var(--border-secondary))] hover:border-green-500/30 transition-all"
+                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 p-3 sm:p-4 bg-[rgb(var(--bg-hover))] rounded-lg border border-[rgb(var(--border-secondary))] hover:border-green-500/30 transition-all"
                   >
-                    <div className="flex items-center gap-3 flex-1">
-                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold flex-shrink-0">
                         {request.receiverId?.name?.charAt(0).toUpperCase() || 'U'}
                       </div>
-                      <div>
-                        <p className="text-white font-medium">{request.receiverId?.name || 'Unknown'}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white font-medium text-sm sm:text-base truncate">{request.receiverId?.name || 'Unknown'}</p>
                         <p className="text-xs text-gray-400">Pending response</p>
                       </div>
                     </div>
                     <button
                       onClick={() => handleCancelRequest(request._id)}
                       disabled={sendingRequest[request._id]}
-                      className="px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all disabled:opacity-50 flex items-center gap-2 text-sm"
+                      className="w-full sm:w-auto px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-xs sm:text-sm"
                     >
                       {sendingRequest[request._id] ? (
                         <Loader className="w-4 h-4 animate-spin" />
                       ) : (
                         <XCircle className="w-4 h-4" />
                       )}
-                      Cancel
+                      <span className="hidden sm:inline">Cancel</span>
                     </button>
                   </div>
                 ))
               ) : (
-                // All Contacts or Friends
+                // ✅ RESPONSIVE ALL CONTACTS OR FRIENDS
                 filteredUsers.map((user) => (
                   <div
                     key={user._id}
-                    className="flex items-center justify-between p-4 bg-[rgb(var(--bg-hover))] rounded-lg border border-[rgb(var(--border-secondary))] hover:border-green-500/30 transition-all"
+                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 p-3 sm:p-4 bg-[rgb(var(--bg-hover))] rounded-lg border border-[rgb(var(--border-secondary))] hover:border-green-500/30 transition-all"
                   >
-                    <div className="flex items-center gap-3 flex-1">
-                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white font-bold">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white font-bold flex-shrink-0">
                         {user.name?.charAt(0).toUpperCase() || 'U'}
                       </div>
-                      <div>
-                        <p className="text-white font-medium">{user.name}</p>
-                        <p className="text-sm text-gray-400">{user.email}</p>
-                      </div>
+                      <p className="text-white font-medium text-sm sm:text-base truncate">{user.name}</p>
                     </div>
 
-                    {/* Action Button */}
+                    {/* ✅ RESPONSIVE ACTION BUTTON */}
                     {activeTab === 'contacts' && (
                       <button
                         onClick={() => handleSendRequest(user._id)}
                         disabled={sendingRequest[user._id]}
-                        className="px-4 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-all disabled:opacity-50 flex items-center gap-2 text-sm"
+                        className="w-full sm:w-auto px-3 sm:px-4 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-xs sm:text-sm"
                       >
                         {sendingRequest[user._id] ? (
                           <>
                             <Loader className="w-4 h-4 animate-spin" />
-                            Sending...
+                            <span className="hidden sm:inline">Sending...</span>
                           </>
                         ) : (
                           <>
                             <UserPlus className="w-4 h-4" />
-                            Add Friend
+                            <span className="hidden sm:inline">Add Friend</span>
+                            <span className="sm:hidden">Add</span>
                           </>
                         )}
                       </button>
@@ -401,7 +425,7 @@ export default function FriendRequestModal({
                       <button
                         onClick={() => handleRemoveFriend(user._id)}
                         disabled={sendingRequest[user._id]}
-                        className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all disabled:opacity-50 text-sm"
+                        className="w-full sm:w-auto px-3 sm:px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all disabled:opacity-50 text-xs sm:text-sm"
                       >
                         {sendingRequest[user._id] ? 'Removing...' : 'Remove'}
                       </button>

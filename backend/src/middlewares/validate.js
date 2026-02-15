@@ -1,27 +1,22 @@
-export const validate = (schema, property = 'body') => {
-  return async (req, res, next) => {
-    try {
-      const value = req[property];
-      const { error, value: validated } = schema.validate(value, {
-        abortEarly: false,
-        stripUnknown: true
+export const validate = (schema, source = 'body') => {
+  return (req, res, next) => {
+    const { error, value } = schema.validate(req[source], {
+      abortEarly: false,
+      stripUnknown: false,  // ✅ IMPORTANT: Set to false to preserve all fields
+      allowUnknown: true     // ✅ Allow extra fields
+    });
+
+    if (error) {
+      const messages = error.details.map(d => d.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages
       });
-
-      if (error) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation failed',
-          errors: error.details.map(e => ({
-            field: e.path.join('.'),
-            message: e.message
-          }))
-        });
-      }
-
-      req[property] = validated;
-      next();
-    } catch (err) {
-      res.status(500).json({ success: false, message: err.message });
     }
+
+    // ✅ Preserve the original body with all fields
+    req[source] = { ...req[source], ...value };
+    next();
   };
 };

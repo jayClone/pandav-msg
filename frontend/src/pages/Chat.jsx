@@ -623,382 +623,413 @@ export default function Chat({
         }}
       />
 
-      {/* Chat Sidebar */}
-      <div
-        className={`${sidebarOpen ? "w-full  sm:w-72 md:w-80" : "w-0"} bg-[rgb(var(--bg-secondary))] sm:glass-effect border-r border-[rgb(var(--border-secondary))] flex flex-col transition-all duration-300 overflow-hidden absolute sm:relative sm:z-0 z-40 h-full sm:h-auto`}
-      >
-        {/* Header */}
-        <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between">
-          <h2 className="text-lg sm:text-xl font-bold text-[rgb(var(--text-primary))]">
-            {loadingFriends ? 'Loading Friends...' : 'Friends'}
-          </h2>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 sm:hidden"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Search Bar */}
-        <div className="p-4 space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[rgb(var(--text-muted))]" />
-            <input
-              type="text"
-              placeholder="Search friends..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))] focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all"
-            />
-          </div>
-        </div>
-
-        {/* Chat List */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
-          <div className="p-3 text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider flex items-center gap-2 px-4">
-            <MessageCircle className="w-4 h-4" />
-            Friends ({filteredUsers.length})
+      {/* Main Container - Responsive Layout */}
+      <div className="w-full h-full flex flex-col md:flex-row gap-0 overflow-hidden">
+        
+        {/* SIDEBAR - Friends List */}
+        <div
+          className={`${
+            sidebarOpen ? "w-full sm:w-80 md:w-96" : "w-0 hidden"
+          } bg-[rgb(var(--bg-secondary))] sm:glass-effect border-r border-[rgb(var(--border-secondary))] flex flex-col transition-all duration-300 overflow-hidden absolute md:relative md:z-0 z-40 h-full`}
+        >
+          {/* Sidebar Header */}
+          <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2">
+            <h2 className="text-base sm:text-lg md:text-xl font-bold text-[rgb(var(--text-primary))] whitespace-nowrap">
+              {loadingFriends ? 'Loading...' : 'Friends'}
+            </h2>
+            {/* ✅ ONLY HIDE SIDEBAR ON MOBILE WHEN SELECTING A CHAT */}
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 md:hidden flex-shrink-0"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
           </div>
 
-          {loadingFriends ? (
-            <div className="flex items-center justify-center h-40">
-              <Loader className="w-8 h-8 text-green-400 animate-spin" />
+          {/* Search Bar */}
+          <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] border-b border-[rgb(var(--border-secondary))]">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[rgb(var(--text-muted))]" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 sm:py-2.5 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-xs sm:text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))] focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all"
+              />
             </div>
-          ) : filteredUsers.length === 0 ? (
-            <div className="p-8 text-center text-[rgb(var(--text-muted))]">
-              <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">
-                {allUsers.length === 0 
-                  ? "No friends yet. Add friends using the + button!" 
-                  : "No friends found"}
-              </p>
+          </div>
+
+          {/* Friends List */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <div className="p-3 sm:p-4 text-xs font-semibold text-[rgb(var(--text-muted))] uppercase tracking-wider flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 flex-shrink-0" />
+              <span>Friends ({filteredUsers.length})</span>
             </div>
-          ) : (
-            filteredUsers.map((user) => {
-              const id = user.userId;
-              const name = user.name;
-              const isPinned = pinnedChats.includes(id);
-              const unreadCount = unreadCounts[id] || 0;
-              const isOnline = user.online;
 
-              return (
-                <div
-                  key={id}
-                  onClick={() => setSelectedUserId(id)}
-                  className={`group relative p-3 mx-2 mb-1 rounded-xl cursor-pointer transition-all ${
-                    selectedUserId === id
-                      ? "bg-linear-to-r from-green-600/20 to-emerald-600/20 border border-green-500/30 shadow-lg glow-green"
-                      : "hover:bg-[rgb(var(--bg-hover))]/50"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="relative shrink-0">
-                      <div
-                        className={`w-12 h-12 rounded-full flex items-center justify-center text-gray-100 font-bold text-lg shadow-lg ${
-                          isOnline
-                            ? "bg-linear-to-br from-green-500 to-teal-600"
-                            : "bg-linear-to-br from-gray-500 to-gray-600"
-                        }`}
-                      >
-                        {name.charAt(0).toUpperCase()}
-                      </div>
-                      <div
-                        className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-[rgb(var(--bg-secondary))] rounded-full ${
-                          isOnline ? "bg-green-400 pulse-glow" : "bg-gray-400"
-                        }`}
-                      ></div>
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <h5 className="font-semibold text-[rgb(var(--text-primary))] truncate">
-                            {name}
-                          </h5>
-                          {isPinned && (
-                            <Pin className="w-3 h-3 text-green-400 shrink-0" />
-                          )}
-                        </div>
-                      </div>
-                      <p
-                        className={`text-xs mt-1 ${isOnline ? "text-green-500" : "text-[rgb(var(--text-muted))]"}`}
-                      >
-                        {typingUsers[id] ? (
-                          <span className="text-green-400">Typing...</span>
-                        ) : isOnline ? (
-                          <span className="flex items-center gap-1">
-                            <Circle className="w-1.5 h-1.5 fill-green-500" />
-                            Online
-                          </span>
-                        ) : (
-                          "Offline"
-                        )}
-                      </p>
-                    </div>
-
-                    {unreadCount > 0 && (
-                      <div className="w-6 h-6 bg-linear-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-xs font-bold text-black shadow-lg glow-green shrink-0">
-                        {unreadCount > 9 ? "9+" : unreadCount}
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      togglePinChat(id);
-                    }}
-                    className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
-                      isPinned
-                        ? "text-green-400 bg-green-500/20"
-                        : "text-[rgb(var(--text-muted))] hover:bg-[rgb(var(--bg-hover))] hover:text-green-400"
-                    }`}
-                  >
-                    <Pin className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      {/* Chat Area */}
-      <div className="flex-1 flex flex-col bg-[rgb(var(--bg-primary))]">
-        {selectedUserId ? (
-          <>
-            {/* Chat Header */}
-            <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2 sm:gap-3">
-              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                {/* Back button for chat area */}
-                <button
-                  onClick={() => setSelectedUserId(null)}
-                  className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400"
-                  title="Back"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 sm:hidden"
-                >
-                  <Menu className="w-5 h-5" />
-                </button>
-                <div className="relative shrink-0">
-                  <div className="w-10 sm:w-11 h-10 sm:h-11 rounded-full bg-linear-to-br from-green-500 to-teal-600 flex items-center justify-center text-white font-bold shadow-lg glow-green text-sm sm:text-base">
-                    {getDisplayName(selectedUserId).charAt(0).toUpperCase()}
-                  </div>
-                  <div className={`absolute bottom-0 right-0 w-2.5 sm:w-3 h-2.5 sm:h-3 border-2 border-[rgb(var(--bg-primary))] rounded-full pulse-glow ${
-                    allUsers.find(u => u.userId === selectedUserId)?.online 
-                      ? 'bg-green-400' 
-                      : 'bg-gray-400'
-                  }`}></div>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-semibold text-[rgb(var(--text-primary))] text-base sm:text-lg truncate">
-                    {getDisplayName(selectedUserId)}
-                  </h3>
-                  <p className="text-xs text-green-400 font-medium">
-                    {typingUsers[selectedUserId] 
-                      ? "Typing..." 
-                      : allUsers.find(u => u.userId === selectedUserId)?.online
-                      ? "Active Now"
-                      : "Offline"}
-                  </p>
-                </div>
+            {loadingFriends ? (
+              <div className="flex items-center justify-center p-8 sm:p-12">
+                <Loader className="w-8 h-8 text-green-400 animate-spin" />
               </div>
-              <button className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 shrink-0">
-                <MoreVertical className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 custom-scrollbar">
-              {loading ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-3"></div>
-                    <p className="text-sm text-[rgb(var(--text-muted))]">Loading messages...</p>
-                  </div>
-                </div>
-              ) : currentChatMessages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-[rgb(var(--text-muted))]">
-                  <div className="w-24 h-24 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-6 shadow-lg">
-                    <MessageCircle className="w-12 h-12 text-green-500/50" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">Start Conversation</h3>
-                  <p className="text-[rgb(var(--text-muted))] text-center max-w-md">
-                    Send a message to {getDisplayName(selectedUserId)}!
-                  </p>
-                </div>
-              ) : (
-                currentChatMessages.map((m, index) => {
-                  const isOwn = m.fromUserId === currentUserId;
-                  const showAvatar =
-                    index === 0 ||
-                    currentChatMessages[index - 1].fromUserId !== m.fromUserId;
+            ) : filteredUsers.length === 0 ? (
+              <div className="p-6 sm:p-8 text-center text-[rgb(var(--text-muted))]">
+                <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-30 flex-shrink-0" />
+                <p className="text-xs sm:text-sm">
+                  {allUsers.length === 0 
+                    ? "No friends yet" 
+                    : "No friends found"}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1 p-2 sm:p-3">
+                {filteredUsers.map((user) => {
+                  const id = user.userId;
+                  const name = user.name;
+                  const isPinned = pinnedChats.includes(id);
+                  const unreadCount = unreadCounts[id] || 0;
+                  const isOnline = user.online;
 
                   return (
                     <div
-                      key={`${m._id}-${index}`}
-                      className={`flex gap-3 ${isOwn ? "flex-row-reverse" : "flex-row"} group animate-in fade-in slide-in-from-bottom-2 duration-300`}
+                      key={id}
+                      onClick={() => {
+                        setSelectedUserId(id);
+                        // ✅ FIXED: Only close sidebar on mobile (< sm breakpoint)
+                        if (window.innerWidth < 640) {
+                          setSidebarOpen(false);
+                        }
+                      }}
+                      className={`group relative p-2 sm:p-3 rounded-lg sm:rounded-xl cursor-pointer transition-all ${
+                        selectedUserId === id
+                          ? "bg-linear-to-r from-green-600/20 to-emerald-600/20 border border-green-500/30 shadow-lg glow-green"
+                          : "hover:bg-[rgb(var(--bg-hover))]/50"
+                      }`}
                     >
-                      {showAvatar ? (
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg shrink-0 ${
-                            isOwn
-                              ? "bg-linear-to-br from-blue-500 to-purple-600"
-                              : "bg-linear-to-br from-green-500 to-teal-600 glow-green"
-                          }`}
-                        >
-                          {(isOwn ? currentUserName : m.fromUserName)
-                            .charAt(0)
-                            .toUpperCase()}
-                        </div>
-                      ) : (
-                        <div className="w-8 shrink-0"></div>
-                      )}
-
-                      {/* Message Container with Delete Button Below */}
-                      <div
-                        className={`flex flex-col ${isOwn ? "items-end" : "items-start"} max-w-[70%]`}
-                      >
-                        {/* Message Box */}
-                        <div
-                          className={`px-4 py-2.5 rounded-2xl shadow-lg transition-all group/message hover:shadow-xl ${
-                            isOwn
-                              ? "bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm"
-                              : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-primary))] rounded-tl-sm border border-[rgb(var(--border-secondary))]"
-                          }`}
-                        >
-                          <p
-                            className="wrap-break-word leading-relaxed"
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        {/* Avatar */}
+                        <div className="relative shrink-0">
+                          <div
+                            className={`w-10 sm:w-12 h-10 sm:h-12 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base shadow-lg ${
+                              isOnline
+                                ? "bg-linear-to-br from-green-500 to-teal-600"
+                                : "bg-linear-to-br from-gray-500 to-gray-600"
+                            }`}
                           >
-                            {m.message}
+                            {name.charAt(0).toUpperCase()}
+                          </div>
+                          <div
+                            className={`absolute bottom-0 right-0 w-2.5 sm:w-3 h-2.5 sm:h-3 border-2 border-[rgb(var(--bg-secondary))] rounded-full ${
+                              isOnline ? "bg-green-400 pulse-glow" : "bg-gray-400"
+                            }`}
+                          ></div>
+                        </div>
+
+                        {/* User Info */}
+                        <div className="flex-1 min-w-0 flex-col">
+                          <div className="flex items-center justify-between gap-1">
+                            <h5 className="font-semibold text-xs sm:text-sm text-[rgb(var(--text-primary))] truncate">
+                              {name}
+                            </h5>
+                            {isPinned && (
+                              <Pin className="w-3 h-3 text-green-400 shrink-0" />
+                            )}
+                          </div>
+                          <p
+                            className={`text-xs mt-0.5 ${
+                              isOnline ? "text-green-500" : "text-[rgb(var(--text-muted))]"
+                            }`}
+                          >
+                            {typingUsers[id] ? (
+                              <span className="text-green-400">Typing...</span>
+                            ) : isOnline ? (
+                              <span className="flex items-center gap-1">
+                                <Circle className="w-1 h-1 fill-green-500" />
+                                Online
+                              </span>
+                            ) : (
+                              "Offline"
+                            )}
                           </p>
                         </div>
 
-                        {/* Time, Ticks, and Delete Button Row */}
-                        <div
-                          className={`flex items-center gap-2 mt-1.5 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
-                        >
-                          <span className="text-xs text-[rgb(var(--text-muted))] font-medium">
-                            {formatTime(m.time)}
-                          </span>
-                          
-                          {isOwn && (
-                            <>
-                              {m.sending ? (
-                                <Check className="w-3.5 h-3.5 text-gray-400" />
-                              ) : m.read ? (
-                                <CheckCheck className="w-3.5 h-3.5 text-blue-400" />
-                              ) : (
-                                <CheckCheck className="w-3.5 h-3.5 text-gray-400" />
-                              )}
-                            </>
-                          )}
-
-                          {isOwn && (
-                            <button
-                              onClick={() => handleDeleteMessage(m._id)}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1.5 hover:bg-red-500/20 rounded-lg text-red-400 hover:text-red-300 ml-1"
-                              title="Delete message"
-                            >
-                              <svg
-                                className="w-4 h-4"
-                                fill="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-9l-1 1H5v2h14V4z" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
+                        {/* Unread Badge */}
+                        {unreadCount > 0 && (
+                          <div className="w-6 h-6 bg-linear-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-xs font-bold text-black shadow-lg glow-green shrink-0">
+                            {unreadCount > 9 ? "9+" : unreadCount}
+                          </div>
+                        )}
                       </div>
+
+                      {/* Pin Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          togglePinChat(id);
+                        }}
+                        className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
+                          isPinned
+                            ? "text-green-400 bg-green-500/20"
+                            : "text-[rgb(var(--text-muted))] hover:bg-[rgb(var(--bg-hover))] hover:text-green-400"
+                        }`}
+                      >
+                        <Pin className="w-3 h-3" />
+                      </button>
                     </div>
                   );
-                })
-              )}
-              <div ref={messagesEndRef} />
-            </div>
+                })}
+              </div>
+            )}
+          </div>
+        </div>
 
-            {/* Input Area */}
-            <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))]">
-              {error && (
-                <div className="mb-3 p-2 sm:p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-xs sm:text-sm">
-                  {error}
+        {/* CHAT AREA */}
+        <div className="flex-1 flex flex-col bg-[rgb(var(--bg-primary))] overflow-hidden min-w-0">
+          {selectedUserId ? (
+            <>
+              {/* Chat Header */}
+              <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2 sm:gap-3 flex-shrink-0">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                  {/* Back Button - FIXED: Only closes chat, NOT sidebar */}
+                  <button
+                    onClick={() => {
+                      setSelectedUserId(null);
+                      // ✅ REMOVED: setSidebarOpen(false) - keep sidebar open!
+                    }}
+                    className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+
+                  {/* Show Sidebar Button on Mobile */}
+                  <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 md:hidden flex-shrink-0"
+                  >
+                    <Menu className="w-5 h-5" />
+                  </button>
+
+                  {/* User Avatar & Info */}
+                  <div className="relative shrink-0">
+                    <div className="w-10 sm:w-11 h-10 sm:h-11 rounded-full bg-linear-to-br from-green-500 to-teal-600 flex items-center justify-center text-white font-bold shadow-lg glow-green text-sm sm:text-base">
+                      {getDisplayName(selectedUserId).charAt(0).toUpperCase()}
+                    </div>
+                    <div
+                      className={`absolute bottom-0 right-0 w-2.5 sm:w-3 h-2.5 sm:h-3 border-2 border-[rgb(var(--bg-secondary))] rounded-full pulse-glow ${
+                        allUsers.find(u => u.userId === selectedUserId)?.online 
+                          ? 'bg-green-400' 
+                          : 'bg-gray-400'
+                      }`}
+                    ></div>
+                  </div>
+
+                  {/* User Name & Status */}
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-sm sm:text-base lg:text-lg text-[rgb(var(--text-primary))] truncate">
+                      {getDisplayName(selectedUserId)}
+                    </h3>
+                    <p className="text-xs text-green-400 font-medium truncate">
+                      {typingUsers[selectedUserId] 
+                        ? "Typing..." 
+                        : allUsers.find(u => u.userId === selectedUserId)?.online
+                        ? "Active Now"
+                        : "Offline"}
+                    </p>
+                  </div>
                 </div>
-              )}
-              <div className="flex items-end gap-2 sm:gap-3">
-                <div className="hidden sm:flex gap-1">
-                  <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400">
-                    <Smile className="w-5 h-5" />
-                  </button>
-                  <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400">
-                    <Paperclip className="w-5 h-5" />
-                  </button>
+
+                {/* More Options Button */}
+                <button className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0">
+                  <MoreVertical className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Messages Area */}
+              <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 custom-scrollbar min-h-0">
+                {loading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-3"></div>
+                      <p className="text-xs sm:text-sm text-[rgb(var(--text-muted))]">Loading messages...</p>
+                    </div>
+                  </div>
+                ) : currentChatMessages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-[rgb(var(--text-muted))]">
+                    <div className="w-20 sm:w-24 h-20 sm:h-24 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-4 sm:mb-6 shadow-lg">
+                      <MessageCircle className="w-10 sm:w-12 h-10 sm:h-12 text-green-500/50" />
+                    </div>
+                    <h3 className="text-lg sm:text-xl font-bold mb-2">Start Conversation</h3>
+                    <p className="text-xs sm:text-sm text-[rgb(var(--text-muted))] text-center max-w-sm px-4">
+                      Send a message to {getDisplayName(selectedUserId)}
+                    </p>
+                  </div>
+                ) : (
+                  currentChatMessages.map((m, index) => {
+                    const isOwn = m.fromUserId === currentUserId;
+                    const showAvatar =
+                      index === 0 ||
+                      currentChatMessages[index - 1].fromUserId !== m.fromUserId;
+
+                    return (
+                      <div
+                        key={`${m._id}-${index}`}
+                        className={`flex gap-2 sm:gap-3 ${isOwn ? "flex-row-reverse" : "flex-row"} group animate-in fade-in slide-in-from-bottom-2 duration-300`}
+                      >
+                        {showAvatar ? (
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg shrink-0 ${
+                              isOwn
+                                ? "bg-linear-to-br from-blue-500 to-purple-600"
+                                : "bg-linear-to-br from-green-500 to-teal-600 glow-green"
+                            }`}
+                          >
+                            {(isOwn ? currentUserName : m.fromUserName)
+                              .charAt(0)
+                              .toUpperCase()}
+                          </div>
+                        ) : (
+                          <div className="w-8 shrink-0"></div>
+                        )}
+
+                        {/* Message Bubble */}
+                        <div
+                          className={`flex flex-col ${isOwn ? "items-end" : "items-start"} max-w-xs sm:max-w-sm md:max-w-md`}
+                        >
+                          {/* Message Box */}
+                          <div
+                            className={`px-3 sm:px-4 py-2 rounded-2xl shadow-lg transition-all group/message hover:shadow-xl text-xs sm:text-sm leading-relaxed break-words ${
+                              isOwn
+                                ? "bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm"
+                                : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-primary))] rounded-tl-sm border border-[rgb(var(--border-secondary))]"
+                            }`}
+                          >
+                            {m.message}
+                          </div>
+
+                          {/* Time, Status & Delete Button */}
+                          <div
+                            className={`flex items-center gap-1.5 sm:gap-2 mt-1 px-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
+                          >
+                            <span className="text-xs text-[rgb(var(--text-muted))] font-medium">
+                              {formatTime(m.time)}
+                            </span>
+                            
+                            {isOwn && (
+                              <>
+                                {m.sending ? (
+                                  <Check className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                ) : m.read ? (
+                                  <CheckCheck className="w-3 h-3 text-blue-400 flex-shrink-0" />
+                                ) : (
+                                  <CheckCheck className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                )}
+                              </>
+                            )}
+
+                            {isOwn && (
+                              <button
+                                onClick={() => handleDeleteMessage(m._id)}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 hover:bg-red-500/20 rounded-md text-red-400 hover:text-red-300 flex-shrink-0"
+                                title="Delete"
+                              >
+                                <svg
+                                  className="w-3 h-3"
+                                  fill="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-9l-1 1H5v2h14V4z" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input Area */}
+              <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))] flex-shrink-0">
+                {error && (
+                  <div className="mb-2 sm:mb-3 p-2 sm:p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-xs">
+                    {error}
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                  {/* Hidden on mobile, visible on sm+ */}
+                  <div className="hidden sm:flex gap-1">
+                    <button className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0">
+                      <Smile className="w-5 h-5" />
+                    </button>
+                    <button className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0">
+                      <Paperclip className="w-5 h-5" />
+                    </button>
+                  </div>
                   <input
                     ref={fileInputRef}
                     type="file"
                     className="hidden"
                     accept="image/*"
                   />
-                </div>
 
-                <div className="flex-1 glass-effect rounded-2xl border border-[rgb(var(--border-secondary))] focus-within:border-green-500/50 focus-within:ring-2 focus-within:ring-green-500/20 transition-all">
-                  <textarea
-                    ref={messageInputRef}
-                    value={messageInput}
-                    onChange={(e) => {
-                      setMessageInput(e.target.value);
-                      handleChatTyping(e.target.value.length > 0);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                        handleChatTyping(false);
-                      }
-                    }}
-                    onBlur={() => handleChatTyping(false)}
-                    placeholder="Type a message..."
-                    rows={1}
-                    className="w-full px-4 py-3 bg-transparent text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))] resize-none focus:outline-none max-h-32 custom-scrollbar"
-                    style={{ minHeight: "48px" }}
-                  />
-                </div>
+                  {/* Message Input */}
+                  <div className="flex-1 glass-effect rounded-2xl border border-[rgb(var(--border-secondary))] focus-within:border-green-500/50 focus-within:ring-2 focus-within:ring-green-500/20 transition-all min-w-0">
+                    <textarea
+                      ref={messageInputRef}
+                      value={messageInput}
+                      onChange={(e) => {
+                        setMessageInput(e.target.value);
+                        handleChatTyping(e.target.value.length > 0);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendMessage();
+                          handleChatTyping(false);
+                        }
+                      }}
+                      onBlur={() => handleChatTyping(false)}
+                      placeholder="Type a message..."
+                      rows={1}
+                      className="w-full px-3 sm:px-4 py-2 sm:py-3 bg-transparent text-xs sm:text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))] resize-none focus:outline-none max-h-32 custom-scrollbar"
+                      style={{ minHeight: "44px" }}
+                    />
+                  </div>
 
-                <button
-                  onClick={() => {
-                    handleSendMessage();
-                    handleChatTyping(false);
-                  }}
-                  disabled={!messageInput.trim()}
-                  className={`p-2 sm:p-3 rounded-xl transition-all shadow-lg shrink-0 ${
-                    messageInput.trim()
-                      ? "bg-linear-to-br from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-black glow-green"
-                      : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-muted))] cursor-not-allowed"
-                  }`}
-                >
-                  <Send className="w-4 sm:w-5 h-4 sm:h-5" />
-                </button>
+                  {/* Send Button */}
+                  <button
+                    onClick={() => {
+                      handleSendMessage();
+                      handleChatTyping(false);
+                    }}
+                    disabled={!messageInput.trim()}
+                    className={`p-2 sm:p-3 rounded-lg transition-all shadow-lg flex-shrink-0 ${
+                      messageInput.trim()
+                        ? "bg-linear-to-br from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-white glow-green"
+                        : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-muted))] cursor-not-allowed"
+                    }`}
+                  >
+                    <Send className="w-4 sm:w-5 h-4 sm:h-5" />
+                  </button>
+                </div>
               </div>
+            </>
+          ) : (
+            /* Empty State */
+            <div className="flex-1 flex flex-col items-center justify-center text-[rgb(var(--text-muted))] p-4 sm:p-6">
+              <div className="w-24 sm:w-32 h-24 sm:h-32 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-4 sm:mb-6 shadow-2xl">
+                <MessageCircle className="w-12 sm:w-16 h-12 sm:h-16 text-green-500/50" />
+              </div>
+              <h3 className="text-xl sm:text-2xl md:text-3xl font-bold mb-2 sm:mb-3 gradient-text text-center">
+                Welcome to Pandav Chat
+              </h3>
+              <p className="text-xs sm:text-sm text-[rgb(var(--text-muted))] text-center max-w-sm">
+                Select a friend from the sidebar
+              </p>
             </div>
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-[rgb(var(--text-muted))] p-4">
-            <div className="w-24 sm:w-32 h-24 sm:h-32 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-4 sm:mb-6 shadow-2xl">
-              <MessageCircle className="w-12 sm:w-16 h-12 sm:h-16 text-green-500/50" />
-            </div>
-            <h3 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-3 gradient-text text-center">
-              Welcome to Pandav Chat
-            </h3>
-            <p className="text-[rgb(var(--text-muted))] text-center text-sm sm:text-base max-w-md">
-              Select a friend from the sidebar or add a new friend using the + button
-            </p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </>
   );

@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useEffect, useState, useRef } from 'react'
 import axios from 'axios'
 import groupService from '@services/group.service.js'
-// import messageService from '@services/message.service.js'
 import { SOCKET_EVENTS } from '@constants/socketEvents.js'
 import { connectSocket, getSocket } from '@socket/socketClient.js'
 import {
@@ -19,7 +18,7 @@ import {
   Loader,
   Trash2,
   AlertTriangle,
-  LogOut, UserPlus, MoreVertical
+  LogOut, UserPlus, MoreVertical, Menu
 } from 'lucide-react'
 import friendAPI from '@api/friend.api.js'
 
@@ -60,9 +59,10 @@ export default function GroupChat({
   const [messageReadStatus, setMessageReadStatus] = useState({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingGroup, setDeletingGroup] = useState(false);
-  const [onlineCount, setOnlineCount] = useState(0); // ✅ ADD THIS
-  const [lastMessages, setLastMessages] = useState({}); // ✅ ADD THIS
-  const [groupOnlineMembers, setGroupOnlineMembers] = useState([]); // ✅ ADD NEW STATE FOR ONLINE MEMBERS
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [lastMessages, setLastMessages] = useState({});
+  const [groupOnlineMembers, setGroupOnlineMembers] = useState([]);
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false); // ✅ ADD FOR MOBILE
 
   const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -100,7 +100,6 @@ export default function GroupChat({
       },
     }));
 
-    // Update messages array
     setMessages((prev) =>
       prev.map((msg) =>
         msg._id === messageId 
@@ -111,18 +110,16 @@ export default function GroupChat({
   }, []);
 
   // ═══════════════════════════════════════════════════════════════════
-  // HELPER FUNCTION: Render message with ticks
+  // HELPER FUNCTION: Render message with ticks (RESPONSIVE)
   // ═══════════════════════════════════════════════════════════════════
   const renderMessage = useCallback((msg, index) => {
     const isOwnMessage = msg.fromUserId === currentUserId;
   
-    // ✅ PRIORITY: Use messageReadStatus first, fallback to msg.readBy
     const readStatus = messageReadStatus[msg._id] || (msg.readBy?.length > 0 ? {
       readBy: msg.readBy,
       readCount: msg.readBy.length,
     } : null);
   
-    // Check if all members (except sender) have read the message
     const totalOtherMembers = members.filter(m => {
       const memberId = m._id || m.userId;
       const msgSenderId = msg.fromUserId;
@@ -135,17 +132,17 @@ export default function GroupChat({
     return (
       <div
         key={`${msg._id}-${index}`}
-        className={`flex gap-3 ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'} mb-4 group`}
+        className={`flex gap-2 sm:gap-3 ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'} mb-3 sm:mb-4 group`}
       >
         {/* Avatar - Only show for other users' messages */}
         {!isOwnMessage && (
-          <div className="w-8 h-8 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1">
             {msg.fromUserName?.charAt(0).toUpperCase() || '?'}
           </div>
         )}
 
         {/* Message Container */}
-        <div className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'} max-w-xs`}>
+        <div className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'} max-w-xs sm:max-w-md`}>
           {/* Sender Name - Only for other users */}
           {!isOwnMessage && (
             <p className="text-xs text-gray-400 mb-1 font-semibold px-3">
@@ -155,36 +152,32 @@ export default function GroupChat({
 
           {/* Message Box */}
           <div
-            className={`px-4 py-2.5 rounded-2xl shadow-lg ${
+            className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl shadow-lg text-sm sm:text-base ${
               isOwnMessage
                 ? 'bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm'
                 : 'bg-gray-700 text-gray-100 rounded-tl-sm'
             }`}
           >
-            <p className="text-sm leading-relaxed">{msg.message}</p>
+            <p className="leading-relaxed break-words">{msg.message}</p>
           </div>
 
           {/* Time & Read Status Row */}
-          <div className={`flex items-center gap-2 mt-1 px-3 ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
-            <span className="text-xs text-gray-500">{formatTime(msg.time)}</span>
+          <div className={`flex items-center gap-1 sm:gap-2 mt-1 px-3 text-xs sm:text-sm ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
+            <span className="text-gray-500">{formatTime(msg.time)}</span>
 
             {/* TICKS - Only show for own messages */}
             {isOwnMessage && (
               <div className="flex items-center gap-1">
                 {!readStatus ? (
-                  // ✅ SINGLE TICK - Message sent but not read
-                  <span className="text-gray-400 text-sm font-bold">✓</span>
+                  <span className="text-gray-400 font-bold">✓</span>
                 ) : isReadByAll ? (
-                  // ✅ DOUBLE BLUE TICK - Read by ALL members
-                  <span className="text-blue-400 text-sm font-bold">✓✓</span>
+                  <span className="text-blue-400 font-bold">✓✓</span>
                 ) : (
-                  // ✅ DOUBLE GRAY TICK - Read by some members
-                  <span className="text-gray-400 text-sm font-bold">✓✓</span>
+                  <span className="text-gray-400 font-bold">✓✓</span>
                 )}
 
-                {/* Show read count badge */}
                 {readStatus && readCount > 0 && (
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                  <span className={`text-xs font-bold px-1.5 sm:px-2 py-0.5 rounded-full hidden sm:inline-block ${
                     isReadByAll 
                       ? 'bg-blue-500/20 text-blue-400' 
                       : 'bg-gray-600/20 text-gray-400'
@@ -196,9 +189,9 @@ export default function GroupChat({
             )}
           </div>
 
-          {/* Show who read it - Visible on hover */}
+          {/* Show who read it - Visible on hover (RESPONSIVE) */}
           {isOwnMessage && readStatus && readStatus.readBy?.length > 0 && (
-            <div className="mt-2 text-xs text-gray-400 bg-gray-800/70 px-3 py-2 rounded-lg hidden group-hover:block whitespace-nowrap max-w-xs">
+            <div className="mt-2 text-xs text-gray-400 bg-gray-800/70 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg hidden group-hover:block whitespace-nowrap max-w-xs">
               {readStatus.readBy.length === 1 ? (
                 <p>✓ Read by {readStatus.readBy[0].userName}</p>
               ) : readStatus.readBy.length === 2 ? (
@@ -224,7 +217,6 @@ export default function GroupChat({
   // MEMOIZED VALUES (SECOND)
   // ═══════════════════════════════════════════════════════════════════
 
-  // ✅ SAFE SELECTED GROUP MEMOIZED GETTER
   const safeSelectedGroup = useMemo(() => {
     if (!selectedGroup || !selectedGroup.id) return null;
     return {
@@ -233,7 +225,6 @@ export default function GroupChat({
     };
   }, [selectedGroup]);
 
-  // ✅ SAFE FILTERED GROUPS WITH VALIDATION
   const filteredGroups = useMemo(() => {
     const safeGroups = Array.isArray(groups) ? groups : [];
     
@@ -261,7 +252,6 @@ export default function GroupChat({
   // CALLBACK FUNCTIONS (THIRD - BEFORE useEffect)
   // ═══════════════════════════════════════════════════════════════════
 
-  // ✅ FIX: Define fetchAllGroups BEFORE using it in useEffect
   const fetchAllGroups = useCallback(async () => {
     if (!token) {
       console.warn('⚠️ No token available');
@@ -310,11 +300,11 @@ export default function GroupChat({
     }
   }, [token]);
 
-  // ✅ FIX: Now handleSelectGroup is actually used
   const handleSelectGroup = useCallback(async (group) => {
     setSelectedGroup(group);
     setMembers([]); 
-    setMessageReadStatus({}); // Reset first
+    setMessageReadStatus({});
+    setSidebarOpen(false); // ✅ CLOSE SIDEBAR ON MOBILE
   
     try {
       setLoading(true);
@@ -322,7 +312,7 @@ export default function GroupChat({
       
       const groupMembers = groupDetails.members || groupDetails.participants || [];
       setMembers(groupMembers);
-      setOnlineCount(groupMembers.length); // ✅ Set online count
+      setOnlineCount(groupMembers.length);
       
       console.log('✅ Group members loaded:', groupMembers.length);
     } catch (err) {
@@ -354,7 +344,6 @@ export default function GroupChat({
         }));
         setMessages(formattedMessages);
 
-        // ✅ CRITICAL: Initialize readStatus from fetched messages
         const initialReadStatus = {};
         formattedMessages.forEach((msg) => {
           if (msg.readBy && msg.readBy.length > 0) {
@@ -369,7 +358,6 @@ export default function GroupChat({
 
         console.log('✅ Messages loaded with read status:', Object.keys(initialReadStatus).length);
         
-        // ✅ SET LAST MESSAGE FOR THIS GROUP
         if (formattedMessages.length > 0) {
           const lastMsg = formattedMessages[formattedMessages.length - 1];
           setLastMessages((prev) => ({
@@ -399,7 +387,7 @@ export default function GroupChat({
     }));
     
     messageInputRef.current?.focus();
-  }, [token]);
+  }, [token, setSidebarOpen]);
 
   const handleSendMessage = useCallback(async () => {
     const socket = getSocket();
@@ -592,7 +580,7 @@ export default function GroupChat({
 
       const updatedMembers = (updatedGroup.members || updatedGroup.participants || []);
       setMembers(updatedMembers);
-      setOnlineCount(updatedMembers.length); // ✅ Update online count
+      setOnlineCount(updatedMembers.length);
       
       setGroups((prev) =>
         prev.map((g) =>
@@ -648,8 +636,6 @@ export default function GroupChat({
     }
   }, [token]);
 
-  // In the create group modal's member list section:
-  // Instead of fetching all users, fetch only friends
   useEffect(() => {
     const fetchFriendsForGroup = async () => {
       try {
@@ -666,16 +652,14 @@ export default function GroupChat({
   }, [showCreateGroupModal, token]);
 
   // ═══════════════════════════════════════════════════════════════════
-  // EFFECTS (FOURTH - NOW fetchAllGroups is defined)
+  // EFFECTS (FOURTH)
   // ═══════════════════════════════════════════════════════════════════
 
-  // ✅ FIX: Fetch groups on component mount
   useEffect(() => {
     console.log('🔄 GroupChat mounted - fetching groups...');
     fetchAllGroups();
   }, [token, fetchAllGroups]);
 
-  // ✅ Connect socket when component mounts
   useEffect(() => {
     if (!token) {
       console.warn('⚠️ No token available for socket');
@@ -691,7 +675,6 @@ export default function GroupChat({
       url: socket?.io?.uri
     });
 
-    // ✅ Listen for connection events
     socket.on('connect', () => {
       console.log('✅ Socket connected successfully');
     });
@@ -705,11 +688,10 @@ export default function GroupChat({
     });
 
     return () => {
-      // Don't disconnect on unmount - keep connection alive
+      // Don't disconnect on unmount
     };
   }, [token])
 
-  // ✅ Listen for group messages using SOCKET_EVENTS
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
@@ -733,13 +715,12 @@ export default function GroupChat({
           time: data.createdAt || new Date().toISOString(),
           pending: false,
           read: false,
-          readBy: data.readBy || [], // ✅ Include readBy from socket
+          readBy: data.readBy || [],
         };
 
         console.log('✅ Adding message:', newMsg._id);
         setMessages((prev) => [...prev, newMsg]);
         
-        // ✅ Update last message
         setLastMessages((prev) => ({
           ...prev,
           [data.groupId]: {
@@ -760,7 +741,6 @@ export default function GroupChat({
     };
   }, [selectedGroup?.id]);
 
-  // ✅ Listen for read receipts
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
@@ -768,7 +748,6 @@ export default function GroupChat({
     socket.on('message_read', (data) => {
       console.log('📖 Message read receipt:', data);
       
-      // ✅ FIXED: Call handleMessageRead with correct data
       if (data.messageId && data.readBy) {
         handleMessageRead(data.messageId, data.readBy);
       }
@@ -779,7 +758,6 @@ export default function GroupChat({
     };
   }, [handleMessageRead]);
 
-  // ✅ Emit read receipts when viewing messages
   useEffect(() => {
     if (!selectedGroup?._id && !selectedGroup?.id) return;
     if (messages.length === 0) return;
@@ -787,16 +765,13 @@ export default function GroupChat({
     const socket = getSocket();
     if (!socket?.connected) return;
 
-    // ✅ CRITICAL: Only emit read receipts for messages user can actually see
     const timer = setTimeout(() => {
       messages.forEach((msg) => {
-        // ✅ CRITICAL: Skip if sender is current user
         if (msg.fromUserId === currentUserId) {
           console.log(`⏭️  Skipping own message: ${msg._id}`);
-          return;  // Don't mark own messages as read
+          return;
         }
 
-        // ✅ Only emit read receipt for messages not already read by this user
         const alreadyRead = msg.readBy?.some(
           (r) => r.userId === currentUserId || r.userId?._id === currentUserId
         );
@@ -809,69 +784,64 @@ export default function GroupChat({
           });
         }
       });
-    }, 500);  // Small delay to ensure UI is rendered
+    }, 500);
 
     return () => clearTimeout(timer);
   }, [messages, selectedGroup?._id, selectedGroup?.id, currentUserId]);
 
-  // ✅ Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // ✅ Fetch available users when create modal opens
   useEffect(() => {
     if (token && showCreateGroupModal) {
       fetchAvailableUsers();
     }
   }, [token, showCreateGroupModal, fetchAvailableUsers]);
 
-  // ✅ ADD THIS EFFECT: Listen for online members updates
-useEffect(() => {
-  if (!selectedGroup?.id && !selectedGroup?._id) return;
-  
-  const socket = getSocket();
-  if (!socket?.connected) return;
-
-  console.log("📡 [LISTEN] Setting up group_online_members listener");
-
-  const handleGroupOnlineMembers = (data) => {
-    console.log(`🟢 [ONLINE] Group ${data.groupId} has ${data.onlineCount}/${data.totalMembers} members online:`, 
-      data.onlineMembers.map(u => u.name).join(', ')
-    );
+  useEffect(() => {
+    if (!selectedGroup?.id && !selectedGroup?._id) return;
     
-    setGroupOnlineMembers(data.onlineMembers || []);
-    setOnlineCount(data.onlineCount || 0);
-  };
+    const socket = getSocket();
+    if (!socket?.connected) return;
 
-  socket.on('group_online_members', handleGroupOnlineMembers);
+    console.log("📡 [LISTEN] Setting up group_online_members listener");
 
-  return () => {
-    socket.off('group_online_members', handleGroupOnlineMembers);
-  };
-}, [selectedGroup?.id, selectedGroup?._id]);
+    const handleGroupOnlineMembers = (data) => {
+      console.log(`🟢 [ONLINE] Group ${data.groupId} has ${data.onlineCount}/${data.totalMembers} members online:`, 
+        data.onlineMembers.map(u => u.name).join(', ')
+      );
+      
+      setGroupOnlineMembers(data.onlineMembers || []);
+      setOnlineCount(data.onlineCount || 0);
+    };
 
-// ✅ LISTEN FOR USER JOIN EVENTS
-useEffect(() => {
-  const socket = getSocket();
-  if (!socket?.connected) return;
+    socket.on('group_online_members', handleGroupOnlineMembers);
 
-  socket.on('user_joined_group', (data) => {
-    console.log('👤 User joined group:', data.userName);
-    setOnlineCount(data.onlineCount || 0);
-  });
+    return () => {
+      socket.off('group_online_members', handleGroupOnlineMembers);
+    };
+  }, [selectedGroup?.id, selectedGroup?._id]);
 
-  socket.on('user_left_group', (data) => {
-    console.log('👤 User left group:', data.userName);
-  });
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket?.connected) return;
 
-  return () => {
-    socket.off('user_joined_group');
-    socket.off('user_left_group');
-  };
-}, []);
+    socket.on('user_joined_group', (data) => {
+      console.log('👤 User joined group:', data.userName);
+      setOnlineCount(data.onlineCount || 0);
+    });
 
-  // ✅ ADD: Leave Group Handler
+    socket.on('user_left_group', (data) => {
+      console.log('👤 User left group:', data.userName);
+    });
+
+    return () => {
+      socket.off('user_joined_group');
+      socket.off('user_left_group');
+    };
+  }, []);
+
   const handleLeaveGroup = async () => {
     if (!selectedGroup?._id && !selectedGroup?.id) {
       setError("No group selected");
@@ -896,31 +866,25 @@ useEffect(() => {
       if (response.success) {
         console.log("✅ [LEAVE GROUP] Successfully left group");
 
-        // ✅ Remove group from list
         setGroups((prevGroups) =>
           prevGroups.filter((g) => (g._id || g.id) !== groupId)
         );
 
-        // ✅ Clear selected group
         setSelectedGroup(null);
         setMessages([]);
         setMembers([]);
 
-        // ✅ Clear unread count
         setUnreadCounts((prev) => {
           const updated = { ...prev };
           delete updated[groupId];
           return updated;
         });
 
-        // ✅ Remove from pinned
         setPinnedGroups((prev) => prev.filter((id) => id !== groupId));
 
-        // ✅ Show success message
         setError(null);
         alert(`✅ You have left the group "${selectedGroup.name}"`);
 
-        // ✅ Refetch groups from backend
         setTimeout(() => {
           console.log("📡 Refetching groups...");
           fetchAllGroups();
@@ -939,88 +903,88 @@ useEffect(() => {
 
   return (
     <>
-      {/* Groups Sidebar */}
+      {/* ✅ RESPONSIVE GROUPS SIDEBAR */}
       <div
-        className={`${sidebarOpen ? "w-full  sm:w-72 md:w-80" : "w-0"} bg-[rgb(var(--bg-secondary))] sm:glass-effect border-r border-[rgb(var(--border-secondary))] flex flex-col transition-all duration-300 overflow-hidden absolute sm:relative sm:z-0 z-40 h-full sm:h-auto`}
+        className={`${sidebarOpen ? "w-full sm:w-72 md:w-80" : "w-0"} bg-[rgb(var(--bg-secondary))] sm:glass-effect border-r border-[rgb(var(--border-secondary))] flex flex-col transition-all duration-300 overflow-hidden absolute sm:relative sm:z-0 z-40 h-full sm:h-auto`}
       >
-        {/* Header */}
-        <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between">
-          <h2 className="text-lg sm:text-xl font-bold text-gray-300">Groups</h2>
-          <div className="flex items-center gap-2">
+        {/* Header - RESPONSIVE */}
+        <div className="p-2 sm:p-4 bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between flex-shrink-0">
+          <h2 className="text-base sm:text-lg lg:text-xl font-bold text-gray-300 truncate">📱 Groups</h2>
+          <div className="flex items-center gap-1 sm:gap-2">
             <button
               onClick={() => setShowCreateGroupModal(true)}
               className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400"
               title="Create Group"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             <button
               onClick={() => setSidebarOpen(false)}
               className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400 sm:hidden"
             >
-              <ChevronLeft className="w-5 h-5" />
+              <ChevronLeft className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="p-4 space-y-4">
+        {/* Search Bar - RESPONSIVE */}
+        <div className="p-2 sm:p-4 flex-shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search groups..."
+              placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all"
+              className="w-full pl-9 pr-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-sm text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all"
             />
           </div>
         </div>
 
-        {/* Groups List */}
+        {/* Groups List - RESPONSIVE */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
-          <div className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2 px-4">
-            <Users className="w-4 h-4" />
-            Groups ({filteredGroups.length})
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2 px-3 sm:px-4 py-2 flex-shrink-0">
+            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Groups</span> ({filteredGroups.length})
           </div>
 
           {filteredGroups.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
-              <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">No groups found</p>
+            <div className="p-4 sm:p-8 text-center text-gray-500">
+              <Users className="w-8 h-8 sm:w-12 sm:h-12 mx-auto mb-2 sm:mb-3 opacity-30" />
+              <p className="text-xs sm:text-sm">No groups</p>
             </div>
           ) : (
             filteredGroups.map((group) => {
               if (!group || !group.id) {
                 console.warn('⚠️ Invalid group in list:', group);
-                return null;  // Skip invalid groups
+                return null;
               }
               
               const id = group.id;
               const isPinned = pinnedGroups.includes(id);
               const unreadCount = unreadCounts[id] || 0;
-              const lastMsg = lastMessages[id]; // ✅ FIX: Use lastMessages state
+              const lastMsg = lastMessages[id];
 
               return (
                 <div
                   key={id}
                   onClick={() => handleSelectGroup(group)}
-                  className={`group relative p-3 mx-2 mb-1 rounded-xl cursor-pointer transition-all ${
+                  className={`group relative p-2 sm:p-3 mx-1 sm:mx-2 mb-1 rounded-xl cursor-pointer transition-all ${
                     selectedGroup?.id === id
                       ? "bg-linear-to-r from-green-600/20 to-emerald-600/20 border border-green-500/30 shadow-lg glow-green"
                       : "hover:bg-[rgb(var(--bg-hover))]/50"
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center text-gray-100 font-bold text-lg shadow-lg bg-linear-to-br from-purple-500 to-pink-600 relative">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-lg shadow-lg bg-linear-to-br from-purple-500 to-pink-600 shrink-0 relative">
                       {(group?.name || 'G').charAt(0).toUpperCase()}
-                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-[rgb(var(--bg-secondary))]"></div>
+                      <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-[rgb(var(--bg-secondary))]"></div>
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <h5 className="font-semibold text-gray-600 truncate">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <h5 className="font-semibold text-gray-300 text-sm sm:text-base truncate">
                             {group.name}
                           </h5>
                           {isPinned && (
@@ -1029,20 +993,20 @@ useEffect(() => {
                         </div>
                       </div>
                       
-                      {/* Last Message Preview */}
+                      {/* Last Message Preview - RESPONSIVE */}
                       {lastMsg ? (
-                        <p className="text-xs text-gray-400 truncate mt-1">
+                        <p className="text-xs text-gray-400 truncate mt-0.5 sm:mt-1">
                           <span className="font-medium text-green-400">{lastMsg.userName}:</span> {lastMsg.message}
                         </p>
                       ) : (
-                        <p className="text-xs text-gray-500 mt-1">
-                          👥 {group.membersCount} members online
+                        <p className="text-xs text-gray-500 mt-0.5 sm:mt-1">
+                          👥 {group.membersCount} members
                         </p>
                       )}
                     </div>
 
                     {unreadCount > 0 && (
-                      <div className="w-6 h-6 bg-linear-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-xs font-bold text-black shadow-lg glow-green shrink-0">
+                      <div className="w-5 h-5 sm:w-6 sm:h-6 bg-linear-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-xs font-bold text-black shadow-lg glow-green shrink-0">
                         {unreadCount > 9 ? "9+" : unreadCount}
                       </div>
                     )}
@@ -1053,13 +1017,13 @@ useEffect(() => {
                       e.stopPropagation();
                       togglePinGroup(id);
                     }}
-                    className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
+                    className={`absolute top-1 sm:top-2 right-1 sm:right-2 p-1 sm:p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
                       isPinned
                         ? "text-green-400 bg-green-500/20"
                         : "text-gray-400 hover:bg-[rgb(var(--bg-hover))] hover:text-green-400"
                     }`}
                   >
-                    <Pin className="w-3.5 h-3.5" />
+                    <Pin className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                   </button>
                 </div>
               );
@@ -1068,110 +1032,125 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* Group Chat Area */}
+      {/* ✅ RESPONSIVE GROUP CHAT AREA */}
       <div className="flex-1 flex flex-col bg-[rgb(var(--bg-primary))]">
         {selectedGroup ? (
           <>
-            {/* Group Header with Options */}
+            {/* ✅ RESPONSIVE GROUP HEADER */}
             {selectedGroup && (
-              <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2 sm:gap-3">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <div className="p-2 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2 sm:gap-3 flex-shrink-0">
+                <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1">
                   {/* Back button */}
                   <button
                     onClick={() => {
                       setSelectedGroup(null);
                       setMessages([]);
                       setMembers([]);
+                      setSidebarOpen(true); // ✅ OPEN SIDEBAR ON MOBILE
                     }}
-                    className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400"
-                    title="Back to groups"
+                    className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-green-400 shrink-0 sm:hidden"
+                    title="Back"
                   >
-                    <ChevronLeft className="w-5 h-5" />
+                    <ChevronLeft className="w-4 h-4" />
                   </button>
 
-                  {/* Group info */}
+                  {/* Group info - RESPONSIVE */}
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-[rgb(var(--text-primary))] text-base sm:text-lg truncate">
+                    <h3 className="font-semibold text-[rgb(var(--text-primary))] text-sm sm:text-base lg:text-lg truncate">
                       {selectedGroup.name}
                     </h3>
-                    {/* ✅ UPDATED: Show actual online count */}
                     <p className={`text-xs font-medium ${onlineCount > 0 ? 'text-green-400' : 'text-gray-500'}`}>
                       {onlineCount > 0 ? (
-                        <>🟢 {onlineCount} online · {members.length} members</>
+                        <>🟢 {onlineCount} · {members.length}</>
                       ) : (
-                        <>🔴 All offline · {members.length} members</>
+                        <>🔴 {members.length}</>
                       )}
                     </p>
                   </div>
                 </div>
 
-                {/* Group Actions Dropdown */}
-                <div className="relative group">
-                  <button className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400">
-                    <MoreVertical className="w-5 h-5" />
+                {/* ✅ RESPONSIVE OPTIONS MENU */}
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowOptionsMenu(!showOptionsMenu)}
+                    className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 shrink-0"
+                  >
+                    <MoreVertical className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
 
-                  {/* Dropdown Menu */}
-                  <div className="absolute right-0 mt-2 w-48 bg-[rgb(var(--bg-secondary))] border border-[rgb(var(--border-secondary))] rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                    {/* Add Member */}
-                    {selectedGroup.adminId === currentUserId && (
+                  {/* Dropdown Menu - RESPONSIVE */}
+                  {showOptionsMenu && (
+                    <div className="absolute right-0 mt-2 w-44 sm:w-48 bg-[rgb(var(--bg-secondary))] border border-[rgb(var(--border-secondary))] rounded-xl shadow-2xl z-50 overflow-hidden">
+                      {/* Add Member */}
+                      {selectedGroup.adminId === currentUserId && (
+                        <button
+                          onClick={() => {
+                            setShowAddMemberModal(true);
+                            setShowOptionsMenu(false);
+                            fetchUsersToAdd();
+                          }}
+                          className="w-full px-3 sm:px-4 py-2 text-left hover:bg-[rgb(var(--bg-hover))] text-xs sm:text-sm text-[rgb(var(--text-primary))] flex items-center gap-2 border-b border-[rgb(var(--border-secondary))]"
+                        >
+                          <UserPlus className="w-4 h-4 shrink-0" />
+                          Add Member
+                        </button>
+                      )}
+
+                      {/* View Members */}
                       <button
                         onClick={() => {
-                          setShowAddMemberModal(true);
-                          fetchUsersToAdd();
+                          setShowMembersPreview(true);
+                          setShowOptionsMenu(false);
                         }}
-                        className="w-full px-4 py-2 text-left hover:bg-[rgb(var(--bg-hover))] text-sm text-[rgb(var(--text-primary))] flex items-center gap-2 border-b border-[rgb(var(--border-secondary))]"
+                        className="w-full px-3 sm:px-4 py-2 text-left hover:bg-[rgb(var(--bg-hover))] text-xs sm:text-sm text-[rgb(var(--text-primary))] flex items-center gap-2 border-b border-[rgb(var(--border-secondary))]"
                       >
-                        <UserPlus className="w-4 h-4" />
-                        Add Member
+                        <Users className="w-4 h-4 shrink-0" />
+                        Members ({members.length})
                       </button>
-                    )}
 
-                    {/* View Members */}
-                    <button
-                      onClick={() => setShowMembersPreview(true)}
-                      className="w-full px-4 py-2 text-left hover:bg-[rgb(var(--bg-hover))] text-sm text-[rgb(var(--text-primary))] flex items-center gap-2 border-b border-[rgb(var(--border-secondary))]"
-                    >
-                      <Users className="w-4 h-4" />
-                      View Members ({members.length})
-                    </button>
-
-                    {/* ✅ LEAVE GROUP BUTTON */}
-                    <button
-                      onClick={() => handleLeaveGroup()}
-                      disabled={loading}
-                      className="w-full px-4 py-2 text-left hover:bg-amber-500/20 text-sm text-amber-400 flex items-center gap-2 border-b border-[rgb(var(--border-secondary))] transition-colors"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      {loading ? "Leaving..." : "Leave Group"}
-                    </button>
-
-                    {/* Delete Group (Admin Only) */}
-                    {selectedGroup.adminId === currentUserId && (
+                      {/* Leave Group */}
                       <button
-                        onClick={() => setShowDeleteConfirm(true)}
-                        className="w-full px-4 py-2 text-left hover:bg-red-500/20 text-sm text-red-400 flex items-center gap-2 transition-colors"
+                        onClick={() => {
+                          handleLeaveGroup();
+                          setShowOptionsMenu(false);
+                        }}
+                        disabled={loading}
+                        className="w-full px-3 sm:px-4 py-2 text-left hover:bg-amber-500/20 text-xs sm:text-sm text-amber-400 flex items-center gap-2 border-b border-[rgb(var(--border-secondary))] transition-colors disabled:opacity-50"
                       >
-                        <Trash2 className="w-4 h-4" />
-                        Delete Group
+                        <LogOut className="w-4 h-4 shrink-0" />
+                        {loading ? "Leaving..." : "Leave"}
                       </button>
-                    )}
-                  </div>
+
+                      {/* Delete Group (Admin Only) */}
+                      {selectedGroup.adminId === currentUserId && (
+                        <button
+                          onClick={() => {
+                            setShowDeleteConfirm(true);
+                            setShowOptionsMenu(false);
+                          }}
+                          className="w-full px-3 sm:px-4 py-2 text-left hover:bg-red-500/20 text-xs sm:text-sm text-red-400 flex items-center gap-2 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4 shrink-0" />
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
-            {/* Members Preview */}
+            {/* ✅ RESPONSIVE MEMBERS PREVIEW */}
             {showMembersPreview && (
-              <div className="p-4 sm:p-6 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-[rgb(var(--bg-tertiary))]/30 border-b-2 border-green-500/20 max-h-72 overflow-y-auto custom-scrollbar">
+              <div className="p-3 sm:p-6 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-[rgb(var(--bg-tertiary))]/30 border-b-2 border-green-500/20 max-h-72 overflow-y-auto custom-scrollbar flex-shrink-0">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4 sticky top-0 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-transparent pb-3 z-10">
+                <div className="flex items-center justify-between mb-3 sm:mb-4 sticky top-0 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-transparent pb-2 sm:pb-3 z-10">
                   <div>
-                    <h4 className="text-base font-bold text-gray-200">
+                    <h4 className="text-sm sm:text-base font-bold text-gray-200">
                       👥 Members
                     </h4>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {members.length} {members.length === 1 ? 'member' : 'members'} in this group
+                    <p className="text-xs text-gray-500 mt-0.5 sm:mt-1">
+                      {members.length} {members.length === 1 ? 'member' : 'members'}
                     </p>
                   </div>
                   <button
@@ -1181,23 +1160,22 @@ useEffect(() => {
                       setSelectedUsersToAdd([]);
                       fetchUsersToAdd();
                     }}
-                    className="px-4 py-2 bg-linear-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg hover:shadow-green-500/50 glow-green"
+                    className="px-3 sm:px-4 py-2 bg-linear-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 shadow-lg hover:shadow-green-500/50 glow-green shrink-0"
                   >
-                    <Plus className="w-4 h-4" />
-                    Add
+                    <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span className="hidden sm:inline">Add</span>
                   </button>
                 </div>
 
-                {/* Members List */}
-                <div className="space-y-2">
+                {/* Members List - RESPONSIVE */}
+                <div className="space-y-1 sm:space-y-2">
                   {members.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <Users className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                      <p className="text-sm">No members yet</p>
+                    <div className="text-center py-6 sm:py-8 text-gray-500">
+                      <Users className="w-8 h-8 sm:w-12 sm:h-12 mx-auto mb-1 sm:mb-2 opacity-30" />
+                      <p className="text-xs sm:text-sm">No members</p>
                     </div>
                   ) : (
                     members.map((member) => {
-                      // ✅ SAFETY CHECK - Skip invalid members
                       if (!member || (!member._id && !member.userId)) {
                         console.warn('⚠️ Invalid member found:', member);
                         return null;
@@ -1209,32 +1187,28 @@ useEffect(() => {
                         u => (u.userId === memberId || u.userId === member._id || u.userId === member.userId)
                       );
 
-                      console.log(`[MEMBER] ${memberName} - Online: ${isOnline}`);
-
                       return (
                         <div
                           key={memberId}
-                          className="flex items-center justify-between gap-3 p-3 bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 rounded-xl border border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30 transition-all group"
+                          className="flex items-center justify-between gap-2 sm:gap-3 p-2 sm:p-3 bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 rounded-xl border border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30 transition-all group"
                         >
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <div className="relative">
-                              <div className="w-10 h-10 rounded-full bg-linear-to-r from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shrink-0 shadow-lg text-sm">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                            <div className="relative shrink-0">
+                              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-linear-to-br from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shadow-lg text-xs sm:text-sm">
                                 {memberName.charAt(0).toUpperCase()}
                               </div>
-                              {/* ✅ SHOW ACTUAL ONLINE STATUS */}
-                              <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-[rgb(var(--bg-secondary))] rounded-full transition-all ${
+                              <div className={`absolute bottom-0 right-0 w-2 h-2 sm:w-3 sm:h-3 border border-[rgb(var(--bg-secondary))] rounded-full transition-all ${
                                 isOnline ? 'bg-green-400 animate-pulse shadow-lg shadow-green-400/50' : 'bg-gray-500'
                               }`}></div>
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium text-gray-300 truncate">
+                              <div className="flex items-center gap-1.5">
+                                <p className="font-medium text-gray-300 text-xs sm:text-sm truncate">
                                   {memberName}
                                 </p>
-                                {/* ✅ SHOW ONLINE BADGE */}
                                 {isOnline && (
-                                  <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-bold whitespace-nowrap animate-pulse">
-                                    ● Online
+                                  <span className="text-xs bg-green-500/20 text-green-400 px-1.5 sm:px-2 py-0.5 rounded-full font-bold whitespace-nowrap animate-pulse hidden sm:inline-block">
+                                    ● On
                                   </span>
                                 )}
                               </div>
@@ -1243,17 +1217,16 @@ useEffect(() => {
                               </p>
                             </div>
                           </div>
-                          {/* ✅ ONLY SHOW REMOVE BUTTON FOR ADMIN */}
                           {selectedGroup?.adminId === currentUserId && memberId !== currentUserId && (
                             <button
                               onClick={() => handleRemoveMember(memberId)}
                               disabled={removeMemberLoading === memberId}
-                              className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 disabled:opacity-50 shrink-0 opacity-0 group-hover:opacity-100"
+                              className="p-1.5 sm:p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 disabled:opacity-50 shrink-0 opacity-0 group-hover:opacity-100"
                             >
                               {removeMemberLoading === memberId ? (
-                                <Loader className="w-4 h-4 animate-spin" />
+                                <Loader className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
                               ) : (
-                                <X className="w-4 h-4" />
+                                <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                               )}
                             </button>
                           )}
@@ -1265,27 +1238,27 @@ useEffect(() => {
               </div>
             )}
 
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 custom-scrollbar">
+            {/* ✅ RESPONSIVE MESSAGES AREA */}
+            <div className="flex-1 overflow-y-auto p-2 sm:p-4 lg:p-6 space-y-2 sm:space-y-4 custom-scrollbar">
               {loading ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-3"></div>
-                    <p className="text-sm text-gray-500">
-                      Loading messages...
+                    <div className="animate-spin rounded-full h-10 h-12 sm:w-12 border-b-2 border-green-500 mx-auto mb-2 sm:mb-3"></div>
+                    <p className="text-xs sm:text-sm text-gray-500">
+                      Loading...
                     </p>
                   </div>
                 </div>
               ) : messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                  <div className="w-24 h-24 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-6 shadow-lg">
-                    <MessageCircle className="w-12 h-12 text-green-500/50" />
+                  <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-3 sm:mb-6 shadow-lg">
+                    <MessageCircle className="w-8 h-8 sm:w-12 sm:h-12 text-green-500/50" />
                   </div>
-                  <h3 className="text-xl font-bold mb-2">
+                  <h3 className="text-sm sm:text-lg font-bold mb-1 sm:mb-2">
                     {safeSelectedGroup.name}
                   </h3>
-                  <p className="text-gray-500 text-center max-w-md">
-                    No messages yet. Start the conversation!
+                  <p className="text-xs sm:text-sm text-gray-500 text-center max-w-xs">
+                    No messages yet. Start!
                   </p>
                 </div>
               ) : (
@@ -1294,14 +1267,15 @@ useEffect(() => {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Area */}
-            <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))]">
+            {/* ✅ RESPONSIVE INPUT AREA */}
+            <div className="p-2 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))] flex-shrink-0">
               {error && (
-                <div className="mb-3 p-2 sm:p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-xs sm:text-sm">
+                <div className="mb-2 sm:mb-3 p-2 sm:p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-xs">
                   {error}
                 </div>
               )}
-              <div className="flex items-end gap-2 sm:gap-3">
+              <div className="flex items-end gap-1.5 sm:gap-3">
+                {/* Emoji & Attachment - HIDDEN ON MOBILE */}
                 <div className="hidden sm:flex gap-1">
                   <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-gray-400 hover:text-green-400">
                     <Smile className="w-5 h-5" />
@@ -1311,6 +1285,7 @@ useEffect(() => {
                   </button>
                 </div>
 
+                {/* Input Box - RESPONSIVE */}
                 <div className="flex-1 glass-effect rounded-2xl border border-[rgb(var(--border-secondary))] focus-within:border-green-500/50 focus-within:ring-2 focus-within:ring-green-500/20 transition-all">
                   <textarea
                     ref={messageInputRef}
@@ -1322,13 +1297,14 @@ useEffect(() => {
                         handleSendMessage();
                       }
                     }}
-                    placeholder="Type a message..."
+                    placeholder="Message..."
                     rows={1}
-                    className="w-full px-4 py-3 bg-transparent text-gray-300 placeholder-gray-500 resize-none focus:outline-none max-h-32 custom-scrollbar"
-                    style={{ minHeight: "48px" }}
+                    className="w-full px-3 sm:px-4 py-2 sm:py-3 bg-transparent text-gray-300 text-sm sm:text-base placeholder-gray-500 resize-none focus:outline-none max-h-32 custom-scrollbar"
+                    style={{ minHeight: "44px" }}
                   />
                 </div>
 
+                {/* Send Button - RESPONSIVE */}
                 <button
                   onClick={handleSendMessage}
                   disabled={!newMessage.trim()}
@@ -1338,33 +1314,34 @@ useEffect(() => {
                       : "bg-[rgb(var(--bg-tertiary))] text-gray-500 cursor-not-allowed"
                   }`}
                 >
-                  <Send className="w-4 sm:w-5 h-4 sm:h-5" />
+                  <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 lg:w-5 lg:h-5" />
                 </button>
               </div>
             </div>
           </>
         ) : (
+          // ✅ RESPONSIVE EMPTY STATE
           <div className="flex-1 flex flex-col items-center justify-center text-gray-500 p-4">
-            <div className="w-24 sm:w-32 h-24 sm:h-32 rounded-full bg-linear-to-br from-purple-500/20 to-pink-600/20 flex items-center justify-center mb-4 sm:mb-6 shadow-2xl">
-              <Users className="w-12 sm:w-16 h-12 sm:h-16 text-purple-500/50" />
+            <div className="w-16 h-16 sm:w-24 sm:h-24 md:w-32 md:h-32 rounded-full bg-linear-to-br from-purple-500/20 to-pink-600/20 flex items-center justify-center mb-3 sm:mb-4 md:mb-6 shadow-2xl">
+              <Users className="w-8 h-8 sm:w-12 sm:h-12 md:w-16 md:h-16 text-purple-500/50" />
             </div>
-            <h3 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-3 gradient-text text-center">
+            <h3 className="text-lg sm:text-2xl md:text-3xl font-bold mb-1 sm:mb-2 md:mb-3 gradient-text text-center">
               Select a Group
             </h3>
-            <p className="text-gray-500 text-center text-sm sm:text-base max-w-md">
-              Choose a group from the sidebar to view and send messages
+            <p className="text-gray-500 text-center text-xs sm:text-sm max-w-xs">
+              Choose from sidebar to chat
             </p>
           </div>
         )}
       </div>
 
-      {/* Create Group Modal */}
+      {/* ✅ CREATE GROUP MODAL - RESPONSIVE */}
       {showCreateGroupModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4">
           <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-[rgb(var(--border-secondary))]">
             {/* Modal Header */}
-            <div className="p-4 sm:p-6 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between sticky top-0 bg-[rgb(var(--bg-secondary))]">
-              <h3 className="text-xl font-bold text-gray-300">Create Group</h3>
+            <div className="p-3 sm:p-6 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between sticky top-0 bg-[rgb(var(--bg-secondary))]">
+              <h3 className="text-base sm:text-xl font-bold text-gray-300">Create Group</h3>
               <button
                 onClick={() => {
                   setShowCreateGroupModal(false);
@@ -1379,45 +1356,45 @@ useEffect(() => {
             </div>
 
             {/* Modal Body */}
-            <div className="p-4 sm:p-6 space-y-4">
+            <div className="p-3 sm:p-6 space-y-4">
               {/* Group Name Input */}
               <div>
-                <label className="text-sm font-semibold text-gray-400 block mb-2">
+                <label className="text-xs sm:text-sm font-semibold text-gray-400 block mb-2">
                   Group Name
                 </label>
                 <input
                   type="text"
-                  placeholder="Enter group name"
+                  placeholder="Enter name"
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
-                  className="w-full px-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent"
                 />
               </div>
 
               {/* User Search */}
               <div>
-                <label className="text-sm font-semibold text-gray-400 block mb-2">
+                <label className="text-xs sm:text-sm font-semibold text-gray-400 block mb-2">
                   Add Members
                 </label>
                 <div className="relative mb-3">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
                   <input
                     type="text"
-                    placeholder="Search users..."
+                    placeholder="Search..."
                     value={searchUsers}
                     onChange={(e) => setSearchUsers(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                    className="w-full pl-9 pr-3 py-2 text-sm bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
                   />
                 </div>
               </div>
 
-              {/* Selected Members */}
+              {/* Selected Members - RESPONSIVE */}
               {selectedMembers.length > 0 && (
-                <div className="bg-[rgb(var(--bg-hover))]/30 rounded-lg p-3">
+                <div className="bg-[rgb(var(--bg-hover))]/30 rounded-lg p-2 sm:p-3">
                   <p className="text-xs text-gray-400 mb-2 font-semibold">
-                    Selected Members ({selectedMembers.length})
+                    Selected ({selectedMembers.length})
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1.5 sm:gap-2">
                     {selectedMembers.map((memberId) => {
                       const member = availableUsers.find(
                         (u) => (u.userId || u._id) === memberId
@@ -1425,9 +1402,9 @@ useEffect(() => {
                       return (
                         <div
                           key={memberId}
-                          className="bg-green-500/20 border border-green-500/30 text-green-300 px-3 py-1 rounded-full text-sm flex items-center gap-2"
+                          className="bg-green-500/20 border border-green-500/30 text-green-300 px-2 sm:px-3 py-1 rounded-full text-xs flex items-center gap-1.5"
                         >
-                          <span>{member?.name}</span>
+                          <span className="truncate">{member?.name}</span>
                           <button
                             onClick={() => toggleMemberSelection(memberId)}
                             className="hover:text-green-100"
@@ -1441,14 +1418,12 @@ useEffect(() => {
                 </div>
               )}
 
-              {/* Users List - PROPERLY FIXED */}
-              <div className="space-y-2">
+              {/* Users List */}
+              <div className="space-y-1.5 sm:space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
                 {availableUsers.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <p className="text-sm">
-                      {searchUsers
-                        ? "No users found"
-                        : "Loading users..."}
+                  <div className="text-center py-6 text-gray-500">
+                    <p className="text-xs sm:text-sm">
+                      {searchUsers ? "Not found" : "Loading..."}
                     </p>
                   </div>
                 ) : (
@@ -1460,25 +1435,23 @@ useEffect(() => {
                     .map((user) => {
                       const userId = user.userId || user._id;
                       const isSelected = selectedMembers.includes(userId);
-                      const userName = user.name || user.email || 'Unknown User';
+                      const userName = user.name || user.email || 'Unknown';
 
                       return (
                         <button
                           key={userId}
-                          onClick={() => {
-                            toggleMemberSelection(userId);
-                          }}
-                          className={`w-full p-3 rounded-lg text-left transition-all flex items-center gap-3 ${
+                          onClick={() => toggleMemberSelection(userId)}
+                          className={`w-full p-2 sm:p-3 rounded-lg text-left transition-all flex items-center gap-2 sm:gap-3 text-sm ${
                             isSelected
                               ? "bg-green-500/20 border border-green-500/30"
                               : "hover:bg-[rgb(var(--bg-hover))]/50 border border-[rgb(var(--border-secondary))]/50"
                           }`}
                         >
-                          <div className="w-10 h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white text-xs sm:text-sm font-bold shrink-0">
                             {userName.charAt(0).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-300 truncate">
+                            <p className="font-medium text-gray-300 text-xs sm:text-sm truncate">
                               {user.name}
                             </p>
                             <p className="text-xs text-gray-500 truncate">
@@ -1486,7 +1459,7 @@ useEffect(() => {
                             </p>
                           </div>
                           {isSelected && (
-                            <Check className="w-5 h-5 text-green-400 shrink-0" />
+                            <Check className="w-4 h-4 text-green-400 shrink-0" />
                           )}
                         </button>
                       );
@@ -1496,7 +1469,7 @@ useEffect(() => {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 sm:p-6 border-t border-[rgb(var(--border-secondary))] flex gap-3 sticky bottom-0 bg-[rgb(var(--bg-secondary))]">
+            <div className="p-3 sm:p-6 border-t border-[rgb(var(--border-secondary))] flex gap-2 sm:gap-3 sticky bottom-0 bg-[rgb(var(--bg-secondary))]">
               <button
                 onClick={() => {
                   setShowCreateGroupModal(false);
@@ -1504,40 +1477,39 @@ useEffect(() => {
                   setSelectedMembers([]);
                   setSearchUsers("");
                 }}
-                className="flex-1 px-4 py-2 bg-[rgb(var(--bg-hover))] text-gray-300 rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
+                className="flex-1 px-3 sm:px-4 py-2 bg-[rgb(var(--bg-hover))] text-gray-300 text-sm rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateGroup}
                 disabled={creatingGroup || !groupName.trim() || selectedMembers.length === 0}
-                className={`flex-1 px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold ${
-                  // ✅ CORRECT: Check if we have valid input
+                className={`flex-1 px-3 sm:px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold text-sm ${
                   !creatingGroup && groupName.trim() && selectedMembers.length > 0
                     ? "bg-linear-to-br from-green-600 to-emerald-700 text-black hover:from-green-500 hover:to-emerald-600 glow-green cursor-pointer"
                     : "bg-gray-600 text-gray-400 cursor-not-allowed opacity-50"
                 }`}
               >
                 {creatingGroup && <Loader className="w-4 h-4 animate-spin" />}
-                {creatingGroup ? "Creating..." : `Create Group (${selectedMembers.length})`}
+                {creatingGroup ? "Creating..." : `Create`}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Add Member Modal */}
+      {/* ✅ ADD MEMBER MODAL - RESPONSIVE */}
       {showAddMemberModal && selectedGroup && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
           <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl border border-green-500/20 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
             {/* Modal Header */}
-            <div className="p-4 sm:p-6 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-green-950/20 border-b-2 border-green-500/20 flex items-center justify-between sticky top-0 z-10">
+            <div className="p-3 sm:p-6 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-green-950/20 border-b-2 border-green-500/20 flex items-center justify-between sticky top-0 z-10">
               <div>
-                <h3 className="text-lg sm:text-xl font-bold text-gray-100">
+                <h3 className="text-base sm:text-lg font-bold text-gray-100">
                   ➕ Add Members
                 </h3>
-                <p className="text-sm text-gray-500 mt-2">
-                  Adding to <span className="text-green-400 font-semibold">{safeSelectedGroup.name}</span>
+                <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                  To <span className="text-green-400 font-semibold">{safeSelectedGroup.name}</span>
                 </p>
               </div>
               <button
@@ -1553,31 +1525,31 @@ useEffect(() => {
             </div>
 
             {/* Modal Body */}
-            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
+            <div className="p-3 sm:p-6 space-y-4 overflow-y-auto flex-1">
               {/* User Search */}
               <div>
-                <label className="text-sm font-semibold text-gray-400 block mb-2">
+                <label className="text-xs sm:text-sm font-semibold text-gray-400 block mb-2">
                   Select Users
                 </label>
                 <div className="relative mb-3">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
                   <input
                     type="text"
-                    placeholder="Search users..."
+                    placeholder="Search..."
                     value={searchUsersToAdd}
                     onChange={(e) => setSearchUsersToAdd(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+                    className="w-full pl-9 pr-3 py-2 text-sm bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
                   />
                 </div>
               </div>
 
               {/* Selected Users */}
               {selectedUsersToAdd.length > 0 && (
-                <div className="bg-[rgb(var(--bg-hover))]/30 rounded-lg p-3">
+                <div className="bg-[rgb(var(--bg-hover))]/30 rounded-lg p-2 sm:p-3">
                   <p className="text-xs text-gray-400 mb-2 font-semibold">
-                    Selected Users ({selectedUsersToAdd.length})
+                    Selected ({selectedUsersToAdd.length})
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1.5 sm:gap-2">
                     {selectedUsersToAdd.map((userId) => {
                       const user = usersToAddList.find(
                         (u) => (u.userId || u._id) === userId
@@ -1585,9 +1557,9 @@ useEffect(() => {
                       return (
                         <div
                           key={userId}
-                          className="bg-blue-500/20 border border-blue-500/30 text-blue-300 px-3 py-1 rounded-full text-sm flex items-center gap-2"
+                          className="bg-blue-500/20 border border-blue-500/30 text-blue-300 px-2 sm:px-3 py-1 rounded-full text-xs flex items-center gap-1.5"
                         >
-                          <span>{user?.name}</span>
+                          <span className="truncate">{user?.name}</span>
                           <button
                             onClick={() => {
                               setSelectedUsersToAdd((prev) =>
@@ -1605,14 +1577,12 @@ useEffect(() => {
                 </div>
               )}
 
-              {/* Users List - UPDATED FILTER */}
-              <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-2">
+              {/* Users List */}
+              <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-1.5 sm:space-y-2">
                 {usersToAddList.length === 0 ? (
                   <div className="text-center text-gray-500 py-4">
-                    <p className="text-sm">
-                      {members.length === availableUsers?.length
-                        ? "All users are already members"
-                        : "Loading users..."}
+                    <p className="text-xs sm:text-sm">
+                      All are members
                     </p>
                   </div>
                 ) : (
@@ -1624,7 +1594,7 @@ useEffect(() => {
                     .map((user) => {
                       const userId = user.userId || user._id;
                       const isSelected = selectedUsersToAdd.includes(userId);
-                      const userName = user.name || user.email || 'Unknown User';
+                      const userName = user.name || user.email || 'Unknown';
 
                       return (
                         <button
@@ -1636,17 +1606,17 @@ useEffect(() => {
                                 : [...prev, userId]
                             );
                           }}
-                          className={`w-full p-3 rounded-lg text-left transition-all flex items-center gap-3 ${
+                          className={`w-full p-2 sm:p-3 rounded-lg text-left transition-all flex items-center gap-2 sm:gap-3 text-sm ${
                             isSelected
                               ? "bg-green-500/20 border border-green-500/30"
                               : "hover:bg-[rgb(var(--bg-hover))]/50 border border-[rgb(var(--border-secondary))]/50"
                           }`}
                         >
-                          <div className="w-10 h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white text-xs sm:text-sm font-bold shrink-0">
                             {userName.charAt(0).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-300 truncate">
+                            <p className="font-medium text-gray-300 text-xs sm:text-sm truncate">
                               {user.name}
                             </p>
                             <p className="text-xs text-gray-500 truncate">
@@ -1654,7 +1624,7 @@ useEffect(() => {
                             </p>
                           </div>
                           {isSelected && (
-                            <Check className="w-5 h-5 text-green-400 shrink-0" />
+                            <Check className="w-4 h-4 text-green-400 shrink-0" />
                           )}
                         </button>
                       );
@@ -1664,61 +1634,59 @@ useEffect(() => {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 sm:p-6 border-t border-[rgb(var(--border-secondary))] flex gap-3 sticky bottom-0 bg-[rgb(var(--bg-secondary))]">
+            <div className="p-3 sm:p-6 border-t border-[rgb(var(--border-secondary))] flex gap-2 sm:gap-3 sticky bottom-0 bg-[rgb(var(--bg-secondary))]">
               <button
                 onClick={() => {
                   setShowAddMemberModal(false);
                   setSelectedUsersToAdd([]);
                   setSearchUsersToAdd("");
                 }}
-                className="flex-1 px-4 py-2 bg-[rgb(var(--bg-hover))] text-gray-300 rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
+                className="flex-1 px-3 sm:px-4 py-2 bg-[rgb(var(--bg-hover))] text-gray-300 text-sm rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddMember}
-                disabled={
-                  addMemberLoading ||
-                  selectedUsersToAdd.length === 0 ||
-                  !selectedGroup
-                }
-                className={`flex-1 px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold ${
+                disabled={addMemberLoading || selectedUsersToAdd.length === 0}
+                className={`flex-1 px-3 sm:px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold text-sm ${
                   addMemberLoading || selectedUsersToAdd.length === 0
                     ? "bg-gray-600 text-gray-400 cursor-not-allowed opacity-50"
                     : "bg-linear-to-br from-blue-600 to-cyan-700 text-white hover:from-blue-500 hover:to-cyan-600 glow-blue"
                 }`}
               >
                 {addMemberLoading && <Loader className="w-4 h-4 animate-spin" />}
-                {addMemberLoading ? "Adding..." : "Add Members"}
+                {addMemberLoading ? "Adding..." : "Add"}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ✅ DELETE CONFIRM - RESPONSIVE */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4">
           <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl max-w-sm w-full border border-red-500/20">
-            <div className="p-6 border-b border-red-500/20">
-              <h3 className="text-lg font-bold text-gray-300 flex items-center gap-3">
-                <AlertTriangle className="w-6 h-6 text-red-500" />
+            <div className="p-3 sm:p-6 border-b border-red-500/20">
+              <h3 className="text-base sm:text-lg font-bold text-gray-300 flex items-center gap-2 sm:gap-3">
+                <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 text-red-500 shrink-0" />
                 Delete Group?
               </h3>
-              <p className="text-sm text-gray-400 mt-2">
-                This will permanently delete <span className="text-red-400 font-semibold">{selectedGroup?.name}</span> and all its messages.
+              <p className="text-xs sm:text-sm text-gray-400 mt-2">
+                Permanently delete <span className="text-red-400 font-semibold">{selectedGroup?.name}</span>?
               </p>
             </div>
             
-            <div className="p-6 flex gap-3">
+            <div className="p-3 sm:p-6 flex gap-2 sm:gap-3">
               <button
                 onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 bg-[rgb(var(--bg-hover))] text-gray-300 rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
+                className="flex-1 px-3 sm:px-4 py-2 bg-[rgb(var(--bg-hover))] text-gray-300 text-sm rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteGroup}
                 disabled={deletingGroup}
-                className={`flex-1 px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold ${
+                className={`flex-1 px-3 sm:px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold text-sm ${
                   deletingGroup
                     ? "bg-gray-600 text-gray-400 cursor-not-allowed"
                     : "bg-linear-to-br from-red-600 to-red-700 text-white hover:from-red-500 hover:to-red-600"
