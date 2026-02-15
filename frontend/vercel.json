@@ -9,7 +9,7 @@
     }
   ],
   "env": {
-    "VITE_API_URL": "@vite_api_url",
-    "VITE_API_VERSION": "@vite_api_version"
+    "VITE_API_URL": "@VITE_API_URL",
+    "VITE_API_VERSION": "@VITE_API_VERSION"
   }
 }
