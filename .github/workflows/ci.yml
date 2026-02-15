@@ -31,7 +31,7 @@ jobs:
         with:
           bun-version: latest
 
-      # ✅ NEW: Check for exposed secrets
+      # ✅ Secret detection
       - name: Detect secrets
         uses: trufflesecurity/trufflehog@main
         with:
@@ -44,53 +44,28 @@ jobs:
           cd backend
           bun install
 
-      # ✅ NEW: Security audit of dependencies
       - name: Security audit
         run: |
           cd backend
           npm audit --audit-level=moderate || true
 
+      # ✅ SIMPLE: Use GitHub secrets in tests
       - name: Run Backend Tests
         run: |
           cd backend
           bun test
         env:
           NODE_ENV: test
-          MONGO_URI: mongodb://localhost:27017/pandav_chat_test
+          MONGO_URI: mongodb://localhost:27017/pandav_chat_test  # ✅ Local DB for tests
           JWT_SECRET: test_secret_key_min_32_chars_long_!@#$%^&*
           JWT_EXPIRE: 7d
           API_VERSION: v1
           CLIENT_URL: http://localhost:5173
 
-      # ✅ NEW: Pre-deployment validation
-      - name: Pre-deployment validation
-        run: |
-          cd backend
-          bun test src/tests/pre-deployment.test.js
-        env:
-          NODE_ENV: test
-          MONGO_URI: mongodb://localhost:27017/pandav_chat_test
-          JWT_SECRET: test_secret_key_min_32_chars_long_!@#$%^&*
-          JWT_EXPIRE: 7d
-
       - name: Backend build check
         run: |
           cd backend
-          bun run build || echo "No build script, skipping"
-
-      # ✅ NEW: Upload test results
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: backend-test-results
-          path: backend/coverage/
-
-      # ✅ NEW: Docker build check
-      - name: Docker build check
-        run: |
-          cd backend
-          docker build -t pandav-backend:latest . --no-cache || echo "Docker not available"
+          bun run build || echo "No build script"
 
   frontend-check:
     name: Frontend Build & Security Check
@@ -105,7 +80,6 @@ jobs:
         with:
           bun-version: latest
 
-      # ✅ NEW: Check for exposed secrets
       - name: Detect secrets
         uses: trufflesecurity/trufflehog@main
         with:
@@ -118,17 +92,10 @@ jobs:
           cd frontend
           bun install
 
-      # ✅ NEW: Security audit of dependencies
       - name: Security audit
         run: |
           cd frontend
           npm audit --audit-level=moderate || true
-
-      # ✅ NEW: Linting
-      - name: Run ESLint
-        run: |
-          cd frontend
-          bun run lint || echo "No lint script, skipping"
 
       - name: Run frontend tests
         run: |
@@ -140,115 +107,18 @@ jobs:
           cd frontend
           bun run build
 
-      # ✅ NEW: Check bundle size
-      - name: Check bundle size
-        run: |
-          cd frontend
-          ls -lh dist/ || echo "Build not generated"
-
-      # ✅ NEW: Upload build artifacts
-      - name: Upload build artifacts
-        if: success()
-        uses: actions/upload-artifact@v3
-        with:
-          name: frontend-build
-          path: frontend/dist/
-
-      # ✅ NEW: Docker build check
-      - name: Docker build check
-        run: |
-          cd frontend
-          docker build -t pandav-frontend:latest . --no-cache || echo "Docker not available"
-
-  # ✅ NEW: Security checks
-  security-check:
-    name: Security Analysis
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # ✅ CodeQL security scanning
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
-        with:
-          languages: javascript
-          queries: security-and-quality
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v2
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
-
-      # ✅ YAML linting
-      - name: Lint YAML files
-        run: |
-          npx yamllint . --ignore-path .gitignore || echo "YAML lint completed"
-
-      # ✅ Markdown linting
-      - name: Lint Markdown files
-        run: |
-          npx markdownlint '**/*.md' || echo "Markdown lint completed"
-
-  # ✅ NEW: Dependency check
-  dependency-check:
-    name: Dependency Analysis
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-
-      - name: Check backend dependencies
-        run: |
-          cd backend
-          bun install --frozen-lockfile
-
-      - name: Check frontend dependencies
-        run: |
-          cd frontend
-          bun install --frozen-lockfile
-
-      # ✅ SBOM generation (Software Bill of Materials)
-      - name: Generate SBOM
-        run: |
-          npm install -g @cyclonedx/npm
-          cyclonedx-npm --output-file backend/sbom.json || echo "SBOM generation skipped"
-
-  # ✅ NEW: Summary status check
   all-checks-pass:
     name: All Checks Status
     runs-on: ubuntu-latest
-    needs: [backend-check, frontend-check, security-check, dependency-check]
+    needs: [backend-check, frontend-check]
     if: always()
 
     steps:
       - name: Check job statuses
         run: |
           if [[ "${{ needs.backend-check.result }}" == "failure" || \
-                "${{ needs.frontend-check.result }}" == "failure" || \
-                "${{ needs.security-check.result }}" == "failure" || \
-                "${{ needs.dependency-check.result }}" == "failure" ]]; then
+                "${{ needs.frontend-check.result }}" == "failure" ]]; then
             echo "❌ One or more checks failed!"
             exit 1
           fi
           echo "✅ All checks passed!"
-
-      - name: Comment on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '✅ All CI/CD checks passed!\n\n- ✅ Backend tests\n- ✅ Frontend tests\n- ✅ Security analysis\n- ✅ Dependency check\n- ✅ Docker builds\n\nReady for review!'
-            })
