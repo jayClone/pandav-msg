@@ -236,13 +236,16 @@ export function SignupForm({ ...props }) {
   }
 
   // ✅ OTP VERIFICATION STEP
-  return (
-    <OTPVerification
-      email={form.email}
-      name={form.name}
-      purpose="registration"
-      onSuccess={handleOTPSuccess}  // ✅ PASS CALLBACK
-      onBack={handleBackFromOTP}
-    />
-  )
+  if (step === 'otp') {
+    return (
+      <OTPVerification
+        email={form.email}
+        name={form.name}
+        purpose="registration"
+        onSuccess={handleOTPSuccess}
+        onBack={handleBackFromOTP}
+        // ✅ DON'T PASS onSendOTP - component will send on mount
+      />
+    )
+  }
 }
