@@ -42,7 +42,7 @@ export const connectSocket = (token) => {
         socket = null;
     }
 
-    socket = io('http://localhost:5000', {
+    socket = io(import.meta.env.VITE_API_URL, {
         auth: {
             token: token
         },
@@ -51,7 +51,7 @@ export const connectSocket = (token) => {
         reconnectionDelayMax: 10000,
         reconnectionAttempts: 5,  // ✅ REDUCED from 10
         transports: ['websocket', 'polling'],
-        secure: false,  // ✅ ADD: Disable SSL for localhost
+        secure: true,  // ✅ HTTPS in production
         rejectUnauthorized: false  // ✅ ADD: For development
     });
 
