@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { AlertCircle, Loader, Eye, EyeOff } from "lucide-react"
+import { AlertCircle, Loader, Eye, EyeOff, CheckCircle, XCircle } from "lucide-react"
 
 export function SignupForm({ ...props }) {
   const navigate = useNavigate()
@@ -23,13 +23,53 @@ export function SignupForm({ ...props }) {
   const [msg, setMsg] = useState("")
   const [error, setError] = useState("")
   
-  // ✅ ADD: Password visibility state
+  // ✅ Password visibility state
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
+  // ✅ PASSWORD VALIDATION STATE
+  const [passwordErrors, setPasswordErrors] = useState({
+    minLength: false,
+    hasUppercase: false,
+    hasNumber: false,
+    hasSpecial: false,
+    passwordMatch: false
+  })
+
+  // ✅ VALIDATE PASSWORD IN REAL-TIME
+  const validatePassword = (password, confirmPassword) => {
+    const errors = {
+      minLength: password.length >= 8,
+      hasUppercase: /[A-Z]/.test(password),
+      hasNumber: /[0-9]/.test(password),
+      hasSpecial: /[!@#$%^&*]/.test(password),
+      passwordMatch: password === confirmPassword && password.length > 0
+    }
+    setPasswordErrors(errors)
+    return errors
+  }
+
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value })
+    const { name, value } = e.target
+    const newForm = { ...form, [name]: value }
+    setForm(newForm)
     setError("")
+
+    // ✅ VALIDATE ON CHANGE
+    if (name === 'password' || name === 'confirmPassword') {
+      validatePassword(newForm.password, newForm.confirmPassword)
+    }
+  }
+
+  // ✅ CHECK IF ALL PASSWORD REQUIREMENTS MET
+  const isPasswordValid = () => {
+    return (
+      passwordErrors.minLength &&
+      passwordErrors.hasUppercase &&
+      passwordErrors.hasNumber &&
+      passwordErrors.hasSpecial &&
+      passwordErrors.passwordMatch
+    )
   }
 
   const handleSendOTP = async (e) => {
@@ -37,6 +77,7 @@ export function SignupForm({ ...props }) {
     setLoading(true)
     setError("")
 
+    // ✅ FRONTEND VALIDATION BEFORE BACKEND CALL
     if (!form.name.trim()) {
       setError("Full name is required")
       setLoading(false)
@@ -56,8 +97,15 @@ export function SignupForm({ ...props }) {
       return
     }
 
+    // ✅ VALIDATE PASSWORD BEFORE SENDING OTP
     if (!form.password) {
       setError("Password is required")
+      setLoading(false)
+      return
+    }
+
+    if (!isPasswordValid()) {
+      setError("Password does not meet all requirements")
       setLoading(false)
       return
     }
@@ -208,6 +256,57 @@ export function SignupForm({ ...props }) {
                       )}
                     </button>
                   </div>
+
+                  {/* ✅ PASSWORD REQUIREMENTS CHECKLIST */}
+                  {form.password && (
+                    <div className="mt-2 p-3 bg-muted/50 rounded-lg space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground">Password Requirements:</p>
+                      
+                      <div className="flex items-center gap-2 text-xs">
+                        {passwordErrors.minLength ? (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-600" />
+                        )}
+                        <span className={passwordErrors.minLength ? "text-green-600" : "text-red-600"}>
+                          At least 8 characters
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs">
+                        {passwordErrors.hasUppercase ? (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-600" />
+                        )}
+                        <span className={passwordErrors.hasUppercase ? "text-green-600" : "text-red-600"}>
+                          One uppercase letter (A-Z)
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs">
+                        {passwordErrors.hasNumber ? (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-600" />
+                        )}
+                        <span className={passwordErrors.hasNumber ? "text-green-600" : "text-red-600"}>
+                          One number (0-9)
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs">
+                        {passwordErrors.hasSpecial ? (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-600" />
+                        )}
+                        <span className={passwordErrors.hasSpecial ? "text-green-600" : "text-red-600"}>
+                          One special character (!@#$%^&*)
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* ✅ CONFIRM PASSWORD FIELD WITH TOGGLE */}
@@ -237,11 +336,28 @@ export function SignupForm({ ...props }) {
                       )}
                     </button>
                   </div>
+
+                  {/* ✅ PASSWORD MATCH INDICATOR */}
+                  {form.confirmPassword && (
+                    <div className="flex items-center gap-2 text-xs mt-2">
+                      {passwordErrors.passwordMatch ? (
+                        <>
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <span className="text-green-600">Passwords match</span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="h-4 w-4 text-red-600" />
+                          <span className="text-red-600">Passwords do not match</span>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <Button 
                   type="submit" 
-                  disabled={loading} 
+                  disabled={loading || !isPasswordValid()} 
                   className="w-full"
                 >
                   {loading ? (
