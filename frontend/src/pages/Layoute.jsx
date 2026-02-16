@@ -6,12 +6,13 @@ import React, {
 import { useNavigate } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
 import {
-  disconnectSocket,
+  disconnectSocket,connectSocket,
 } from "@socket/socketClient.js";
 import { applyTheme } from "@utils/themeUtils.js";
 import ThemeChanger from "@components/ThemeChanger";
 import Chat from "./Chat";
 import GroupChat from "./GroupChat";
+import { SocketDebugPanel } from '@/components/SocketDebugPanel'  // ✅ ADD THIS
 import GroupChatErrorBoundary from '@components/GroupChatErrorBoundary';
 import {
   MessageCircle,
@@ -32,6 +33,7 @@ import FriendRequestModal from "@pages/FriendRequestModal";
 
 export default function Layoute({ initialTab = "chats" }) {
   const navigate = useNavigate();
+  const [socket, setSocket] = useState(null)  // ✅ ADD THIS
 
   // Auth State
   const token = localStorage.getItem("token");
@@ -138,6 +140,22 @@ export default function Layoute({ initialTab = "chats" }) {
     { id: "chats", icon: MessageCircle, label: "Chats" },
     { id: "groups", icon: Users, label: "Groups" },
   ];
+
+  // ✅ CLEANEST FIX: Initialize on token change
+  useEffect(() => {
+    if (!token) {
+      setSocket(null);
+      return;
+    }
+
+    console.log('🔌 [LAYOUT] Initializing socket connection...');
+    const connectedSocket = connectSocket(token);
+    setSocket(connectedSocket);
+
+    return () => {
+      // Keep alive - don't disconnect
+    };
+  }, [token]); // ✅ Re-run only when token changes
 
   return (
     <div className={`flex h-screen flex-col md:flex-row ${bgImage === "dark" ? "bg-gray-900" : "bg-slate-50"} overflow-hidden`}>
@@ -478,6 +496,10 @@ export default function Layoute({ initialTab = "chats" }) {
           }}
         />
       )}
+
+      {/* ✅ ADD DEBUG PANEL */}
+      {socket && <SocketDebugPanel socket={socket} />}
+
     </div>
   );
 }

@@ -10,11 +10,7 @@ import messageService from "@services/message.service.js";
 import friendAPI from '@api/friend.api.js';
 import { SOCKET_EVENTS } from "@constants/socketEvents.js";
 import { applyTheme, saveTheme } from "@utils/themeUtils.js";
-import {
-  connectSocket,
-  getSocket,
-  isSocketConnected,
-} from "@socket/socketClient.js";
+import { connectSocket, getSocket, isSocketConnected } from "@socket/socketClient.js";
 import {
   MessageCircle,
   Search,
@@ -175,7 +171,16 @@ export default function Chat({
       return;
     }
 
-    let socket = connectSocket(token);
+    // ✅ FIX: Get existing socket from window or create new one
+    let socket = getSocket();
+    
+    if (!socket || !socket.connected) {
+      console.log('📡 [CHAT] Creating new socket connection');
+      socket = connectSocket(token);
+    } else {
+      console.log('📡 [CHAT] Using existing socket connection');
+    }
+
     if (!socket) {
       setSocketStatus('disconnected');
       setSocketError('Failed to initialize socket');
