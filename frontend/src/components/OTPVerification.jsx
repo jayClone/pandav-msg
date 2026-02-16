@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Mail, Lock, Loader, AlertCircle, CheckCircle } from 'lucide-react';
 import otpAPI from '@api/otp.api.js';
 
 export default function OTPVerification({
@@ -13,42 +14,7 @@ export default function OTPVerification({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [resendCountdown, setResendCountdown] = useState(0);
-  const [, setOtpSent] = useState(false); // ✅ Track if OTP already sent
   const inputRefs = useRef([]);
-  const otpSentRef = useRef(false); // ✅ Prevent race conditions
-
-  // ✅ SEND OTP ONLY ONCE - On component mount
-  useEffect(() => {
-    // ✅ CRITICAL: Only send if NOT already sent
-    if (otpSentRef.current) return;
-    
-    const sendOTPOnMount = async () => {
-      setLoading(true);
-      setError('');
-
-      try {
-        console.log('📧 [OTP-MOUNT] Auto-sending OTP to:', email);
-        
-        const response = await otpAPI.sendOTP(email, name, purpose);
-
-        if (response.success) {
-          console.log('✅ [OTP-MOUNT] OTP sent successfully');
-          setOtpSent(true);
-          otpSentRef.current = true; // ✅ MARK AS SENT
-          setResendCountdown(60); // 60 second wait
-        } else {
-          setError(response.message || 'Failed to send OTP');
-        }
-      } catch (err) {
-        console.error('❌ [OTP-MOUNT] Error:', err);
-        setError(err.message || 'Failed to send OTP');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    sendOTPOnMount();
-  }, []); // ✅ EMPTY dependency array = runs ONLY ONCE on mount
 
   // ✅ Auto-focus first input
   useEffect(() => {
@@ -57,26 +23,24 @@ export default function OTPVerification({
 
   // ✅ Countdown timer for resend
   useEffect(() => {
-    if (resendCountdown <= 0) return;
-
-    const timer = setInterval(() => {
-      setResendCountdown(prev => prev - 1);
-    }, 1000);
-
-    return () => clearInterval(timer);
+    let interval;
+    if (resendCountdown > 0) {
+      interval = setInterval(() => {
+        setResendCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
   }, [resendCountdown]);
 
-  // ✅ Handle OTP input - only allow numbers
+  // ✅ Handle OTP input
   const handleOTPChange = (index, value) => {
-    // Only allow numbers
     if (!/^\d*$/.test(value)) return;
 
-    const newOtp = [...otp];
-    newOtp[index] = value.slice(-1); // Only take last digit if pasted
-    setOtp(newOtp);
-    setError('');
+    const newOTP = [...otp];
+    newOTP[index] = value.slice(0, 1);
+    setOtp(newOTP);
 
-    // Auto-focus next input
+    // Auto-move to next input
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
@@ -84,33 +48,17 @@ export default function OTPVerification({
 
   // ✅ Handle backspace
   const handleKeyDown = (index, e) => {
-    if (e.key === 'Backspace') {
-      e.preventDefault();
-      const newOtp = [...otp];
-      newOtp[index] = '';
-      setOtp(newOtp);
-
-      // Auto-focus previous input
-      if (index > 0) {
-        inputRefs.current[index - 1]?.focus();
-      }
-    }
-
-    // Allow arrow keys
-    if (e.key === 'ArrowLeft' && index > 0) {
+    if (e.key === 'Backspace' && !otp[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
-    }
-    if (e.key === 'ArrowRight' && index < 5) {
-      inputRefs.current[index + 1]?.focus();
     }
   };
 
-  // ✅ Verify OTP - CALLED BY USER CLICKING BUTTON
+  // ✅ Verify OTP
   const handleVerifyOTP = async () => {
     const otpCode = otp.join('');
 
     if (otpCode.length !== 6) {
-      setError('Please enter 6-digit OTP');
+      setError('Please enter all 6 digits');
       return;
     }
 
@@ -118,163 +66,184 @@ export default function OTPVerification({
     setError('');
 
     try {
-      console.log('🔍 [OTP-VERIFY] Verifying OTP:', otpCode);
-      
+      console.log('🔐 [OTP-VERIFY] Verifying OTP:', {
+        email,
+        otpCode: otpCode,  // ✅ LOG ACTUAL CODE
+        purpose
+      });
+
       const response = await otpAPI.verifyOTP(email, otpCode, purpose);
 
       if (response.success) {
-        console.log('✅ [OTP-VERIFY] OTP verified successfully');
         setSuccess(true);
-        
-        // ✅ Pass OTP code to parent
-        if (onSuccess) {
-          onSuccess(otpCode);
-        }
+        console.log('✅ [OTP-VERIFY] OTP verified successfully');
+        console.log('📤 [OTP-VERIFY] Calling onSuccess with OTP:', otpCode);  // ✅ LOG THIS
+
+        // ✅ CALL SUCCESS IMMEDIATELY with OTP code
+        onSuccess(otpCode);
       } else {
         setError(response.message || 'Invalid OTP');
+        setOtp(['', '', '', '', '', '']);
+        inputRefs.current[0]?.focus();
       }
     } catch (err) {
-      console.error('❌ [OTP-VERIFY] Error:', err);
       setError(err.message || 'Verification failed');
+      setOtp(['', '', '', '', '', '']);
+      inputRefs.current[0]?.focus();
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ Resend OTP - CALLED BY USER CLICKING BUTTON
+  // ✅ Resend OTP
   const handleResendOTP = async () => {
-    if (resendCountdown > 0) {
-      setError(`Wait ${resendCountdown} seconds before resending`);
-      return;
-    }
-
     setLoading(true);
     setError('');
-    setSuccess(false);
-    setOtp(['', '', '', '', '', '']); // Clear OTP input
+    setSuccess(false);  // ✅ RESET SUCCESS STATE
 
     try {
-      console.log('🔄 [OTP-RESEND] Requesting new OTP');
-      
       const response = await otpAPI.resendOTP(email, name, purpose);
 
       if (response.success) {
-        console.log('✅ [OTP-RESEND] New OTP sent');
-        setResendCountdown(60); // Reset timer
+        setResendCountdown(60);
+        setOtp(['', '', '', '', '', '']);  // ✅ CLEAR OTP INPUTS
         inputRefs.current[0]?.focus();
+        setError('');
+        console.log('✅ OTP resent successfully');
       } else {
         setError(response.message || 'Failed to resend OTP');
       }
     } catch (err) {
-      console.error('❌ [OTP-RESEND] Error:', err);
       setError(err.message || 'Failed to resend OTP');
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ Handle paste event
+  // ✅ Paste OTP
   const handlePaste = (e) => {
     e.preventDefault();
-    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    const newOtp = pastedData.split('');
-    
-    while (newOtp.length < 6) {
-      newOtp.push('');
-    }
-    
-    setOtp(newOtp);
-    
-    if (pastedData.length === 6) {
-      inputRefs.current[5]?.focus();
+    const pastedData = e.clipboardData.getData('text');
+    const digits = pastedData.replace(/\D/g, '').slice(0, 6);
+
+    if (digits.length > 0) {
+      const newOTP = [...otp];
+      for (let i = 0; i < digits.length; i++) {
+        newOTP[i] = digits[i];
+      }
+      setOtp(newOTP);
+
+      const nextIndex = Math.min(digits.length, 5);
+      inputRefs.current[nextIndex]?.focus();
     }
   };
 
   return (
-    <div className="w-full max-w-md mx-auto p-4 sm:p-6">
-      <div className="bg-white rounded-lg shadow-lg p-6 sm:p-8">
-        
-        {/* Header */}
-        <div className="text-center mb-6">
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-            Verify Your Email
-          </h2>
-          <p className="text-sm sm:text-base text-gray-600">
-            Enter the 6-digit code sent to <strong>{email}</strong>
-          </p>
+    <div className="w-full max-w-md">
+      {/* Header */}
+      <div className="text-center mb-8">
+        <div className="flex justify-center mb-4">
+          <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center shadow-lg">
+            <Lock className="w-8 h-8 text-white" />
+          </div>
         </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Verify Email</h2>
+        <p className="text-gray-600 text-sm">
+          We sent a 6-digit code to <br />
+          <strong className="text-gray-900">{email}</strong>
+        </p>
+      </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="mb-4 p-3 sm:p-4 bg-red-100 border-l-4 border-red-500 text-red-700 text-sm rounded">
-            {error}
-          </div>
-        )}
+      {/* Error Message */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
 
-        {/* Success Message */}
-        {success && (
-          <div className="mb-4 p-3 sm:p-4 bg-green-100 border-l-4 border-green-500 text-green-700 text-sm rounded">
-            ✅ OTP verified! Proceeding...
-          </div>
-        )}
+      {/* Success Message */}
+      {success && (
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
+          <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-green-700">OTP verified successfully! Processing...</p>
+        </div>
+      )}
 
-        {/* Loading State */}
-        {loading && (
-          <div className="mb-4 p-3 sm:p-4 bg-blue-100 border-l-4 border-blue-500 text-blue-700 text-sm rounded">
-            ⏳ Processing...
-          </div>
-        )}
-
-        {/* OTP Input Fields */}
-        <div className="flex gap-2 sm:gap-3 justify-center mb-6">
+      {/* OTP Input */}
+      <div className="mb-8">
+        <label className="block text-sm font-medium text-gray-700 mb-4">
+          Enter Verification Code
+        </label>
+        <div className="flex gap-2 sm:gap-3 justify-center">
           {otp.map((digit, index) => (
             <input
               key={index}
               ref={(el) => (inputRefs.current[index] = el)}
               type="text"
-              maxLength="1"
+              inputMode="numeric"
               value={digit}
               onChange={(e) => handleOTPChange(index, e.target.value)}
               onKeyDown={(e) => handleKeyDown(index, e)}
               onPaste={handlePaste}
-              disabled={loading}
-              className="w-10 h-10 sm:w-12 sm:h-12 text-center text-lg sm:text-xl font-bold border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none transition-all disabled:bg-gray-100"
-              placeholder="0"
+              maxLength="1"
+              disabled={loading || success}
+              className="w-12 h-12 sm:w-14 sm:h-14 text-center text-2xl font-bold border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/20 disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
             />
           ))}
         </div>
+        <p className="text-xs text-gray-500 text-center mt-2">
+          You can paste the code directly
+        </p>
+      </div>
 
-        {/* Verify Button */}
+      {/* Verify Button */}
+      <button
+        onClick={handleVerifyOTP}
+        disabled={loading || success || otp.join('').length !== 6}
+        className="w-full bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 mb-4"
+      >
+        {loading ? (
+          <>
+            <Loader className="w-5 h-5 animate-spin" />
+            Verifying...
+          </>
+        ) : success ? (
+          <>
+            <CheckCircle className="w-5 h-5" />
+            Verified!
+          </>
+        ) : (
+          <>
+            <Lock className="w-5 h-5" />
+            Verify OTP
+          </>
+        )}
+      </button>
+
+      {/* Resend & Back Buttons */}
+      <div className="flex gap-2">
         <button
-          onClick={handleVerifyOTP}
-          disabled={loading || otp.join('').length !== 6}
-          className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-all mb-3"
+          onClick={onBack}
+          disabled={loading}
+          className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg text-gray-700 font-semibold hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
-          {loading ? '⏳ Verifying...' : '✅ Verify OTP'}
+          Back
         </button>
 
-        {/* Resend Button */}
         <button
           onClick={handleResendOTP}
-          disabled={loading || resendCountdown > 0}
-          className="w-full py-2 text-blue-600 hover:text-blue-700 disabled:text-gray-400 font-medium border border-blue-600 disabled:border-gray-400 rounded-lg transition-all"
+          disabled={resendCountdown > 0 || loading}
+          className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
-          {resendCountdown > 0
-            ? `Resend in ${resendCountdown}s`
-            : '🔄 Resend OTP'}
+          {resendCountdown > 0 ? `Resend (${resendCountdown}s)` : 'Resend Code'}
         </button>
-
-        {/* Back Button */}
-        {onBack && (
-          <button
-            onClick={onBack}
-            disabled={loading}
-            className="w-full mt-3 py-2 text-gray-600 hover:text-gray-700 font-medium border border-gray-300 rounded-lg transition-all"
-          >
-            ← Back
-          </button>
-        )}
       </div>
+
+      {/* Help Text */}
+      <p className="text-center text-gray-600 text-xs mt-6">
+        Code expires in 10 minutes
+      </p>
     </div>
   );
 }
