@@ -5,33 +5,24 @@ import { registerSocketEvents } from './socket.event.js';
 export function createSocketServer(httpServer) {
   const getOrigin = () => {
     const origins = [
-      // Local development
       'http://localhost:3000',
       'http://localhost:5173',
       'http://localhost:3001',
-      'http://localhost:5000',
       'http://127.0.0.1:3000',
       'http://127.0.0.1:5173',
       'http://127.0.0.1:3001',
     ];
 
     if (process.env.NODE_ENV === 'production') {
-      origins.push(process.env.CLIENT_URL);
-      
-      // Vercel domains (both HTTP and HTTPS)
-      origins.push('https://pandav-msg.vercel.app');
       origins.push('https://pandav-msg-frontend.vercel.app');
-      origins.push('http://pandav-msg.vercel.app');
-      origins.push('http://pandav-msg-frontend.vercel.app');
-      
-      // Custom domain
+      origins.push('https://pandav-msg.vercel.app');
       origins.push('https://pandav.jaychaudhari.me');
-      origins.push('http://pandav.jaychaudhari.me');
     }
 
     return origins;
   };
 
+  // ✅ FIX: Proper Socket.IO configuration for polling
   const io = new Server(httpServer, {
     cors: {
       origin: (origin, callback) => {
@@ -50,14 +41,26 @@ export function createSocketServer(httpServer) {
       allowEIO4: true
     },
     
-    // ✅ TRANSPORT CONFIG
-    transports: ['polling', 'websocket'],  // Polling first!
+    // ✅ CRITICAL: Engine.IO config for polling
+    transports: ['polling', 'websocket'],
+    
+    // ✅ POLLING SETTINGS
     maxHttpBufferSize: 1e6,
     pingInterval: 25000,
     pingTimeout: 60000,
+    
+    // ✅ Allow polling transport
     allowUpgrades: true,
+    
+    // ✅ Path for polling requests
+    path: '/socket.io/',
+    
+    // ✅ Polling-specific
+    perMessageDeflate: {
+      threshold: 1024
+    }
   });
-  
+
   const onlineUsers = new Map();
 
   io.use((socket, next) => {
@@ -66,23 +69,17 @@ export function createSocketServer(httpServer) {
 
   console.log(`\n🔌 ================================`);
   console.log(`[SOCKET] Initializing Socket.IO`);
-  console.log(`   CORS Origin: ${getOrigin().join(', ')}`);
+  console.log(`   CORS Origins: ${getOrigin().join(', ')}`);
   console.log(`   Transports: polling (primary), websocket (fallback)`);
+  console.log(`   Path: /socket.io/`);
   console.log(`🔌 ================================\n`);
 
   io.on('connection', (socket) => {
     console.log(`✅ User connected: ${socket.id}`);
-    
-    // ✅ FIX: Use socket.conn instead of socket.io.engine
-    const transport = socket.conn?.transport?.name || 'unknown';
+    const transport = socket?.conn?.transport?.name || 'unknown';
     console.log(`   Transport: ${transport}`);
     
     registerSocketEvents(io, socket, onlineUsers);
-
-    // ✅ FIX: Listen to upgrade event properly
-    socket.conn?.on('upgrade', (newTransport) => {
-      console.log(`📡 [TRANSPORT UPGRADE] ${socket.id}: ${newTransport.name}`);
-    });
 
     socket.on('disconnect', () => {
       console.log(`❌ User disconnected: ${socket.id}`);
