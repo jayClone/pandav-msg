@@ -84,13 +84,21 @@ export default function FriendRequestModal({
       setSendingRequest(prev => ({ ...prev, [userId]: true }));
       await friendAPI.sendFriendRequest(userId);
       
-      setSentRequests(prev => [...prev, {
-        _id: `temp-${userId}`,
-        senderId: { _id: 'current-user' },
-        receiverId: { _id: userId, name: 'User' }
-      }]);
-
-      console.log('✅ Friend request sent');
+      // ✅ BEST: Refetch sent requests to get exact backend format
+      const sentRes = await friendAPI.getSentRequests();
+      setSentRequests(sentRes.data.data?.map(req => ({
+        _id: req._id,
+        senderId: {
+          _id: req.senderId._id,
+          name: req.senderId.name
+        },
+        receiverId: {
+          _id: req.receiverId._id,
+          name: req.receiverId.name
+        }
+      })) || []);
+      
+      console.log('✅ Friend request sent and synced');
     } catch (error) {
       console.error('❌ Error sending request:', error.message);
       alert(error.response?.data?.message || 'Failed to send request');

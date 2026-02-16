@@ -7,13 +7,16 @@ export function createSocketServer(httpServer) {
     const origins = [
       'http://localhost:3000',
       'http://localhost:5173',
-      'http://localhost:3001'
+      'http://localhost:3001',
+      'http://localhost:5000',  // ✅ Add this
     ];
 
     if (process.env.NODE_ENV === 'production') {
       origins.push(process.env.CLIENT_URL);
       origins.push('https://pandav-msg.vercel.app');
       origins.push('https://pandav-msg-frontend.vercel.app');
+      // ✅ Also allow HTTP on production (for polling fallback)
+      origins.push('http://pandav-msg.vercel.app');
     }
 
     return origins;
@@ -21,7 +24,16 @@ export function createSocketServer(httpServer) {
 
   const io = new Server(httpServer, {
     cors: {
-      origin: getOrigin(),
+      origin: (origin, callback) => {
+        const allowedOrigins = getOrigin();
+        
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          console.warn(`⚠️ CORS blocked: ${origin}`);
+          callback(new Error('CORS not allowed'));
+        }
+      },
       methods: ['GET', 'POST'],
       credentials: true,
       allowEIO3: true
@@ -31,9 +43,6 @@ export function createSocketServer(httpServer) {
     pingInterval: 25000,
     pingTimeout: 60000,
     allowUpgrades: true,
-    perMessageDeflate: {
-      threshold: 1024
-    }
   });
 
   const onlineUsers = new Map();
