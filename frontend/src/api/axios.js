@@ -1,7 +1,11 @@
 import axios from "axios";
 
 const API_VERSION = 'v1';
-const API_BASE_URL = `${import.meta.env.VITE_API_URL}/api/${API_VERSION}`;
+
+// ✅ USE RELATIVE PATH - Vercel rewrites /api/* to Railway
+const API_BASE_URL = `/api/${API_VERSION}`;
+
+console.log('🔍 API_BASE_URL:', API_BASE_URL);
 
 const API = axios.create({
     baseURL: API_BASE_URL,
@@ -17,6 +21,7 @@ API.interceptors.request.use((config) => {
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
+    console.log('📤 Request:', config.baseURL + config.url);
     return config;
 });
 
@@ -24,12 +29,10 @@ API.interceptors.request.use((config) => {
 API.interceptors.response.use(
     (response) => response,
     (error) => {
-        // ✅ FIX 1: Check if user is on login page
         const isLoginPage = window.location.pathname === "/login";
         const isRegisterPage = window.location.pathname === "/register";
         
         if (error.response?.status === 401) {
-            // ✅ FIX 2: Don't redirect if on login/register pages
             if (!isLoginPage && !isRegisterPage) {
                 console.warn("⚠️ Unauthorized - redirecting to login");
                 localStorage.removeItem("token");
@@ -37,24 +40,21 @@ API.interceptors.response.use(
                 return Promise.reject(error);
             }
             
-            // ✅ FIX 3: On login page, just reject and let component handle it
             if (isLoginPage || isRegisterPage) {
                 console.log("📝 Login/Register attempt - showing error to user");
                 return Promise.reject(error);
             }
         }
         
-        // ✅ FIX 4: Handle other errors
         if (error.response?.status === 403) {
-            console.warn("⚠️ Forbidden - you don't have permission");
+            console.warn("⚠️ Forbidden");
         }
         
         if (error.response?.status === 500) {
             console.error("❌ Server error:", error.response?.data?.message);
         }
         
-        // Log error for debugging
-        console.error(`[${API_VERSION}] API Error:`, error.response?.status, error.response?.data);
+        console.error(`[API-ERROR]`, error.response?.status, error.response?.data);
         
         return Promise.reject(error);
     }
