@@ -5,18 +5,28 @@ import { registerSocketEvents } from './socket.event.js';
 export function createSocketServer(httpServer) {
   const getOrigin = () => {
     const origins = [
+      // Local development
       'http://localhost:3000',
       'http://localhost:5173',
       'http://localhost:3001',
-      'http://localhost:5000',  // ✅ Add this
+      'http://localhost:5000',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:3001',
     ];
 
     if (process.env.NODE_ENV === 'production') {
       origins.push(process.env.CLIENT_URL);
+      
+      // Vercel domains (both HTTP and HTTPS)
       origins.push('https://pandav-msg.vercel.app');
       origins.push('https://pandav-msg-frontend.vercel.app');
-      // ✅ Also allow HTTP on production (for polling fallback)
       origins.push('http://pandav-msg.vercel.app');
+      origins.push('http://pandav-msg-frontend.vercel.app');
+      
+      // Custom domain
+      origins.push('https://pandav.jaychaudhari.me');
+      origins.push('http://pandav.jaychaudhari.me');
     }
 
     return origins;
@@ -30,21 +40,24 @@ export function createSocketServer(httpServer) {
         if (!origin || allowedOrigins.includes(origin)) {
           callback(null, true);
         } else {
-          console.warn(`⚠️ CORS blocked: ${origin}`);
-          callback(new Error('CORS not allowed'));
+          console.warn(`[SOCKET-CORS] ❌ Blocked: ${origin}`);
+          callback(new Error('CORS policy violation'));
         }
       },
-      methods: ['GET', 'POST'],
+      methods: ['GET', 'POST', 'OPTIONS'],
       credentials: true,
-      allowEIO3: true
+      allowEIO3: true,
+      allowEIO4: true
     },
-    transports: ['polling', 'websocket'],
+    
+    // ✅ TRANSPORT CONFIG
+    transports: ['polling', 'websocket'],  // Polling first!
     maxHttpBufferSize: 1e6,
     pingInterval: 25000,
     pingTimeout: 60000,
     allowUpgrades: true,
   });
-
+  
   const onlineUsers = new Map();
 
   io.use((socket, next) => {

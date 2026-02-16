@@ -24,7 +24,7 @@ export const waitForSocket = () => {
       setTimeout(() => {
         clearInterval(checkConnection);
         reject(new Error('Socket connection timeout'));
-      }, 10000);  // ✅ INCREASED to 10s for mobile
+      }, 15000);  // ✅ INCREASED to 15s
     } else {
       reject(new Error('Socket not initialized'));
     }
@@ -38,59 +38,63 @@ export const connectSocket = (token) => {
         socket = null;
     }
 
-    // ✅ CRITICAL FIX: Proper URL detection
-    let socketUrl = 'http://localhost:5000';
+    // ✅ FIX: PROPER URL DETECTION FOR ALL ENVIRONMENTS
+    let socketUrl = 'http://localhost:5000';  // Default for local
     
-    console.log('🔍 [ENVIRONMENT]');
-    console.log('   MODE:', import.meta.env.MODE);
-    console.log('   PROD:', import.meta.env.PROD);
-    console.log('   VITE_API_URL:', import.meta.env.VITE_API_URL);
+    console.log('🔍 [SOCKET-URL-DETECTION]');
+    console.log('   Current URL:', window.location.origin);
+    console.log('   Import.meta.env.MODE:', import.meta.env.MODE);
+    console.log('   Import.meta.env.PROD:', import.meta.env.PROD);
 
-    // ✅ Production deployment
-    if (import.meta.env.PROD) {
-        socketUrl = import.meta.env.VITE_API_URL || 'https://pandav-msg.up.railway.app';
+    // ✅ DETECT ENVIRONMENT BY ACTUAL PAGE URL
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        // ✅ Running on production domain (Vercel, Railway, etc)
+        console.log('🌐 [PRODUCTION] Using Railway backend');
+        socketUrl = 'https://pandav-msg.up.railway.app';
     } 
-    // ✅ Development with env var (docker-compose, etc)
     else if (import.meta.env.VITE_API_URL) {
+        // ✅ Docker-compose or custom env
+        console.log('🐳 [DOCKER] Using VITE_API_URL:', import.meta.env.VITE_API_URL);
         socketUrl = import.meta.env.VITE_API_URL;
     }
+    // else: use default localhost
     
     console.log('🔌 [SOCKET] Connecting to:', socketUrl);
+    console.log('   Transport: polling (primary) + websocket (fallback)');
 
-    // ✅ MOBILE-OPTIMIZED SOCKET.IO CONFIG
     socket = io(socketUrl, {
         auth: {
             token: token
         },
         
-        // ✅ CRITICAL: Polling FIRST, WebSocket second
+        // ✅ CRITICAL: Polling FIRST (works on mobile data)
         transports: ['polling', 'websocket'],
         
-        // ✅ Reconnection settings (mobile needs more retries)
+        // ✅ Reconnection for mobile (unstable connection)
         reconnection: true,
         reconnectionDelay: 1000,
-        reconnectionDelayMax: 15000,  // ✅ INCREASED for mobile
-        reconnectionAttempts: 20,      // ✅ INCREASED for mobile
+        reconnectionDelayMax: 20000,  // ✅ INCREASED
+        reconnectionAttempts: 30,      // ✅ INCREASED - keep trying
         
-        // ✅ Connection timeout
-        connectTimeout: 45000,  // ✅ INCREASED - mobile is slow
+        // ✅ Long timeouts for mobile
+        connectTimeout: 60000,  // ✅ 60 SECONDS for mobile data
         
-        // ✅ Polling settings (for when websocket fails)
+        // ✅ Polling config
         upgrade: true,
         rememberUpgrade: true,
         
-        // ✅ Protocol settings
-        secure: import.meta.env.PROD,
+        // ✅ Protocol
+        secure: window.location.protocol === 'https:',  // ✅ AUTO-DETECT HTTPS
         rejectUnauthorized: false,
         
         // ✅ Mobile-friendly
         closeOnBeforeunload: false,
         forceBase64: false,
         
-        // ✅ Buffer settings
-        maxHttpBufferSize: 1e6,
+        // ✅ Polling interval (how often to ask server for updates)
+        // Default 100ms - we'll keep it for fast updates
         
-        // ✅ Credentials (important for CORS on mobile)
+        // ✅ CRITICAL: Enable credentials for cross-origin
         withCredentials: true,
     });
 
@@ -98,71 +102,75 @@ export const connectSocket = (token) => {
     socket.on('connect', () => {
         console.log('✅✅✅ SOCKET CONNECTED ✅✅✅');
         console.log('   Socket ID:', socket.id);
+        console.log('   URL:', socketUrl);
         
-        // ✅ Log which transport is being used
         const transport = socket?.io?.engine?.transport?.name || 'unknown';
-        console.log('   Transport:', transport);
-        console.log('   Connected:', socket.connected);
+        console.log('   Transport Used:', transport);
+        console.log('   Connected Status:', socket.connected);
         
         if (transport === 'polling') {
-            console.log('📱 [MOBILE] Using HTTP Long-Polling (mobile data detected)');
+            console.log('📱 [MOBILE] Using HTTP Long-Polling');
         } else if (transport === 'websocket') {
-            console.log('⚡ [WIFI] Using WebSocket (low latency)');
+            console.log('⚡ [FAST] Using WebSocket');
         }
     });
 
-    // ✅ CONNECTION ERRORS
+    // ✅ CONNECTION ERROR - DETAILED LOGGING
     socket.on('connect_error', (error) => {
-        console.error('🔴🔴🔴 SOCKET ERROR 🔴🔴🔴');
-        console.error('   Message:', error.message);
-        console.error('   Type:', error.type);
-        console.error('   Data:', error.data);
-        console.error('   URL:', socketUrl);
-        console.error('   Environment:', import.meta.env.MODE);
+        console.error('\n🔴🔴🔴 SOCKET CONNECTION ERROR 🔴🔴🔴');
+        console.error('Error Message:', error.message);
+        console.error('Error Type:', error.type);
+        console.error('Error Data:', error.data);
+        console.error('Connecting to URL:', socketUrl);
+        console.error('Current Page:', window.location.href);
+        console.error('Environment:', import.meta.env.MODE);
         
-        // ✅ Specific error handling
-        if (error.message.includes('AUTH_ERROR')) {
-            console.error('❌ Authentication failed - invalid or expired token');
+        // ✅ Specific error diagnostics
+        if (error.message?.includes('AUTH')) {
+            console.error('❌ Authentication failed - check token');
         }
-        
-        if (error.message === 'websocket error') {
-            console.warn('⚠️ WebSocket failed - polling will be used as fallback');
+        if (error.message?.includes('CORS')) {
+            console.error('❌ CORS error - backend not allowing this origin');
         }
-        
-        if (error.message.includes('CORS')) {
-            console.error('❌ CORS error - check backend CORS configuration');
+        if (error.message?.includes('timeout')) {
+            console.error('❌ Connection timeout - backend unreachable or very slow');
         }
+        if (error.message?.includes('econnrefused')) {
+            console.error('❌ Connection refused - backend not running');
+        }
+        console.error('🔴🔴🔴\n');
     });
 
-    // ✅ TRANSPORT EVENTS
+    // ✅ TRANSPORT UPGRADE/DOWNGRADE
     socket.io?.engine?.on('upgrade', (transport) => {
-        console.log('📡 [UPGRADE] Connection upgraded to:', transport.name);
+        console.log('📡 [UPGRADE] Transport upgraded to:', transport.name);
     });
 
     socket.io?.engine?.on('downgrade', (transport) => {
-        console.warn('📉 [DOWNGRADE] Connection downgraded to:', transport.name);
+        console.warn('📉 [DOWNGRADE] Transport downgraded to:', transport.name);
     });
 
-    // ✅ DISCONNECT HANDLING
+    // ✅ DISCONNECT
     socket.on('disconnect', (reason) => {
         console.log('❌ Socket disconnected');
         console.log('   Reason:', reason);
         
         if (reason === 'io server disconnect') {
-            console.log('🔄 Server disconnected - reconnecting...');
+            console.log('🔄 Server disconnected, attempting reconnect...');
             setTimeout(() => {
                 if (socket) socket.connect();
             }, 3000);
         }
     });
 
-    // ✅ RECONNECT ATTEMPTS
+    // ✅ RECONNECTION TRACKING
     socket.on('reconnect_attempt', (attemptNumber) => {
-        console.log(`🔄 Reconnection attempt #${attemptNumber}`);
+        console.log(`🔄 Reconnection attempt #${attemptNumber}...`);
     });
 
     socket.on('reconnect_failed', () => {
-        console.error('❌ Reconnection failed - giving up');
+        console.error('❌ Reconnection permanently failed');
+        console.error('   Check if backend is running and accessible');
     });
 
     return socket;
