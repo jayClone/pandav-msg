@@ -4,12 +4,12 @@
   "installCommand": "npm install -g bun && bun install",
   "rewrites": [
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    },
-    {
       "source": "/api/:path*",
       "destination": "https://pandav-msg.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
