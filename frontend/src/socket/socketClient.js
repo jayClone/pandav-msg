@@ -35,24 +35,29 @@ export const waitForSocket = () => {
 };
 
 export const connectSocket = (token) => {
-    // Disconnect old socket if exists
     if (socket) {
         console.log('🔄 Disconnecting old socket...');
         socket.disconnect();
         socket = null;
     }
 
-    socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
+    // ✅ FIX: Use environment variable instead of localhost
+    const socketUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    
+    console.log('🔌 Connecting to:', socketUrl);
+
+    socket = io(socketUrl, {
         auth: {
             token: token
         },
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 10000,
-        reconnectionAttempts: 5,  // ✅ REDUCED from 10
+        reconnectionAttempts: 5,
         transports: ['websocket', 'polling'],
-        secure: true,  // ✅ HTTPS in production
-        rejectUnauthorized: false  // ✅ ADD: For development
+        // ✅ FIX: Remove secure: true for development
+        secure: import.meta.env.PROD,  // Only HTTPS in production
+        rejectUnauthorized: false
     });
 
     socket.on('connect', () => {
@@ -63,20 +68,16 @@ export const connectSocket = (token) => {
         console.error('🔴 Socket connection error:', {
             message: error.message,
             type: error.type,
-            data: error.data
+            url: socketUrl  // ✅ Log the URL being used
         });
         
-        // ✅ ADD: More helpful error logging
-        if (error.message === 'Client is closed') {
-            console.warn('⚠️ Socket connection closed before establishing');
-        }
-        if (error.data?.content?.message === 'Invalid token') {
-            console.error('❌ Authentication failed - Invalid token');
+        if (error.message === 'websocket error') {
+            console.warn('⚠️ WebSocket transport failed - falling back to polling');
         }
     });
 
     socket.on('disconnect', (reason) => {
-        console.log('🔌 Socket disconnected:', reason);
+        console.log('❌ Socket disconnected:', reason);
     });
 
     return socket;

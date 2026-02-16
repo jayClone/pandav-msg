@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { AlertCircle, Loader } from "lucide-react"
+import { AlertCircle, Loader, Eye, EyeOff } from "lucide-react"
 
 export function SignupForm({ ...props }) {
   const navigate = useNavigate()
@@ -22,6 +22,10 @@ export function SignupForm({ ...props }) {
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState("")
   const [error, setError] = useState("")
+  
+  // ✅ ADD: Password visibility state
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -79,7 +83,6 @@ export function SignupForm({ ...props }) {
     }
   }
 
-  // ✅ FIX: Properly receive OTP param and log it
   const handleOTPSuccess = async (otpCode) => {
     console.log('✅ [SIGNUP] OTP Success with code:', otpCode);
     
@@ -97,7 +100,7 @@ export function SignupForm({ ...props }) {
         name: form.name,
         email: form.email,
         password: form.password,
-        otp: otpCode  // ✅ PASS THE OTP
+        otp: otpCode
       })
 
       if (response.success || response.token) {
@@ -178,32 +181,62 @@ export function SignupForm({ ...props }) {
                   />
                 </div>
 
+                {/* ✅ PASSWORD FIELD WITH TOGGLE */}
                 <div className="grid gap-2">
                   <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    name="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={form.password}
-                    onChange={handleChange}
-                    disabled={loading}
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      name="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={form.password}
+                      onChange={handleChange}
+                      disabled={loading}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      disabled={loading}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
+                {/* ✅ CONFIRM PASSWORD FIELD WITH TOGGLE */}
                 <div className="grid gap-2">
                   <Label htmlFor="confirm-password">Confirm Password</Label>
-                  <Input
-                    id="confirm-password"
-                    name="confirmPassword"
-                    type="password"
-                    placeholder="••••••••"
-                    value={form.confirmPassword}
-                    onChange={handleChange}
-                    disabled={loading}
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      id="confirm-password"
+                      name="confirmPassword"
+                      type={showConfirmPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={form.confirmPassword}
+                      onChange={handleChange}
+                      disabled={loading}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      disabled={loading}
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <Button 
@@ -244,7 +277,6 @@ export function SignupForm({ ...props }) {
         purpose="registration"
         onSuccess={handleOTPSuccess}
         onBack={handleBackFromOTP}
-        // ✅ DON'T PASS onSendOTP - component will send on mount
       />
     )
   }
