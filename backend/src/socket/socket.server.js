@@ -11,7 +11,6 @@ export function createSocketServer(httpServer) {
     ];
 
     if (process.env.NODE_ENV === 'production') {
-      // ✅ Add Vercel domain for production
       origins.push(process.env.CLIENT_URL);
       origins.push('https://pandav-msg.vercel.app');
       origins.push('https://pandav-msg-frontend.vercel.app');
@@ -27,9 +26,14 @@ export function createSocketServer(httpServer) {
       credentials: true,
       allowEIO3: true
     },
-    transports: ['websocket', 'polling'],
+    transports: ['polling', 'websocket'],
+    maxHttpBufferSize: 1e6,
     pingInterval: 25000,
     pingTimeout: 60000,
+    allowUpgrades: true,
+    perMessageDeflate: {
+      threshold: 1024
+    }
   });
 
   const onlineUsers = new Map();
@@ -41,20 +45,30 @@ export function createSocketServer(httpServer) {
   console.log(`\n🔌 ================================`);
   console.log(`[SOCKET] Initializing Socket.IO`);
   console.log(`   CORS Origin: ${getOrigin().join(', ')}`);
+  console.log(`   Transports: polling (primary), websocket (fallback)`);
   console.log(`🔌 ================================\n`);
 
   io.on('connection', (socket) => {
     console.log(`✅ User connected: ${socket.id}`);
+    
+    // ✅ FIX: Use socket.conn instead of socket.io.engine
+    const transport = socket.conn?.transport?.name || 'unknown';
+    console.log(`   Transport: ${transport}`);
+    
     registerSocketEvents(io, socket, onlineUsers);
+
+    // ✅ FIX: Listen to upgrade event properly
+    socket.conn?.on('upgrade', (newTransport) => {
+      console.log(`📡 [TRANSPORT UPGRADE] ${socket.id}: ${newTransport.name}`);
+    });
 
     socket.on('disconnect', () => {
       console.log(`❌ User disconnected: ${socket.id}`);
-      const { userId } = socket.user;
-      onlineUsers.delete(userId);
+      const { userId } = socket.user || {};
+      if (userId) onlineUsers.delete(userId);
       io.emit('onlineUsers', Array.from(onlineUsers.values()));
     });
   });
 
-  console.log(`[SOCKET] Socket.IO Initialized Successfully\n`);
   return io;
 }
