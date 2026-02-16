@@ -3,7 +3,6 @@ import { socketAuthMiddleware } from './socket.auth.js';
 import { registerSocketEvents } from './socket.event.js';
 
 export function createSocketServer(httpServer) {
-  // Get CORS origin based on environment
   const getOrigin = () => {
     const origins = [
       'http://localhost:3000',
@@ -12,7 +11,10 @@ export function createSocketServer(httpServer) {
     ];
 
     if (process.env.NODE_ENV === 'production') {
+      // ✅ Add Vercel domain for production
       origins.push(process.env.CLIENT_URL);
+      origins.push('https://pandav-msg.vercel.app');
+      origins.push('https://pandav-msg-frontend.vercel.app');
     }
 
     return origins;
@@ -30,7 +32,6 @@ export function createSocketServer(httpServer) {
     pingTimeout: 60000,
   });
 
-  // ✅ MOVE onlineUsers HERE - shared across all connections
   const onlineUsers = new Map();
 
   io.use((socket, next) => {
@@ -39,13 +40,11 @@ export function createSocketServer(httpServer) {
 
   console.log(`\n🔌 ================================`);
   console.log(`[SOCKET] Initializing Socket.IO`);
-  console.log(`   CORS Origin: ${getOrigin().join(',')}`);
+  console.log(`   CORS Origin: ${getOrigin().join(', ')}`);
   console.log(`🔌 ================================\n`);
 
   io.on('connection', (socket) => {
     console.log(`✅ User connected: ${socket.id}`);
-
-    // ✅ Pass onlineUsers to registerSocketEvents
     registerSocketEvents(io, socket, onlineUsers);
 
     socket.on('disconnect', () => {
@@ -57,6 +56,5 @@ export function createSocketServer(httpServer) {
   });
 
   console.log(`[SOCKET] Socket.IO Initialized Successfully\n`);
-
   return io;
 }
