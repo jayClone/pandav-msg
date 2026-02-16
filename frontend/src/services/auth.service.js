@@ -1,4 +1,4 @@
-import AUTH_API from '@api/authAxios.js';
+import API from '@api/axios.js';  // ✅ CHANGED: Use single axios
 
 const authService = {
   /**
@@ -6,7 +6,6 @@ const authService = {
    */
   register: async (userData) => {
     try {
-      // ✅ Validate OTP exists before sending
       if (!userData.otp) {
         throw new Error('OTP is missing. Please verify your email first.');
       }
@@ -18,30 +17,18 @@ const authService = {
         otp: userData.otp.toString().trim()
       };
 
-      console.log('📤 [AUTH-SERVICE] Final payload:', {
-        name: payload.name,
-        email: payload.email,
-        password: '***',
-        otp: payload.otp
-      });
+      console.log('📤 [AUTH-SERVICE] Registering:', payload.email);
 
-      // ✅ Use AUTH_API instead of API
-      const response = await AUTH_API.post('/auth/register', payload);
-
-      console.log('✅ [AUTH-SERVICE] Registration response:', response.data);
+      const response = await API.post('/auth/register', payload);
 
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
-        console.log('✅ Token stored successfully');
+        console.log('✅ Registration successful');
       }
 
       return response.data;
     } catch (error) {
-      console.error('❌ [AUTH-SERVICE] Registration error:', {
-        message: error.message,
-        responseData: error.response?.data,
-        requestData: error.config?.data
-      });
+      console.error('❌ Registration error:', error.response?.data);
       throw error.response?.data || { 
         success: false,
         message: error.message || 'Registration failed' 
@@ -60,10 +47,9 @@ const authService = {
         ...(credentials.otp && { otp: credentials.otp.toString() })
       };
 
-      console.log('🔐 [AUTH-SERVICE] Login attempt');
+      console.log('🔐 [AUTH-SERVICE] Login attempt for:', payload.email);
 
-      // ✅ Use AUTH_API
-      const response = await AUTH_API.post('/auth/login', payload);
+      const response = await API.post('/auth/login', payload);
 
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
@@ -73,7 +59,7 @@ const authService = {
       return response.data;
     } catch (error) {
       localStorage.removeItem('token');
-      console.error('❌ [AUTH-SERVICE] Login error:', error.response?.data);
+      console.error('❌ Login error:', error.response?.data);
       throw error.response?.data || { 
         success: false,
         message: 'Login failed' 
@@ -86,7 +72,7 @@ const authService = {
    */
   getCurrentUser: async () => {
     try {
-      const response = await AUTH_API.get('/auth/current');
+      const response = await API.get('/auth/current');
       return response.data;
     } catch (error) {
       console.error('❌ Get user error:', error.response?.data);
