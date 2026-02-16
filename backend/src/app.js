@@ -30,8 +30,23 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(helmet());
 
 // 3. THEN CORS
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:3001',
+  process.env.CLIENT_URL,
+  process.env.FRONTEND_URL,
+  'https://pandav-msg.vercel.app',  // ✅ Explicit backup
+];
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
