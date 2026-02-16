@@ -22,40 +22,44 @@ export function createSocketServer(httpServer) {
     return origins;
   };
 
-  // ✅ FIX: Proper Socket.IO configuration for polling
+  // ✅ CRITICAL: Proper Socket.IO configuration
   const io = new Server(httpServer, {
     cors: {
       origin: (origin, callback) => {
         const allowedOrigins = getOrigin();
         
+        console.log(`[SOCKET-CORS] Checking origin: ${origin || 'none'}`);
+        
         if (!origin || allowedOrigins.includes(origin)) {
+          console.log(`[SOCKET-CORS] ✅ ALLOWED`);
           callback(null, true);
         } else {
-          console.warn(`[SOCKET-CORS] ❌ Blocked: ${origin}`);
+          console.warn(`[SOCKET-CORS] ❌ BLOCKED: ${origin}`);
           callback(new Error('CORS policy violation'));
         }
       },
+      // ✅ CRITICAL: Methods MUST include GET and POST for polling
       methods: ['GET', 'POST', 'OPTIONS'],
       credentials: true,
       allowEIO3: true,
       allowEIO4: true
     },
     
-    // ✅ CRITICAL: Engine.IO config for polling
+    // ✅ Transport order: polling FIRST for mobile
     transports: ['polling', 'websocket'],
     
-    // ✅ POLLING SETTINGS
+    // ✅ CRITICAL: Path must be /socket.io/
+    path: '/socket.io/',
+    
+    // ✅ Polling settings
     maxHttpBufferSize: 1e6,
     pingInterval: 25000,
     pingTimeout: 60000,
     
-    // ✅ Allow polling transport
+    // ✅ Allow upgrade from polling to websocket
     allowUpgrades: true,
     
-    // ✅ Path for polling requests
-    path: '/socket.io/',
-    
-    // ✅ Polling-specific
+    // ✅ Other settings
     perMessageDeflate: {
       threshold: 1024
     }
@@ -72,6 +76,7 @@ export function createSocketServer(httpServer) {
   console.log(`   CORS Origins: ${getOrigin().join(', ')}`);
   console.log(`   Transports: polling (primary), websocket (fallback)`);
   console.log(`   Path: /socket.io/`);
+  console.log(`   Methods: GET, POST, OPTIONS`);
   console.log(`🔌 ================================\n`);
 
   io.on('connection', (socket) => {

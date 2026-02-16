@@ -44,10 +44,18 @@ console.log('🔐 [CORS] Allowed origins:', allowedOrigins);
 
 app.use(cors({
   origin: (origin, callback) => {
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:3001',
+      'https://pandav-msg-frontend.vercel.app',
+      'https://pandav-msg.vercel.app',
+    ];
+    
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.warn(`⚠️ CORS blocked origin: ${origin}`);
+      console.warn(`[CORS] Blocked: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
