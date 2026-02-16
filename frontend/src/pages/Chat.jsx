@@ -30,6 +30,9 @@ import {
   ChevronLeft,
   X,
   Loader,
+  AlertCircle,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import ThemeChanger from "@/components/ThemeChanger";
 
@@ -59,9 +62,34 @@ export default function Chat({
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showThemeChanger, setShowThemeChanger] = useState(false);
+  
+  // ✅ NEW: Socket connection status
+  const [socketStatus, setSocketStatus] = useState('connecting');
+  const [socketError, setSocketError] = useState('');
 
   const typingTimeoutRef = useRef(null);
   const lastTypingTimeRef = useRef(0);
+  const errorTimeoutRef = useRef(null);
+
+  // ✅ AUTO-CLEAR ERRORS AFTER 5 SECONDS
+  useEffect(() => {
+    if (error) {
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = setTimeout(() => {
+        setError("");
+      }, 5000);
+    }
+  }, [error]);
+
+  // ✅ AUTO-CLEAR SOCKET ERRORS AFTER 5 SECONDS
+  useEffect(() => {
+    if (socketError) {
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = setTimeout(() => {
+        setSocketError("");
+      }, 5000);
+    }
+  }, [socketError]);
 
   // ✅ APPLY SAVED THEME ON MOUNT
   useEffect(() => {
@@ -75,7 +103,6 @@ export default function Chat({
       console.log("🔄 Fetching friends only...");
       setLoadingFriends(true);
 
-      // ✅ Call getFriends() - only returns friends, not all users
       const response = await friendAPI.getFriends();
 
       console.log("✅ Friends fetched:", response.data.data);
@@ -83,7 +110,6 @@ export default function Chat({
       if (response.data.success) {
         const friends = response.data.data || [];
         
-        // ✅ Only set friends, NOT all users
         setAllUsers(
           friends.map((u) => ({
             userId: u._id || u.userId,
@@ -96,10 +122,11 @@ export default function Chat({
         );
         
         console.log(`✅ [CHAT] Loaded ${friends.length} friends`);
+        setError("");
       }
     } catch (err) {
       console.error("❌ Failed to fetch friends:", err.message);
-      setError("Failed to load friends.");
+      setError("⚠️ Failed to load friends. Please refresh.");
     } finally {
       setLoadingFriends(false);
     }
@@ -115,31 +142,26 @@ export default function Chat({
   const handleFriendRemoved = useCallback((removedUserId) => {
     console.log(`✅ [CHAT] Friend removed:`, removedUserId);
     
-    // Remove from UI immediately
     setAllUsers(prevUsers => {
       const filtered = prevUsers.filter(user => user.userId !== removedUserId);
       console.log(`✅ [CHAT] Removed from UI. Remaining:`, filtered.length);
       return filtered;
     });
 
-    // Close chat if currently open with removed friend
     if (selectedUserId === removedUserId) {
       console.log(`✅ [CHAT] Closing chat with removed friend`);
       setSelectedUserId(null);
       setMessages([]);
     }
 
-    // Clear unread count
     setUnreadCounts(prev => {
       const updated = { ...prev };
       delete updated[removedUserId];
       return updated;
     });
 
-    // Remove from pinned
     setPinnedChats(prev => prev.filter(id => id !== removedUserId));
 
-    // ✅ REFETCH FROM BACKEND - IMPORTANT!
     setTimeout(() => {
       console.log(`📡 [CHAT] Refetching friends list from backend...`);
       fetchFriends();
@@ -154,14 +176,38 @@ export default function Chat({
     }
 
     let socket = connectSocket(token);
-    if (!socket) return;
+    if (!socket) {
+      setSocketStatus('disconnected');
+      setSocketError('Failed to initialize socket');
+      return;
+    }
+
+    // ✅ CONNECTION SUCCESS
+    socket.on('connect', () => {
+      console.log('✅ Socket connected');
+      setSocketStatus('connected');
+      setSocketError('');
+    });
+
+    // ✅ CONNECTION ERROR
+    socket.on('connect_error', (error) => {
+      console.error('🔴 Socket error:', error.message);
+      setSocketStatus('error');
+      setSocketError(`🔴 Connection Error: ${error.message}`);
+    });
+
+    // ✅ DISCONNECTED
+    socket.on('disconnect', (reason) => {
+      console.log('❌ Socket disconnected:', reason);
+      setSocketStatus('disconnected');
+      setSocketError(`📴 Connection lost: ${reason}`);
+    });
 
     // ✅ ONLINE USERS HANDLER
     const handleOnlineUsers = (users) => {
       console.log("📡 [ONLINE_USERS] Received:", users?.length, "users");
       if (users && users.length > 0) {
         setAllUsers((prevUsers) => {
-          // ✅ Only update online status of existing friends
           const updated = prevUsers.map((friendUser) => {
             const onlineUser = users.find(
               (ou) => ou.userId === friendUser.userId || ou._id === friendUser.userId
@@ -174,7 +220,7 @@ export default function Chat({
               };
             }
             
-            return friendUser; // Keep existing friend as is
+            return friendUser;
           });
 
           return updated;
@@ -186,13 +232,13 @@ export default function Chat({
     const handlePrivateMessage = (data) => {
       if (!data._id || !data.fromUserId || !data.message) {
         console.error("❌ Invalid message data:", data);
+        setSocketError("❌ Invalid message received");
         return;
       }
 
       const isInCurrentChat = data.fromUserId === selectedUserId;
 
       setMessages((prev) => {
-        // ✅ Check if message already exists
         const messageExists = prev.some((m) => m._id === data._id);
         if (messageExists) {
           console.warn(`⚠️ Message ${data._id} already exists, skipping`);
@@ -214,7 +260,6 @@ export default function Chat({
       });
 
       if (isInCurrentChat) {
-        // ✅ Auto-mark as read when chat is open
         setTimeout(() => {
           socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
             messageId: data._id,
@@ -223,7 +268,6 @@ export default function Chat({
           });
         }, 50);
       } else {
-        // ✅ Add to unread count
         setUnreadCounts((prev) => ({
           ...prev,
           [data.fromUserId]: (prev[data.fromUserId] || 0) + 1,
@@ -350,7 +394,6 @@ export default function Chat({
         }));
         setMessages(messagesWithIds);
 
-        // ✅ Mark unread messages as read
         const unreadMessages = messagesWithIds.filter(
           (msg) => msg.fromUserId === selectedUserId && !msg.read
         );
@@ -372,11 +415,13 @@ export default function Chat({
             await messageService.markMessagesAsRead(selectedUserId);
           } catch (apiErr) {
             console.error("❌ Failed to mark as read in DB:", apiErr);
+            setError("⚠️ Failed to mark messages as read");
           }
         }
+        setError("");
       } catch (err) {
         console.error("❌ Failed to fetch chat history:", err);
-        setError(err.message);
+        setError("⚠️ Failed to load chat history");
         setMessages([]);
       } finally {
         setLoading(false);
@@ -472,7 +517,7 @@ export default function Chat({
   const handleSendMessage = useCallback(() => {
     const socket = getSocket();
     if (!socket || !isSocketConnected()) {
-      setError("Connection error. Please refresh.");
+      setSocketError("🔴 Not connected. Please refresh.");
       return;
     }
 
@@ -561,18 +606,16 @@ export default function Chat({
 
         const socket = getSocket();
         if (!socket || !isSocketConnected()) {
-          setError("Connection error. Please refresh.");
+          setSocketError("🔴 Not connected. Please refresh.");
           return;
         }
 
-        // ✅ Remove from UI immediately (optimistic update)
         setMessages((prev) => {
           const updated = prev.filter((m) => m._id !== messageId);
           console.log(`✅ [DELETE] Message removed from UI:`, messageId);
           return updated;
         });
 
-        // ✅ Notify backend via socket
         socket.emit(SOCKET_EVENTS.MESSAGE_DELETED, {
           messageId: messageId,
           toUserId: selectedUserId,
@@ -581,9 +624,8 @@ export default function Chat({
         console.log("📤 [DELETE] Delete notification sent to backend");
       } catch (err) {
         console.error("❌ [DELETE] Error:", err);
-        setError("Failed to delete message");
+        setError("⚠️ Failed to delete message");
       
-        // Reload messages on error
         const data = await messageService.fetchChatHistory(selectedUserId);
         setMessages(
           data.messages.map((msg) => ({
@@ -603,7 +645,6 @@ export default function Chat({
 
   // ✅ EXPORT HANDLER FOR PARENT COMPONENT
   useEffect(() => {
-    // Make handler available to parent via window
     window.chatHandleFriendRemoved = handleFriendRemoved;
     return () => {
       delete window.chatHandleFriendRemoved;
@@ -623,6 +664,32 @@ export default function Chat({
         }}
       />
 
+      {/* ✅ SOCKET STATUS BAR */}
+      {socketStatus !== 'connected' && (
+        <div className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium flex items-center gap-2 ${
+          socketStatus === 'error' 
+            ? 'bg-red-500/20 border-b border-red-500/30 text-red-400' 
+            : 'bg-yellow-500/20 border-b border-yellow-500/30 text-yellow-400'
+        }`}>
+          {socketStatus === 'connecting' ? (
+            <>
+              <div className="animate-spin">⏳</div>
+              Connecting to server...
+            </>
+          ) : socketStatus === 'disconnected' ? (
+            <>
+              <WifiOff className="w-4 h-4 flex-shrink-0" />
+              Connection lost - trying to reconnect...
+            </>
+          ) : (
+            <>
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              Connection error - refresh if needed
+            </>
+          )}
+        </div>
+      )}
+
       {/* Main Container - Responsive Layout */}
       <div className="w-full h-full flex flex-col md:flex-row gap-0 overflow-hidden">
         
@@ -637,7 +704,6 @@ export default function Chat({
             <h2 className="text-base sm:text-lg md:text-xl font-bold text-[rgb(var(--text-primary))] whitespace-nowrap">
               {loadingFriends ? 'Loading...' : 'Friends'}
             </h2>
-            {/* ✅ ONLY HIDE SIDEBAR ON MOBILE WHEN SELECTING A CHAT */}
             <button
               onClick={() => setSidebarOpen(false)}
               className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 md:hidden flex-shrink-0"
@@ -694,7 +760,6 @@ export default function Chat({
                       key={id}
                       onClick={() => {
                         setSelectedUserId(id);
-                        // ✅ FIXED: Only close sidebar on mobile (< sm breakpoint)
                         if (window.innerWidth < 640) {
                           setSidebarOpen(false);
                         }
@@ -789,18 +854,15 @@ export default function Chat({
               {/* Chat Header */}
               <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2 sm:gap-3 flex-shrink-0">
                 <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                  {/* Back Button - FIXED: Only closes chat, NOT sidebar */}
                   <button
                     onClick={() => {
                       setSelectedUserId(null);
-                      // ✅ REMOVED: setSidebarOpen(false) - keep sidebar open!
                     }}
                     className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
 
-                  {/* Show Sidebar Button on Mobile */}
                   <button
                     onClick={() => setSidebarOpen(true)}
                     className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 md:hidden flex-shrink-0"
@@ -951,8 +1013,10 @@ export default function Chat({
 
               {/* Input Area */}
               <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))] flex-shrink-0">
+                {/* ✅ ACTION ERRORS */}
                 {error && (
-                  <div className="mb-2 sm:mb-3 p-2 sm:p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-xs">
+                  <div className="mb-2 sm:mb-3 p-2 sm:p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-xs flex items-center gap-2 animate-in fade-in slide-in-from-top duration-200">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
                     {error}
                   </div>
                 )}
