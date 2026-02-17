@@ -8,60 +8,27 @@ export function createSocketServer(httpServer) {
       'http://localhost:3000',
       'http://localhost:5173',
       'http://localhost:3001',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:3001',
     ];
 
     if (process.env.NODE_ENV === 'production') {
-      origins.push('https://pandav-msg-frontend.vercel.app');
-      origins.push('https://pandav-msg.vercel.app');
-      origins.push('https://pandav.jaychaudhari.me');
+      origins.push(process.env.CLIENT_URL);
+      origins.push('https://pandav.jaychaudhari.me');  // ✅ Use Cloudflare domain
+      origins.push('https://www.pandav.jaychaudhari.me');
     }
 
     return origins;
   };
 
-  // ✅ CRITICAL: Proper Socket.IO configuration
   const io = new Server(httpServer, {
     cors: {
-      origin: (origin, callback) => {
-        const allowedOrigins = getOrigin();
-        
-        console.log(`[SOCKET-CORS] Checking origin: ${origin || 'none'}`);
-        
-        if (!origin || allowedOrigins.includes(origin)) {
-          console.log(`[SOCKET-CORS] ✅ ALLOWED`);
-          callback(null, true);
-        } else {
-          console.warn(`[SOCKET-CORS] ❌ BLOCKED: ${origin}`);
-          callback(new Error('CORS policy violation'));
-        }
-      },
-      // ✅ CRITICAL: Methods MUST include GET and POST for polling
-      methods: ['GET', 'POST', 'OPTIONS'],
+      origin: getOrigin(),
+      methods: ['GET', 'POST'],
       credentials: true,
-      allowEIO3: false,
     },
-    
-    // ✅ Transport order: polling FIRST for mobile
-    transports: ['websocket'],
-    
-    // ✅ CRITICAL: Path must be /socket.io/
-    path: '/socket.io/',
-    
-    // ✅ Polling settings
+    transports: ['websocket', 'polling'],
     maxHttpBufferSize: 1e6,
     pingInterval: 25000,
-    pingTimeout: 90000,
-    
-    // ✅ Allow upgrade from polling to websocket
-    allowUpgrades: true,
-    
-    // ✅ Other settings
-    perMessageDeflate: {
-      threshold: 1024
-    }
+    pingTimeout: 60000,
   });
 
   const onlineUsers = new Map();
@@ -70,26 +37,15 @@ export function createSocketServer(httpServer) {
     socketAuthMiddleware(socket, next);
   });
 
-  console.log(`\n🔌 ================================`);
-  console.log(`[SOCKET] Initializing Socket.IO`);
-  console.log(`   CORS Origins: ${getOrigin().join(', ')}`);
-  console.log(`   Transports: polling (primary), websocket (fallback)`);
-  console.log(`   Path: /socket.io/`);
-  console.log(`   Methods: GET, POST, OPTIONS`);
-  console.log(`🔌 ================================\n`);
-
   io.on('connection', (socket) => {
-    console.log(`✅ User connected: ${socket.id}`);
-    const transport = socket?.conn?.transport?.name || 'unknown';
-    console.log(`   Transport: ${transport}`);
-    
+    console.log(`✅ Connected: ${socket.id}`);
     registerSocketEvents(io, socket, onlineUsers);
 
     socket.on('disconnect', () => {
-      console.log(`❌ User disconnected: ${socket.id}`);
+      console.log(`❌ Disconnected: ${socket.id}`);
       const { userId } = socket.user || {};
       if (userId) onlineUsers.delete(userId);
-      io.emit('onlineUsers', Array.from(onlineUsers.values()));
+      io.emit('online_users', Array.from(onlineUsers.values()));
     });
   });
 
