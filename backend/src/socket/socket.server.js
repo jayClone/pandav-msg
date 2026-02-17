@@ -41,12 +41,11 @@ export function createSocketServer(httpServer) {
       // ✅ CRITICAL: Methods MUST include GET and POST for polling
       methods: ['GET', 'POST', 'OPTIONS'],
       credentials: true,
-      allowEIO3: true,
-      allowEIO4: true
+      allowEIO3: false,
     },
     
     // ✅ Transport order: polling FIRST for mobile
-    transports: ['polling', 'websocket'],
+    transports: ['websocket'],
     
     // ✅ CRITICAL: Path must be /socket.io/
     path: '/socket.io/',
@@ -54,7 +53,7 @@ export function createSocketServer(httpServer) {
     // ✅ Polling settings
     maxHttpBufferSize: 1e6,
     pingInterval: 25000,
-    pingTimeout: 60000,
+    pingTimeout: 90000,
     
     // ✅ Allow upgrade from polling to websocket
     allowUpgrades: true,

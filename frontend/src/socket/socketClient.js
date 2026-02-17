@@ -39,7 +39,7 @@ export const connectSocket = (token) => {
         },
         
         // ✅ Polling FIRST
-        transports: ['polling', 'websocket'],
+        transports: ['websocket'],
         
         // ✅ Reconnection config
         reconnection: true,
@@ -56,7 +56,6 @@ export const connectSocket = (token) => {
         
         // ✅ Protocol
         secure: window.location.protocol === 'https:',
-        rejectUnauthorized: false,
         
         // ✅ Mobile-friendly
         closeOnBeforeunload: false,
@@ -68,13 +67,6 @@ export const connectSocket = (token) => {
         // ✅ XHR polling config with headers
         transportOptions: {
             polling: {
-                extraHeaders: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                // ✅ Polling interval (how often to check)
-                pollInterval: 100,
-                minPollInterval: 50
             }
         }
     });
