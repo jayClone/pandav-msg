@@ -558,18 +558,31 @@ export default function GroupChat({
     try {
       console.log('🗑️ Removing member:', memberId);
       
-      const updatedGroup = await groupService.removeMember(
-        selectedGroup.id,
-        memberId
-      );
+      const groupId = selectedGroup._id || selectedGroup.id;
+      
+      // ✅ Call remove member API
+      const updatedGroupResponse = await groupService.removeMember(groupId, memberId);
 
-      const updatedMembers = (updatedGroup.members || updatedGroup.participants || []);
+      console.log('✅ Remove response:', updatedGroupResponse);
+      
+      // ✅ Get updated members list
+      const updatedMembers = updatedGroupResponse.members || updatedGroupResponse.participants || [];
+      
+      // ✅ UPDATE STATE IMMEDIATELY
       setMembers(updatedMembers);
       setOnlineCount(updatedMembers.length);
       
+      // ✅ Update selected group
+      setSelectedGroup(prev => ({
+        ...prev,
+        members: updatedMembers,
+        participants: updatedMembers
+      }));
+      
+      // ✅ Update groups list
       setGroups((prev) =>
         prev.map((g) =>
-          g.id === selectedGroup.id
+          (g._id || g.id) === groupId
             ? { ...g, membersCount: updatedMembers.length }
             : g
         )
@@ -577,6 +590,7 @@ export default function GroupChat({
 
       console.log('✅ Member removed successfully');
       alert('✅ Member removed from group');
+      
     } catch (err) {
       console.error('❌ Failed to remove member:', err);
       alert('Failed to remove member: ' + (err.response?.data?.message || err.message));
@@ -597,21 +611,35 @@ export default function GroupChat({
       setDeletingGroup(true);
       setError(null);
 
+      console.log('🗑️ Deleting group:', groupId);
       await groupService.deleteGroup(groupId);
 
-      // Remove from groups list
-      setGroups(prev => prev.filter(g => (g._id || g.id || g.groupId) !== groupId));
+      // ✅ UPDATE STATE IMMEDIATELY
+      setGroups(prev => {
+        const filtered = prev.filter(g => {
+          const gId = g._id || g.id || g.groupId;
+          return gId !== groupId;
+        });
+        console.log(`✅ Removed group from list. Remaining: ${filtered.length}`);
+        return filtered;
+      });
+
+      // ✅ Clear selected group
       setSelectedGroup(null);
       setMessages([]);
+      setMembers([]);
       setShowDeleteConfirm(false);
       setAdminInfo(null);
+      setShowOptionsMenu(false);
       
-      console.log(`✅ Group deleted`);
+      console.log(`✅ Group deleted successfully`);
       alert('✅ Group deleted successfully');
+      
     } catch (err) {
       console.error('Delete group error:', err);
-      setError(err.response?.data?.message || 'Failed to delete group');
-      alert('❌ Failed to delete group: ' + (err.response?.data?.message || err.message));
+      const errorMsg = err.response?.data?.message || 'Failed to delete group';
+      setError(errorMsg);
+      alert('❌ Failed to delete group: ' + errorMsg);
     } finally {
       setDeletingGroup(false);
     }
@@ -861,13 +889,19 @@ export default function GroupChat({
       if (response.success) {
         console.log("✅ [LEAVE GROUP] Successfully left group");
 
-        setGroups((prevGroups) =>
-          prevGroups.filter((g) => (g._id || g.id) !== groupId)
-        );
+        // ✅ UPDATE STATE IMMEDIATELY
+        setGroups((prevGroups) => {
+          const filtered = prevGroups.filter((g) => (g._id || g.id) !== groupId);
+          console.log(`✅ Removed group. Remaining: ${filtered.length}`);
+          return filtered;
+        });
 
+        // ✅ Clear selected group and data
         setSelectedGroup(null);
         setMessages([]);
         setMembers([]);
+        setShowMembersPreview(false);
+        setShowOptionsMenu(false);
 
         setUnreadCounts((prev) => {
           const updated = { ...prev };
@@ -879,11 +913,8 @@ export default function GroupChat({
 
         setError(null);
         alert(`✅ You have left the group "${selectedGroup.name}"`);
-
-        setTimeout(() => {
-          console.log("📡 Refetching groups...");
-          fetchAllGroups();
-        }, 300);
+        console.log("✅ Group left successfully");
+      
       }
     } catch (err) {
       console.error("❌ Leave group error:", err);
@@ -1185,7 +1216,7 @@ useEffect(() => {
                           setShowOptionsMenu(false);
                         }}
                         disabled={loading}
-                        className="w-full px-4 py-3 text-left hover:bg-amber-500/20 text-sm text-amber-400 flex items-center gap-3 border-b border-[rgb(var(--border-secondary))] transition-all hover:border-amber-500/30 disabled:opacity-50"
+                        className="w-full px-4 py-3 text-left hover:bg-amber-500/20 text-sm text-amber-400 flex items-center gap-3 border-b border-[rgb(var(--border-secondary))] transition-all hover:border-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <LogOut className="w-5 h-5 shrink-0" />
                         <span className="font-semibold">{loading ? "Leaving..." : "Leave"}</span>
@@ -1358,10 +1389,10 @@ useEffect(() => {
                 </div>
               ) : messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                  <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-3 sm:mb-6 shadow-lg">
+                  <div className="w-16 h-16 sm:w-24 sm:h-24 md:w-32 md:h-32 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-3 sm:mb-4 md:mb-6 shadow-2xl">
                     <MessageCircle className="w-8 h-8 sm:w-12 sm:h-12 text-green-500/50" />
                   </div>
-                  <h3 className="text-sm sm:text-lg font-bold mb-1 sm:mb-2">
+                  <h3 className="text-sm sm:text-lg md:text-2xl font-bold mb-1 sm:mb-2 md:mb-3 gradient-text text-center">
                     {safeSelectedGroup.name}
                   </h3>
                   <p className="text-xs sm:text-sm text-gray-500 text-center max-w-xs">
@@ -1726,26 +1757,51 @@ useEffect(() => {
 
                   try {
                     setAddMemberLoading(true);
+                    const groupId = selectedGroup._id || selectedGroup.id;
 
-                    // Add each selected user
+                    // ✅ Add each selected user
                     for (const userId of selectedUsersToAdd) {
-                      await groupService.addMember(selectedGroup._id || selectedGroup.id, userId);
+                      console.log(`➕ Adding user ${userId} to group ${groupId}`);
+                      await groupService.addMember(groupId, userId);
                     }
 
-                    // Refresh group data
-                    const updatedGroup = await groupService.getGroup(selectedGroup._id || selectedGroup.id);
-                    if (updatedGroup.data?.success) {
-                      setSelectedGroup(updatedGroup.data.data);
-                      setMembers(updatedGroup.data.data.participants || updatedGroup.data.data.members || []);
-                    }
+                    // ✅ IMMEDIATELY REFRESH GROUP DATA
+                    console.log('🔄 Refreshing group data...');
+                    const updatedGroupResponse = await groupService.getGroup(groupId);
+                    
+                    console.log('✅ Updated group:', updatedGroupResponse);
+                    
+                    // ✅ Updated members list
+                    const updatedMembers = updatedGroupResponse.members || updatedGroupResponse.participants || [];
+                    
+                    // ✅ Update state immediately
+                    setMembers(updatedMembers);
+                    setSelectedGroup(prev => ({
+                      ...prev,
+                      members: updatedMembers,
+                      participants: updatedMembers
+                    }));
+                    
+                    // ✅ Update groups list count
+                    setGroups(prevGroups =>
+                      prevGroups.map(g =>
+                        (g._id || g.id) === groupId
+                          ? { ...g, membersCount: updatedMembers.length }
+                          : g
+                      )
+                    );
 
                     setShowAddMemberModal(false);
                     setSelectedUsersToAdd([]);
                     setSearchUsersToAdd('');
+                    alert(`✅ Added ${selectedUsersToAdd.length} member(s) successfully!`);
                     console.log(`✅ Added ${selectedUsersToAdd.length} members`);
+                    
                   } catch (err) {
-                    setError(err.response?.data?.message || 'Failed to add members');
                     console.error('Add members error:', err);
+                    const errorMsg = err.response?.data?.message || err.message || 'Failed to add members';
+                    setError(errorMsg);
+                    alert('❌ ' + errorMsg);
                   } finally {
                     setAddMemberLoading(false);
                   }
