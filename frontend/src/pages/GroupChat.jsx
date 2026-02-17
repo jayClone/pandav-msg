@@ -67,6 +67,9 @@ export default function GroupChat({
   const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
+  // ✅ ADD NEW STATE FOR ADMIN INFO
+  const [adminInfo, setAdminInfo] = useState(null);
+
   // ═══════════════════════════════════════════════════════════════════
   // HELPER FUNCTION: Format time
   // ═══════════════════════════════════════════════════════════════════
@@ -314,7 +317,22 @@ export default function GroupChat({
       setMembers(groupMembers);
       setOnlineCount(groupMembers.length);
       
-      console.log('✅ Group members loaded:', groupMembers.length);
+      // ✅ SET ADMIN INFO
+      setAdminInfo({
+        adminId: groupDetails.adminId,
+        adminName: groupDetails.adminName,
+        adminEmail: groupDetails.adminEmail
+      });
+      
+      console.log('✅ Group admin:', groupDetails.adminName);
+      
+      // ✅ ADD THIS: Update selectedGroup with adminId
+      setSelectedGroup(prev => ({
+        ...prev,
+        adminId: groupDetails.adminId,
+        adminName: groupDetails.adminName
+      }));
+      
     } catch (err) {
       console.error('❌ Failed to fetch group details:', err);
     }
@@ -493,74 +511,41 @@ export default function GroupChat({
 
   const fetchUsersToAdd = useCallback(async () => {
     try {
-      const response = await axios.get("/users", {
-        baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (response.data.success) {
-        const nonMembers = response.data.data.filter(
-          (user) =>
-            !members.some(
-              (m) => (m._id || m.userId) === (user._id || user.userId)
-            )
-        );
-        setUsersToAddList(nonMembers);
+      setAddMemberLoading(true);
+      setError(null);
+
+      // ✅ FIX: Fetch FRIENDS list instead of all users
+      const response = await friendAPI.getFriends();
+
+      if (response.data?.success) {
+        // Get current group members
+        const currentMemberIds = members.map(m => m._id || m.userId);
+
+        // Filter out: users already in group, and current user
+        const availableUsers = response.data.data.filter(user => {
+          const userId = user._id || user.id;
+          return (
+            userId !== currentUserId && 
+            !currentMemberIds.includes(userId)
+          );
+        });
+
+        console.log(`✅ Fetched ${availableUsers.length} friends not in group`);
+        setUsersToAddList(availableUsers);
+        setSelectedUsersToAdd([]); // Reset selection
+      } else {
+        setError('Failed to fetch friends');
+        setUsersToAddList([]);
       }
     } catch (err) {
-      console.error("Failed to fetch users:", err);
-    }
-  }, [token, members]);
-
-  const handleAddMember = async () => {
-    if (selectedUsersToAdd.length === 0) {
-      alert("Please select at least one member to add");
-      return;
-    }
-
-    setAddMemberLoading(true);
-    try {
-      for (const userId of selectedUsersToAdd) {
-        await groupService.addMember(selectedGroup.id, userId);
-      }
-
-      const updatedGroup = await groupService.getGroup(selectedGroup.id);
-      setMembers(updatedGroup.members || updatedGroup.participants || []);
-      
-      setGroups((prev) =>
-        prev.map((g) =>
-          g.id === selectedGroup.id
-            ? {
-                ...g,
-                membersCount:
-                  updatedGroup.members?.length ||
-                  updatedGroup.participants?.length ||
-                  0,
-              }
-            : g
-        )
-      );
-
-      setSelectedGroup((prev) => ({
-        ...prev,
-        membersCount:
-          updatedGroup.members?.length ||
-          updatedGroup.participants?.length ||
-          0,
-      }));
-
-      setSelectedUsersToAdd([]);
-      setShowAddMemberModal(false);
-      alert("Member(s) added successfully!");
-    } catch (err) {
-      console.error("Failed to add member:", err);
-      alert("Failed to add member: " + (err.message || "Unknown error"));
+      console.error('Fetch users error:', err);
+      setError(err.response?.data?.message || 'Failed to fetch users');
+      setUsersToAddList([]);
     } finally {
       setAddMemberLoading(false);
     }
-  };
+  }, [members, currentUserId, token]);
+
 
   const handleRemoveMember = async (memberId) => {
     if (!selectedGroup) return;
@@ -601,22 +586,32 @@ export default function GroupChat({
   };
 
   const handleDeleteGroup = async () => {
-    if (!confirm('⚠️ Are you sure? This will delete the group and all its messages permanently.')) {
+    const groupId = selectedGroup?._id || selectedGroup?.id || selectedGroup?.groupId;
+  
+    if (!groupId) {
+      setError('No group selected');
       return;
     }
 
-    setDeletingGroup(true);
     try {
-      await groupService.deleteGroup(selectedGroup.id);
-      
-      setGroups((prev) => prev.filter(g => g.id !== selectedGroup.id));
-      
+      setDeletingGroup(true);
+      setError(null);
+
+      await groupService.deleteGroup(groupId);
+
+      // Remove from groups list
+      setGroups(prev => prev.filter(g => (g._id || g.id || g.groupId) !== groupId));
       setSelectedGroup(null);
+      setMessages([]);
+      setShowDeleteConfirm(false);
+      setAdminInfo(null);
       
-      alert('✅ Group deleted successfully!');
+      console.log(`✅ Group deleted`);
+      alert('✅ Group deleted successfully');
     } catch (err) {
-      console.error('Failed to delete group:', err);
-      alert('Failed to delete group: ' + (err.message || 'Unknown error'));
+      console.error('Delete group error:', err);
+      setError(err.response?.data?.message || 'Failed to delete group');
+      alert('❌ Failed to delete group: ' + (err.response?.data?.message || err.message));
     } finally {
       setDeletingGroup(false);
     }
@@ -759,7 +754,7 @@ export default function GroupChat({
   }, [handleMessageRead]);
 
   useEffect(() => {
-    if (!selectedGroup?._id && !selectedGroup?.id) return;
+    if (!selectedGroup?.id && !selectedGroup?.name) return;
     if (messages.length === 0) return;
 
     const socket = getSocket();
@@ -900,7 +895,50 @@ export default function GroupChat({
       setLoading(false);
     }
   };
+  
+useEffect(() => {
+  console.log('📊 showOptionsMenu state changed:', showOptionsMenu);
+}, [showOptionsMenu]);
 
+// Add this RIGHT AFTER all your other useEffect hooks (around line 900):
+
+useEffect(() => {
+  const handleClickOutside = (event) => {
+    const menuElement = document.querySelector('[data-options-menu]');
+    const buttonElement = document.querySelector('[data-menu-button]');
+    
+    if (
+      showOptionsMenu && 
+      menuElement && 
+      !menuElement.contains(event.target) &&
+      buttonElement &&
+      !buttonElement.contains(event.target)
+    ) {
+      console.log('❌ Click outside menu - closing');
+      setShowOptionsMenu(false);
+    }
+  };
+
+  if (showOptionsMenu) {
+    // Use 'click' instead of 'mousedown' - fixes the timing issue
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }
+}, [showOptionsMenu]);
+
+useEffect(() => {
+  if (selectedGroup) {
+    console.log('🔍 DEBUG ADMIN CHECK:', {
+      selectedGroup_adminId: selectedGroup?.adminId,
+      selectedGroup_adminId_type: typeof selectedGroup?.adminId,
+      currentUserId: currentUserId,
+      currentUserId_type: typeof currentUserId,
+      adminId_string: String(selectedGroup?.adminId),
+      isAdmin: selectedGroup?.adminId === currentUserId,
+      isAdmin_string: String(selectedGroup?.adminId) === String(currentUserId),
+    });
+  }
+}, [selectedGroup, currentUserId]);
   return (
     <>
       {/* ✅ RESPONSIVE GROUPS SIDEBAR */}
@@ -1054,14 +1092,28 @@ export default function GroupChat({
                     <ChevronLeft className="w-4 h-4" />
                   </button>
 
-                  {/* Group info - RESPONSIVE */}
+                  {/* Group info - WITH ADMIN INDICATOR */}
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-[rgb(var(--text-primary))] text-sm sm:text-base lg:text-lg truncate">
-                      {selectedGroup.name}
-                    </h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-semibold text-[rgb(var(--text-primary))] text-sm sm:text-base lg:text-lg truncate">
+                        {selectedGroup.name}
+                      </h3>
+                      {String(selectedGroup?.adminId) === String(currentUserId) && (
+                        <span className="text-yellow-400 text-xs font-bold bg-yellow-500/20 px-2 py-0.5 rounded-full border border-yellow-500/30 hidden sm:inline-block">
+                          👑 Admin
+                        </span>
+                      )}
+                    </div>
+                    
+                    {/* Admin info */}
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Admin: <span className="text-yellow-400 font-bold">{adminInfo?.adminName || 'Loading...'}</span>
+                    </p>
+                    
+                    {/* Online count */}
                     <p className={`text-xs font-medium ${onlineCount > 0 ? 'text-green-400' : 'text-gray-500'}`}>
                       {onlineCount > 0 ? (
-                        <>🟢 {onlineCount} · {members.length}</>
+                        <>🟢 {onlineCount} Online · {members.length}</>
                       ) : (
                         <>🔴 {members.length}</>
                       )}
@@ -1069,69 +1121,88 @@ export default function GroupChat({
                   </div>
                 </div>
 
-                {/* ✅ RESPONSIVE OPTIONS MENU */}
+                {/* Options Menu */}
                 <div className="relative">
                   <button 
-                    onClick={() => setShowOptionsMenu(!showOptionsMenu)}
-                    className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 shrink-0"
+                    data-menu-button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      console.log('🔵 3-dot clicked');
+                      setShowOptionsMenu(prev => !prev);
+                    }}
+                    className="p-2 sm:p-3 hover:bg-red-500/20 rounded-lg transition-all text-red-400 hover:text-red-300 shrink-0 border border-red-500/30 hover:border-red-400/50"
+                    title="Group Options"
                   >
-                    <MoreVertical className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <MoreVertical className="w-5 h-5 sm:w-6 sm:h-6" />
                   </button>
 
                   {/* Dropdown Menu - RESPONSIVE */}
                   {showOptionsMenu && (
-                    <div className="absolute right-0 mt-2 w-44 sm:w-48 bg-[rgb(var(--bg-secondary))] border border-[rgb(var(--border-secondary))] rounded-xl shadow-2xl z-50 overflow-hidden">
-                      {/* Add Member */}
-                      {selectedGroup.adminId === currentUserId && (
+                    <div 
+                      data-options-menu
+                      className="absolute right-0 top-full mt-2 w-52 bg-[rgb(var(--bg-secondary))] border-2 border-red-500/50 rounded-xl shadow-2xl z-50 overflow-hidden backdrop-blur-sm"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {/* Add Member - Admin Only */}
+                      {String(selectedGroup?.adminId) === String(currentUserId) && (
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            console.log('✅ Add Member clicked');
                             setShowAddMemberModal(true);
+                            setSearchUsersToAdd("");
+                            setSelectedUsersToAdd([]);
                             setShowOptionsMenu(false);
                             fetchUsersToAdd();
                           }}
-                          className="w-full px-3 sm:px-4 py-2 text-left hover:bg-[rgb(var(--bg-hover))] text-xs sm:text-sm text-[rgb(var(--text-primary))] flex items-center gap-2 border-b border-[rgb(var(--border-secondary))]"
+                          className="w-full px-4 py-3 text-left hover:bg-green-500/20 text-sm text-green-400 flex items-center gap-3 border-b border-[rgb(var(--border-secondary))] transition-all hover:border-green-500/30"
                         >
-                          <UserPlus className="w-4 h-4 shrink-0" />
-                          Add Member
+                          <Plus className="w-5 h-5 shrink-0" />
+                          <span className="font-semibold">Add Member</span>
                         </button>
                       )}
 
                       {/* View Members */}
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setShowMembersPreview(true);
                           setShowOptionsMenu(false);
                         }}
-                        className="w-full px-3 sm:px-4 py-2 text-left hover:bg-[rgb(var(--bg-hover))] text-xs sm:text-sm text-[rgb(var(--text-primary))] flex items-center gap-2 border-b border-[rgb(var(--border-secondary))]"
+                        className="w-full px-4 py-3 text-left hover:bg-blue-500/20 text-sm text-blue-400 flex items-center gap-3 border-b border-[rgb(var(--border-secondary))] transition-all hover:border-blue-500/30"
                       >
-                        <Users className="w-4 h-4 shrink-0" />
-                        Members ({members.length})
+                        <Users className="w-5 h-5 shrink-0" />
+                        <span className="font-semibold">Members ({members.length})</span>
                       </button>
 
                       {/* Leave Group */}
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           handleLeaveGroup();
                           setShowOptionsMenu(false);
                         }}
                         disabled={loading}
-                        className="w-full px-3 sm:px-4 py-2 text-left hover:bg-amber-500/20 text-xs sm:text-sm text-amber-400 flex items-center gap-2 border-b border-[rgb(var(--border-secondary))] transition-colors disabled:opacity-50"
+                        className="w-full px-4 py-3 text-left hover:bg-amber-500/20 text-sm text-amber-400 flex items-center gap-3 border-b border-[rgb(var(--border-secondary))] transition-all hover:border-amber-500/30 disabled:opacity-50"
                       >
-                        <LogOut className="w-4 h-4 shrink-0" />
-                        {loading ? "Leaving..." : "Leave"}
+                        <LogOut className="w-5 h-5 shrink-0" />
+                        <span className="font-semibold">{loading ? "Leaving..." : "Leave"}</span>
                       </button>
 
-                      {/* Delete Group (Admin Only) */}
-                      {selectedGroup.adminId === currentUserId && (
+                      {/* DELETE GROUP - ADMIN ONLY */}
+                      {String(selectedGroup?.adminId) === String(currentUserId) && (
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setShowDeleteConfirm(true);
                             setShowOptionsMenu(false);
                           }}
-                          className="w-full px-3 sm:px-4 py-2 text-left hover:bg-red-500/20 text-xs sm:text-sm text-red-400 flex items-center gap-2 transition-colors"
+                          className="w-full px-4 py-3 text-left hover:bg-red-500/20 text-sm text-red-400 flex items-center gap-3 transition-all hover:border-red-500/30"
                         >
-                          <Trash2 className="w-4 h-4 shrink-0" />
-                          Delete
+                          <Trash2 className="w-5 h-5 shrink-0" />
+                          <span className="font-semibold">🗑️ Delete Group</span>
                         </button>
                       )}
                     </div>
@@ -1147,27 +1218,29 @@ export default function GroupChat({
                 <div className="flex items-center justify-between mb-3 sm:mb-4 sticky top-0 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-transparent pb-2 sm:pb-3 z-10">
                   <div>
                     <h4 className="text-sm sm:text-base font-bold text-gray-200">
-                      👥 Members
+                      👥 Members ({members.length})
                     </h4>
                     <p className="text-xs text-gray-500 mt-0.5 sm:mt-1">
-                      {members.length} {members.length === 1 ? 'member' : 'members'}
+                      Admin: <span className="text-yellow-400 font-bold">{adminInfo?.adminName || 'N/A'}</span>
                     </p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setShowAddMemberModal(true);
-                      setSearchUsersToAdd("");
-                      setSelectedUsersToAdd([]);
-                      fetchUsersToAdd();
-                    }}
-                    className="px-3 sm:px-4 py-2 bg-linear-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 shadow-lg hover:shadow-green-500/50 glow-green shrink-0"
-                  >
-                    <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span className="hidden sm:inline">Add</span>
-                  </button>
+                  {String(selectedGroup?.adminId) === String(currentUserId) && (
+                    <button
+                      onClick={() => {
+                        setShowAddMemberModal(true);
+                        setSearchUsersToAdd("");
+                        setSelectedUsersToAdd([]);
+                        fetchUsersToAdd();
+                      }}
+                      className="px-3 sm:px-4 py-2 bg-linear-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 shadow-lg hover:shadow-green-500/50 glow-green shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">Add</span>
+                    </button>
+                  )}
                 </div>
 
-                {/* Members List - RESPONSIVE */}
+                {/* Members List - NO EMAIL */}
                 <div className="space-y-1 sm:space-y-2">
                   {members.length === 0 ? (
                     <div className="text-center py-6 sm:py-8 text-gray-500">
@@ -1182,54 +1255,88 @@ export default function GroupChat({
                       }
 
                       const memberId = member._id || member.userId;
-                      const memberName = member.name || member.email || 'Unknown User';
+                      const memberName = member.name || 'Unknown User';
                       const isOnline = groupOnlineMembers?.some(
                         u => (u.userId === memberId || u.userId === member._id || u.userId === member.userId)
                       );
+                      
+                      // ✅ CHECK IF THIS MEMBER IS ADMIN
+                      const isAdmin = adminInfo?.adminId === memberId || 
+                               adminInfo?.adminId?._id === memberId ||
+                               selectedGroup?.adminId === memberId;
+                      const isCurrentUser = memberId === currentUserId;
 
                       return (
                         <div
                           key={memberId}
-                          className="flex items-center justify-between gap-2 sm:gap-3 p-2 sm:p-3 bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 rounded-xl border border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30 transition-all group"
+                          className={`flex items-center justify-between gap-2 sm:gap-3 p-2 sm:p-3 rounded-xl border transition-all group ${
+                            isAdmin
+                              ? 'bg-yellow-500/10 hover:bg-yellow-500/20 border-yellow-500/30 hover:border-yellow-500/50'
+                              : 'bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30'
+                          }`}
                         >
                           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                            {/* Avatar */}
                             <div className="relative shrink-0">
-                              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-linear-to-br from-blue-500 to-cyan-600 flex items-center justify-center text-white font-bold shadow-lg text-xs sm:text-sm">
+                              <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white font-bold shadow-lg text-xs sm:text-sm ${
+                                isAdmin
+                                  ? 'bg-linear-to-br from-yellow-500 to-orange-600'
+                                  : 'bg-linear-to-br from-blue-500 to-cyan-600'
+                              }`}>
                                 {memberName.charAt(0).toUpperCase()}
                               </div>
+                              
+                              {/* Online Indicator */}
                               <div className={`absolute bottom-0 right-0 w-2 h-2 sm:w-3 sm:h-3 border border-[rgb(var(--bg-secondary))] rounded-full transition-all ${
                                 isOnline ? 'bg-green-400 animate-pulse shadow-lg shadow-green-400/50' : 'bg-gray-500'
                               }`}></div>
+                              
+                              {/* Admin Crown */}
+                              {isAdmin && (
+                                <div className="absolute -top-1 -right-1 text-lg sm:text-xl animate-bounce">👑</div>
+                              )}
                             </div>
+
+                            {/* Member Info */}
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <p className="font-medium text-gray-300 text-xs sm:text-sm truncate">
                                   {memberName}
+                                  {isCurrentUser && <span className="text-blue-400 ml-1">(You)</span>}
                                 </p>
+                                
+                                {/* Admin Badge */}
+                                {isAdmin && (
+                                  <span className="bg-yellow-500/30 border border-yellow-500/50 text-yellow-300 text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
+                                    👑 Admin
+                                  </span>
+                                )}
+                                
+                                {/* Online Badge */}
                                 {isOnline && (
                                   <span className="text-xs bg-green-500/20 text-green-400 px-1.5 sm:px-2 py-0.5 rounded-full font-bold whitespace-nowrap animate-pulse hidden sm:inline-block">
-                                    ● On
+                                    ● Online
                                   </span>
                                 )}
                               </div>
-                              <p className="text-xs text-gray-500 truncate">
-                                {member.email}
-                              </p>
                             </div>
                           </div>
-                          {selectedGroup?.adminId === currentUserId && memberId !== currentUserId && (
-                            <button
-                              onClick={() => handleRemoveMember(memberId)}
-                              disabled={removeMemberLoading === memberId}
-                              className="p-1.5 sm:p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400 disabled:opacity-50 shrink-0 opacity-0 group-hover:opacity-100"
-                            >
-                              {removeMemberLoading === memberId ? (
-                                <Loader className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
-                              ) : (
-                                <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                              )}
-                            </button>
-                          )}
+
+                          {/* Remove Button - Only show if current user is admin */}
+                            {String(selectedGroup?.adminId) === String(currentUserId) && memberId !== currentUserId && (
+                              <button
+                                onClick={() => handleRemoveMember(memberId)}
+                                disabled={removeMemberLoading === memberId}
+                                className="p-2 sm:p-2.5 rounded-lg transition-all shrink-0 font-bold text-white bg-red-600 hover:bg-red-700 shadow-lg hover:shadow-red-500/50 border border-red-400/50 hover:border-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Remove Member"
+                              >
+                                {removeMemberLoading === memberId ? (
+                                  <Loader className="w-4 h-4 sm:w-5 sm:h-5 animate-spin text-white" />
+                                ) : (
+                                  <X className="w-4 h-4 sm:w-5 sm:h-5 text-white font-bold" />
+                                )}
+                              </button>
+                            )}
                         </div>
                       );
                     })
@@ -1337,7 +1444,7 @@ export default function GroupChat({
 
       {/* ✅ CREATE GROUP MODAL - RESPONSIVE */}
       {showCreateGroupModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-[rgb(var(--border-secondary))]">
             {/* Modal Header */}
             <div className="p-3 sm:p-6 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between sticky top-0 bg-[rgb(var(--bg-secondary))]">
@@ -1433,7 +1540,7 @@ export default function GroupChat({
                       return userStr.includes(searchUsers.toLowerCase());
                     })
                     .map((user) => {
-                      const userId = user.userId || user._id;
+                      const userId = user._id || user.id;
                       const isSelected = selectedMembers.includes(userId);
                       const userName = user.name || user.email || 'Unknown';
 
@@ -1498,202 +1605,155 @@ export default function GroupChat({
         </div>
       )}
 
-      {/* ✅ ADD MEMBER MODAL - RESPONSIVE */}
-      {showAddMemberModal && selectedGroup && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl border border-green-500/20 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-3 sm:p-6 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-green-950/20 border-b-2 border-green-500/20 flex items-center justify-between sticky top-0 z-10">
-              <div>
-                <h3 className="text-base sm:text-lg font-bold text-gray-100">
-                  ➕ Add Members
-                </h3>
-                <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                  To <span className="text-green-400 font-semibold">{safeSelectedGroup.name}</span>
-                </p>
-              </div>
+      {/* ✅ DELETE CONFIRM - RESPONSIVE */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-lg border border-red-600 p-6 max-w-md w-full">
+            <h3 className="text-lg font-bold text-red-400 mb-2">Delete Group?</h3>
+            <p className="text-sm text-slate-300 mb-4">
+              This will permanently delete "{selectedGroup?.name}" and all messages. This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
               <button
-                onClick={() => {
-                  setShowAddMemberModal(false);
-                  setSelectedUsersToAdd([]);
-                  setSearchUsersToAdd("");
-                }}
-                className="p-2 hover:bg-red-500/20 rounded-lg transition-all text-gray-400 hover:text-red-400"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-3 sm:p-6 space-y-4 overflow-y-auto flex-1">
-              {/* User Search */}
-              <div>
-                <label className="text-xs sm:text-sm font-semibold text-gray-400 block mb-2">
-                  Select Users
-                </label>
-                <div className="relative mb-3">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={searchUsersToAdd}
-                    onChange={(e) => setSearchUsersToAdd(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-sm bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              {/* Selected Users */}
-              {selectedUsersToAdd.length > 0 && (
-                <div className="bg-[rgb(var(--bg-hover))]/30 rounded-lg p-2 sm:p-3">
-                  <p className="text-xs text-gray-400 mb-2 font-semibold">
-                    Selected ({selectedUsersToAdd.length})
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                    {selectedUsersToAdd.map((userId) => {
-                      const user = usersToAddList.find(
-                        (u) => (u.userId || u._id) === userId
-                      );
-                      return (
-                        <div
-                          key={userId}
-                          className="bg-blue-500/20 border border-blue-500/30 text-blue-300 px-2 sm:px-3 py-1 rounded-full text-xs flex items-center gap-1.5"
-                        >
-                          <span className="truncate">{user?.name}</span>
-                          <button
-                            onClick={() => {
-                              setSelectedUsersToAdd((prev) =>
-                                prev.filter((id) => id !== userId)
-                              );
-                            }}
-                            className="hover:text-blue-100"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Users List */}
-              <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-1.5 sm:space-y-2">
-                {usersToAddList.length === 0 ? (
-                  <div className="text-center text-gray-500 py-4">
-                    <p className="text-xs sm:text-sm">
-                      All are members
-                    </p>
-                  </div>
-                ) : (
-                  usersToAddList
-                    .filter((user) => {
-                      const userStr = `${user.name} ${user.email}`.toLowerCase();
-                      return userStr.includes(searchUsersToAdd.toLowerCase());
-                    })
-                    .map((user) => {
-                      const userId = user.userId || user._id;
-                      const isSelected = selectedUsersToAdd.includes(userId);
-                      const userName = user.name || user.email || 'Unknown';
-
-                      return (
-                        <button
-                          key={userId}
-                          onClick={() => {
-                            setSelectedUsersToAdd((prev) =>
-                              isSelected
-                                ? prev.filter((id) => id !== userId)
-                                : [...prev, userId]
-                            );
-                          }}
-                          className={`w-full p-2 sm:p-3 rounded-lg text-left transition-all flex items-center gap-2 sm:gap-3 text-sm ${
-                            isSelected
-                              ? "bg-green-500/20 border border-green-500/30"
-                              : "hover:bg-[rgb(var(--bg-hover))]/50 border border-[rgb(var(--border-secondary))]/50"
-                          }`}
-                        >
-                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white text-xs sm:text-sm font-bold shrink-0">
-                            {userName.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-300 text-xs sm:text-sm truncate">
-                              {user.name}
-                            </p>
-                            <p className="text-xs text-gray-500 truncate">
-                              {user.email}
-                            </p>
-                          </div>
-                          {isSelected && (
-                            <Check className="w-4 h-4 text-green-400 shrink-0" />
-                          )}
-                        </button>
-                      );
-                    })
-                )}
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-3 sm:p-6 border-t border-[rgb(var(--border-secondary))] flex gap-2 sm:gap-3 sticky bottom-0 bg-[rgb(var(--bg-secondary))]">
-              <button
-                onClick={() => {
-                  setShowAddMemberModal(false);
-                  setSelectedUsersToAdd([]);
-                  setSearchUsersToAdd("");
-                }}
-                className="flex-1 px-3 sm:px-4 py-2 bg-[rgb(var(--bg-hover))] text-gray-300 text-sm rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors"
+                disabled={deletingGroup}
               >
                 Cancel
               </button>
               <button
-                onClick={handleAddMember}
-                disabled={addMemberLoading || selectedUsersToAdd.length === 0}
-                className={`flex-1 px-3 sm:px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold text-sm ${
-                  addMemberLoading || selectedUsersToAdd.length === 0
-                    ? "bg-gray-600 text-gray-400 cursor-not-allowed opacity-50"
-                    : "bg-linear-to-br from-blue-600 to-cyan-700 text-white hover:from-blue-500 hover:to-cyan-600 glow-blue"
-                }`}
+                onClick={handleDeleteGroup}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition-colors disabled:opacity-50"
+                disabled={deletingGroup}
               >
-                {addMemberLoading && <Loader className="w-4 h-4 animate-spin" />}
-                {addMemberLoading ? "Adding..." : "Add"}
+                {deletingGroup ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ✅ DELETE CONFIRM - RESPONSIVE */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4">
-          <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl max-w-sm w-full border border-red-500/20">
-            <div className="p-3 sm:p-6 border-b border-red-500/20">
-              <h3 className="text-base sm:text-lg font-bold text-gray-300 flex items-center gap-2 sm:gap-3">
-                <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 text-red-500 shrink-0" />
-                Delete Group?
-              </h3>
-              <p className="text-xs sm:text-sm text-gray-400 mt-2">
-                Permanently delete <span className="text-red-400 font-semibold">{selectedGroup?.name}</span>?
-              </p>
-            </div>
-            
-            <div className="p-3 sm:p-6 flex gap-2 sm:gap-3">
+      {/* ✅ ADD MEMBER MODAL - RESPONSIVE */}
+      {showAddMemberModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-[rgb(var(--bg-secondary))] rounded-lg border border-blue-600 p-6 max-w-md w-full max-h-96 overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-blue-400">Add Members</h3>
               <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-3 sm:px-4 py-2 bg-[rgb(var(--bg-hover))] text-gray-300 text-sm rounded-lg hover:bg-[rgb(var(--bg-hover))]/70 transition-all"
+                onClick={() => {
+                  setShowAddMemberModal(false);
+                  setSelectedUsersToAdd([]);
+                  setSearchUsersToAdd('');
+                }}
+                className="text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Search Box */}
+            <input
+              type="text"
+              placeholder="Search friends..."
+              value={searchUsersToAdd}
+              onChange={(e) => setSearchUsersToAdd(e.target.value.toLowerCase())}
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-sm text-white placeholder-slate-500 mb-4"
+            />
+
+            {/* Users List - NO EMAIL */}
+            <div className="space-y-2 max-h-48 overflow-y-auto mb-4 custom-scrollbar">
+              {addMemberLoading ? (
+                <p className="text-sm text-slate-400 text-center py-4">Loading friends...</p>
+              ) : usersToAddList.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">
+                  All your friends are already in this group! 🎉
+                </p>
+              ) : (
+                usersToAddList
+                  .filter(user => 
+                    (user.name || '').toLowerCase().includes(searchUsersToAdd)
+                  )
+                  .map((user) => {
+                    const userId = user._id || user.id;
+                    const isSelected = selectedUsersToAdd.includes(userId);
+
+                    return (
+                      <label
+                        key={userId}
+                        className="flex items-center gap-3 p-2 rounded hover:bg-slate-700 cursor-pointer transition-colors"
+                        title={user.name}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            setSelectedUsersToAdd(prev =>
+                              prev.includes(userId)
+                                ? prev.filter(id => id !== userId)
+                                : [...prev, userId]
+                            );
+                          }}
+                          className="w-4 h-4 accent-blue-600 cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-white truncate">{user.name}</p>
+                        </div>
+                      </label>
+                    );
+                  })
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowAddMemberModal(false);
+                  setSelectedUsersToAdd([]);
+                  setSearchUsersToAdd('');
+                }}
+                className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors"
+                disabled={addMemberLoading}
               >
                 Cancel
               </button>
               <button
-                onClick={handleDeleteGroup}
-                disabled={deletingGroup}
-                className={`flex-1 px-3 sm:px-4 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold text-sm ${
-                  deletingGroup
-                    ? "bg-gray-600 text-gray-400 cursor-not-allowed"
-                    : "bg-linear-to-br from-red-600 to-red-700 text-white hover:from-red-500 hover:to-red-600"
-                }`}
+                onClick={async () => {
+                  if (selectedUsersToAdd.length === 0) {
+                    alert('Please select at least one member');
+                    return;
+                  }
+
+                  try {
+                    setAddMemberLoading(true);
+
+                    // Add each selected user
+                    for (const userId of selectedUsersToAdd) {
+                      await groupService.addMember(selectedGroup._id || selectedGroup.id, userId);
+                    }
+
+                    // Refresh group data
+                    const updatedGroup = await groupService.getGroup(selectedGroup._id || selectedGroup.id);
+                    if (updatedGroup.data?.success) {
+                      setSelectedGroup(updatedGroup.data.data);
+                      setMembers(updatedGroup.data.data.participants || updatedGroup.data.data.members || []);
+                    }
+
+                    setShowAddMemberModal(false);
+                    setSelectedUsersToAdd([]);
+                    setSearchUsersToAdd('');
+                    console.log(`✅ Added ${selectedUsersToAdd.length} members`);
+                  } catch (err) {
+                    setError(err.response?.data?.message || 'Failed to add members');
+                    console.error('Add members error:', err);
+                  } finally {
+                    setAddMemberLoading(false);
+                  }
+                }}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition-colors disabled:opacity-50"
+                disabled={addMemberLoading || selectedUsersToAdd.length === 0}
               >
-                {deletingGroup && <Loader className="w-4 h-4 animate-spin" />}
-                {deletingGroup ? "Deleting..." : "Delete"}
+                {addMemberLoading ? 'Adding...' : `Add (${selectedUsersToAdd.length})`}
               </button>
             </div>
           </div>

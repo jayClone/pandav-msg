@@ -143,14 +143,27 @@ export const getMyGroups = async(req, res) =>{
         const groups = await Group.find({
             participants: { $in: [userId]}
         })
-            .populate('participants', 'name email')
-            .populate('adminId', 'name email')
+            .populate('participants', 'name email _id')
+            .populate('adminId', 'name email _id')  // ✅ CRITICAL: Populate admin
             .sort({ createdAt: -1 });
+
+        // ✅ ENSURE adminId IS IN RESPONSE
+        const formattedGroups = groups.map(group => ({
+            _id: group._id,
+            id: group._id,
+            name: group.name,
+            participants: group.participants,
+            adminId: group.adminId?._id || group.adminId,  // ✅ Include adminId
+            adminName: group.adminId?.name,  // ✅ Include admin name
+            adminEmail: group.adminId?.email,
+            createdAt: group.createdAt,
+            updatedAt: group.updatedAt
+        }));
 
         return res.status(200).json({
             success: true,
-            data: groups,
-            count: groups.length
+            data: formattedGroups,
+            count: formattedGroups.length
         });
     } catch (error) {
         console.error('Get groups error:', error.message);
@@ -177,8 +190,8 @@ export const getGroup = async (req, res) =>{
         }
 
         const group = await Group.findById(groupId)
-            .populate('participants', 'name email')
-            .populate('adminId', 'name email');
+            .populate('participants', 'name email _id')
+            .populate('adminId', 'name email _id');  // ✅ CRITICAL: Populate admin
 
         if (!group) {
             return res.status(404).json({
@@ -195,9 +208,23 @@ export const getGroup = async (req, res) =>{
             });
         }
 
+        // ✅ FORMAT RESPONSE WITH ADMIN INFO
+        const formattedGroup = {
+            _id: group._id,
+            id: group._id,
+            name: group.name,
+            participants: group.participants,
+            members: group.participants,  // Alias for frontend
+            adminId: group.adminId?._id || group.adminId,  // ✅ Include adminId
+            adminName: group.adminId?.name,  // ✅ Include admin name
+            adminEmail: group.adminId?.email,
+            createdAt: group.createdAt,
+            updatedAt: group.updatedAt
+        };
+
         return res.status(200).json({
             success: true,
-            data: group
+            data: formattedGroup
         });
     } catch (error) {
         console.error('Get group error:', error.message);
