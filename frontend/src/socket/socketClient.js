@@ -23,7 +23,7 @@ export const connectSocket = (token) => {
     auth: { token },
     transports: ['websocket'],
     reconnection: true,
-    reconnectionAttempts: 5,
+    reconnectionAttempts: 3,
     reconnectionDelay: 2000,
     timeout: 20000
     });
