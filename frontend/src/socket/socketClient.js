@@ -20,16 +20,12 @@ export const connectSocket = (token) => {
     }
 
     socket = io(socketUrl, {
-        auth: { token },
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 20000,
-        reconnectionAttempts: 50,
-        connectTimeout: 60000,
-        upgrade: true,
-        secure: window.location.protocol === 'https:',
-        withCredentials: true,
+    auth: { token },
+    transports: ['websocket'],
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 2000,
+    timeout: 20000
     });
 
     socket.on('connect', () => {
