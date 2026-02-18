@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://pandav-msg.up.railway.app/api/:path*"
+      "destination": "https://pandav-msg.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
