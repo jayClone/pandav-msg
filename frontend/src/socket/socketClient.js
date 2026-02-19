@@ -16,20 +16,16 @@ export const connectSocket = (token) => {
     let socketUrl = 'http://localhost:5000';
     
     if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-        socketUrl = import.meta.env.VITE_API_URL || 'https://pandav-msg.up.railway.app';
+        socketUrl = import.meta.env.VITE_API_URL || 'https://pandav-msg.onrender.com';
     }
 
     socket = io(socketUrl, {
-        auth: { token },
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 20000,
-        reconnectionAttempts: 50,
-        connectTimeout: 60000,
-        upgrade: true,
-        secure: window.location.protocol === 'https:',
-        withCredentials: true,
+    auth: { token },
+    transports: ['websocket'],
+    reconnection: true,
+    reconnectionAttempts: 3,
+    reconnectionDelay: 2000,
+    timeout: 20000
     });
 
     socket.on('connect', () => {

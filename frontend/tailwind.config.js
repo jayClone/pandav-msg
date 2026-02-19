@@ -1,13 +1,18 @@
-module.exports = {
-  // ...existing code...
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
   theme: {
     extend: {
-      // ...existing code...
-      animation: {
-        'spin': 'spin 1s linear infinite',
-        'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+      // ✅ ADD SAFE AREA SUPPORT FOR iOS NOTCH
+      spacing: {
+        'safe': 'max(1rem, env(safe-area-inset-bottom))',
+        'safe-left': 'env(safe-area-inset-left)',
+        'safe-right': 'env(safe-area-inset-right)',
+        'safe-top': 'env(safe-area-inset-top)',
       },
     },
   },
-  // ...existing code...
+  plugins: [],
 }

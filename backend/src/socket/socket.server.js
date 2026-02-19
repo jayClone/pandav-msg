@@ -25,10 +25,10 @@ export function createSocketServer(httpServer) {
       methods: ['GET', 'POST'],
       credentials: true,
     },
-    transports: ['websocket', 'polling'],
+    transports: ['websocket'],
     maxHttpBufferSize: 1e6,
     pingInterval: 25000,
-    pingTimeout: 60000,
+    pingTimeout: 90000,
   });
 
   const onlineUsers = new Map();
