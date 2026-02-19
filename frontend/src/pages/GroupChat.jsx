@@ -680,6 +680,12 @@ export default function GroupChat({
     }
   }, [showCreateGroupModal, token]);
 
+  // ✅ CLEAR BROWSER HISTORY SO BACK BUTTON DOESN'T WORK IN NEW TAB
+  useEffect(() => {
+    // Replace the current history entry so back button doesn't show login/home page
+    window.history.replaceState(null, "", window.location.href);
+  }, []);
+
   // ═══════════════════════════════════════════════════════════════════
   // EFFECTS (FOURTH)
   // ═══════════════════════════════════════════════════════════════════

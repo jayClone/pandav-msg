@@ -99,6 +99,12 @@ export default function Chat({
     applyTheme(savedTheme);
   }, []);
 
+  // ✅ CLEAR BROWSER HISTORY SO BACK BUTTON DOESN'T WORK IN NEW TAB
+  useEffect(() => {
+    // Replace the current history entry so back button doesn't show login/home page
+    window.history.replaceState(null, "", window.location.href);
+  }, []);
+
   // ✅ FETCH ONLY FRIENDS (not all users)
   const fetchFriends = useCallback(async () => {
     try {
