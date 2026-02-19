@@ -141,7 +141,7 @@ export default function Layoute({ initialTab = "chats" }) {
   ];
 
   return (
-    <div className={`flex h-screen flex-col md:flex-row ${bgImage === "dark" ? "bg-gray-900" : "bg-slate-50"} overflow-hidden`}>
+    <div className={`flex h-dvh flex-col md:flex-row ${bgImage === "dark" ? "bg-gray-900" : "bg-slate-50"} overflow-hidden`}>
       
       {/* DESKTOP SIDEBAR - Navigation Icons */}
       <div className={`hidden md:flex md:w-16 lg:w-20 glass-effect bg-[rgb(var(--bg-secondary))] md:bg-transparent border-r border-[rgb(var(--border-secondary))] flex-col items-center py-4 gap-6 transition-colors duration-300`}>
@@ -218,8 +218,8 @@ export default function Layoute({ initialTab = "chats" }) {
         </div>
       </div>
 
-      {/* MAIN CONTENT AREA */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* MAIN CONTENT AREA - Mobile Safe */}
+      <div className="flex-1 flex flex-col overflow-hidden w-full min-h-0">
         {/* Render Chat or GroupChat based on active tab */}
         {activeTab === "chats" ? (
           <Chat
@@ -258,8 +258,8 @@ export default function Layoute({ initialTab = "chats" }) {
         )}
       </div>
 
-      {/* MOBILE BOTTOM NAVIGATION - HIDDEN WHEN CHAT IS OPEN */}
-      <div className={`md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[rgb(var(--bg-secondary))] border-t border-[rgb(var(--border-secondary))] flex items-center justify-between px-2 z-50 gap-1 transition-all duration-300 ${
+      {/* MOBILE BOTTOM NAVIGATION - Safe Area & Mobile Optimized */}
+      <div className={`md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[rgb(var(--bg-secondary))] border-t border-[rgb(var(--border-secondary))] flex items-center justify-between px-2 z-50 gap-1 transition-all duration-300 safe-pbottom ${
         isChatOpen ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'
       }`}>
         {/* Chats Tab */}
@@ -325,7 +325,7 @@ export default function Layoute({ initialTab = "chats" }) {
           />
           
           {/* Bottom Sheet */}
-          <div className="md:hidden fixed bottom-16 left-0 right-0 bg-[rgb(var(--bg-secondary))] border-t border-[rgb(var(--border-secondary))] rounded-t-2xl z-40 animate-in slide-in-from-bottom max-h-[60vh] overflow-y-auto">
+          <div className="md:hidden fixed bottom-16 left-0 right-0 bg-[rgb(var(--bg-secondary))] border-t border-[rgb(var(--border-secondary))] rounded-t-2xl z-40 animate-in slide-in-from-bottom max-h-[50vh] overflow-y-auto">
             <div className="p-4 space-y-2">
               <h3 className="text-sm font-bold text-[rgb(var(--text-primary))] uppercase tracking-wider mb-4">More Options</h3>
               

@@ -5,6 +5,10 @@ export default {
   ],
   theme: {
     extend: {
+      // ✅ ADD xs BREAKPOINT FOR ULTRA-SMALL DEVICES
+      screens: {
+        'xs': '380px',
+      },
       // ✅ ADD SAFE AREA SUPPORT FOR iOS NOTCH
       spacing: {
         'safe': 'max(1rem, env(safe-area-inset-bottom))',
@@ -14,5 +18,22 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    function({ addUtilities }) {
+      addUtilities({
+        '.safe-pbottom': {
+          paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+        },
+        '.safe-ptop': {
+          paddingTop: 'max(1rem, env(safe-area-inset-top))',
+        },
+        '.safe-pleft': {
+          paddingLeft: 'env(safe-area-inset-left)',
+        },
+        '.safe-pright': {
+          paddingRight: 'env(safe-area-inset-right)',
+        },
+      });
+    },
+  ],
 }

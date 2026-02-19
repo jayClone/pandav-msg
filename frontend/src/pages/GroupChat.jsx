@@ -990,7 +990,7 @@ useEffect(() => {
       <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
         {/* ✅ RESPONSIVE GROUPS SIDEBAR */}
         <div
-          className={`${sidebarOpen ? "w-full sm:w-72 md:w-80" : "w-0"} bg-[rgb(var(--bg-secondary))] sm:glass-effect border-r border-[rgb(var(--border-secondary))] flex flex-col transition-all duration-300 overflow-hidden absolute sm:relative sm:z-0 z-40 h-full sm:h-auto md:h-full`}
+          className={`${sidebarOpen ? "w-full sm:w-72 md:w-80" : "w-0"} bg-[rgb(var(--bg-secondary))] sm:glass-effect border-r border-[rgb(var(--border-secondary))] flex flex-col transition-all duration-300 overflow-hidden absolute sm:relative sm:z-0 z-40 h-full min-h-0`}
         >
         {/* Header - RESPONSIVE */}
         <div className="p-2 sm:p-4 bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between flex-shrink-0">

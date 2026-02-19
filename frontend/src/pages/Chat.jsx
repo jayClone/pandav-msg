@@ -699,8 +699,8 @@ export default function Chat({
         </div>
       )}
 
-      {/* Main Container - Responsive for All Phones */}
-      <div className={`w-full h-full flex flex-col md:flex-row gap-0 overflow-hidden ${isChatOpen ? 'pb-0' : 'pb-14 sm:pb-16'} md:pb-0`}>
+      {/* Main Container - Mobile Safe */}
+      <div className={`w-full h-full flex flex-col md:flex-row gap-0 overflow-hidden ${isChatOpen ? 'pb-0' : 'pb-14 sm:pb-16'} md:pb-0 min-h-0`}>
         
         {/* SIDEBAR - Friends List - Mobile Safe */}
         <div
@@ -852,7 +852,7 @@ export default function Chat({
         </div>
 
         {/* CHAT AREA */}
-        <div className="flex-1 flex flex-col bg-[rgb(var(--bg-primary))] overflow-hidden min-w-0">
+        <div className="flex-1 flex flex-col bg-[rgb(var(--bg-primary))] overflow-hidden min-w-0 min-h-0">
           {selectedUserId ? (
             <>
               {/* Chat Header - Mobile Optimized */}
