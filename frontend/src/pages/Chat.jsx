@@ -99,10 +99,74 @@ export default function Chat({
     applyTheme(savedTheme);
   }, []);
 
-  // ✅ CLEAR BROWSER HISTORY SO BACK BUTTON DOESN'T WORK IN NEW TAB
+  // ✅ COMPREHENSIVE PROTECTION: NO BACK, NO CLOSE, NO SWIPE-BACK
   useEffect(() => {
-    // Replace the current history entry so back button doesn't show login/home page
+    // 1️⃣ PREVENT BACK BUTTON - Replace history so browser back doesn't work
     window.history.replaceState(null, "", window.location.href);
+
+    // 2️⃣ PREVENT BACK BUTTON - Trap popstate event
+    const handlePopState = (e) => {
+      e.preventDefault();
+      // Push forward to keep user on chat page
+      window.history.forward();
+    };
+    window.addEventListener('popstate', handlePopState);
+
+    // 3️⃣ PREVENT TAB CLOSE - Warn user before leaving/closing
+    const handleBeforeUnload = (e) => {
+      const message = "You have an active chat. Are you sure you want to close this tab?";
+      e.returnValue = message;
+      return message;
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // 4️⃣ PREVENT SWIPE-BACK GESTURE ON MOBILE
+    const handleTouchMove = (e) => {
+      // If user swipes from left edge to go back, prevent it
+      const touch = e.touches[0];
+      if (touch && touch.clientX < 10) {
+        e.preventDefault();
+      }
+    };
+    // Use 'passive: false' to allow preventDefault
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+    // 5️⃣ DISABLE BROWSER CONTROLS - Meta+W, Alt+Left, etc.
+    const handleKeyDown = (e) => {
+      // Prevent Ctrl+W / Cmd+W (close tab)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
+        e.preventDefault();
+        return false;
+      }
+      // Prevent Alt+Left (back button)
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        return false;
+      }
+      // Prevent Alt+Right (forward button) 
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        return false;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    // 6️⃣ PREVENT OPENING CONTEXT MENU / RIGHT CLICK (optional, can remove if needed)
+    const handleContextMenu = (e) => {
+      // You can disable right-click, but it's better to allow it for accessibility
+      // Uncomment if you want to disable it:
+      // e.preventDefault();
+    };
+    document.addEventListener('contextmenu', handleContextMenu);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('contextmenu', handleContextMenu);
+    };
   }, []);
 
   // ✅ FETCH ONLY FRIENDS (not all users)
