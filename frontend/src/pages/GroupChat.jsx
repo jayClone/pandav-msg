@@ -141,7 +141,7 @@ export default function GroupChat({
       >
         {/* Avatar - Only show for other users' messages */}
         {!isOwnMessage && (
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-linear-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1 shadow-lg">
             {msg.fromUserName?.charAt(0).toUpperCase() || '?'}
           </div>
         )}
@@ -1003,25 +1003,20 @@ useEffect(() => {
             >
               <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 sm:hidden"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
+           
           </div>
         </div>
 
-        {/* Search Bar - RESPONSIVE */}
+        {/* Search Bar - RESPONSIVE & THEME AWARE */}
         <div className="p-2 sm:p-4 flex-shrink-0">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[rgb(var(--text-muted))]" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[rgb(var(--text-muted))]/70" />
             <input
               type="text"
-              placeholder="Search..."
+              placeholder="Search groups..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-[rgb(var(--bg-tertiary))]/50 border border-[rgb(var(--border-secondary))] rounded-xl text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))] focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent transition-all"
+              className="w-full pl-10 pr-3 py-2 sm:py-2.5 bg-[rgb(var(--bg-tertiary))]/50 backdrop-blur-sm border border-[rgb(var(--border-secondary))]/60 rounded-xl text-xs sm:text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))]/70 focus:outline-none focus:ring-2 focus:ring-green-500/60 focus:border-green-500/40 transition-all duration-200 hover:bg-[rgb(var(--bg-tertiary))]/60 hover:border-[rgb(var(--border-secondary))]/80"
             />
           </div>
         </div>
@@ -1073,10 +1068,10 @@ useEffect(() => {
                     <div className="flex items-center gap-2 sm:gap-3">
                       {/* Avatar */}
                       <div className="relative shrink-0">
-                        <div className="w-10 sm:w-12 h-10 sm:h-12 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base shadow-lg bg-linear-to-br from-purple-500 to-pink-600">
+                        <div className="w-10 sm:w-12 h-10 sm:h-12 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base shadow-lg bg-linear-to-br from-green-500 to-emerald-600 glow-green">
                           {(group?.name || 'G').charAt(0).toUpperCase()}
                         </div>
-                        <div className="absolute bottom-0 right-0 w-2.5 sm:w-3 h-2.5 sm:h-3 bg-green-500 border-2 border-[rgb(var(--bg-secondary))] rounded-full"></div>
+                        <div className="absolute bottom-0 right-0 w-2.5 sm:w-3 h-2.5 sm:h-3 bg-green-400 border-2 border-[rgb(var(--bg-secondary))] rounded-full animate-pulse"></div>
                       </div>
 
                       {/* Group Info */}
@@ -1132,14 +1127,14 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* ✅ RESPONSIVE GROUP CHAT AREA */}
-      <div className={`flex-1 flex flex-col bg-[rgb(var(--bg-primary))] ${isChatOpen ? 'pb-0' : 'pb-16'} md:pb-0 overflow-hidden`}>
+      {/* RESPONSIVE GROUP CHAT AREA - Mobile Optimized */}
+      <div className={`flex-1 flex flex-col bg-[rgb(var(--bg-primary))] ${isChatOpen ? 'pb-0' : 'pb-16'} md:pb-0 overflow-hidden min-h-0`}>
         {selectedGroup ? (
           <>
-            {/* ✅ CHAT HEADER - Responsive (visible on all screens, matches Chat page) */}
-            <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2 sm:gap-3 flex-shrink-0">
-              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                {/* Back/Groups Button */}
+            {/* CHAT HEADER - Mobile Optimized */}
+            <div className="p-2 xs:p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-1 xs:gap-2 sm:gap-3 flex-shrink-0">
+              <div className="flex items-center gap-1.5 xs:gap-2 sm:gap-3 min-w-0 flex-1">
+                {/* Back Button - Mobile Safe */}
                 <button
                   onClick={() => {
                     setSelectedGroup(null);
@@ -1147,35 +1142,35 @@ useEffect(() => {
                     setMembers([]);
                     setSidebarOpen(true);
                   }}
-                  className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
+                  className="p-1.5 xs:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
                   title="Back"
                 >
-                  <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <ChevronLeft className="w-4 xs:w-4.5 sm:w-5 h-4 xs:h-4.5 sm:h-5" />
                 </button>
 
-                {/* Group Info - Responsive */}
+                {/* Group Info - Mobile Optimized */}
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                    <h3 className="font-semibold sm:font-bold text-[rgb(var(--text-primary))] text-sm sm:text-base lg:text-lg truncate">
+                  <div className="flex items-center gap-1.5 xs:gap-2 sm:gap-3 flex-wrap">
+                    <h3 className="font-semibold text-[rgb(var(--text-primary))] text-xs xs:text-sm sm:text-base lg:text-lg truncate max-w-[180px] sm:max-w-none">
                       {selectedGroup.name}
                     </h3>
                     {String(selectedGroup?.adminId) === String(currentUserId) && (
-                      <span className="text-yellow-400 text-xs font-bold bg-yellow-500/20 px-1.5 sm:px-2 py-0.5 rounded-full border border-yellow-500/30">
+                      <span className="text-green-400 text-xs font-bold bg-green-500/20 px-1.5 sm:px-2 py-0.5 rounded-full border border-green-500/30 shadow-sm glow-green">
                         👑 Admin
                       </span>
                     )}
                   </div>
                   
-                  {/* Desktop: Full info | Mobile: Compact info */}
-                  <div className="flex items-center gap-2 sm:gap-4 mt-0.5 sm:mt-1 text-xs sm:text-sm text-[rgb(var(--text-muted))]">
-                    <p className="hidden sm:block">
-                      Admin: <span className="text-yellow-400 font-bold">{adminInfo?.adminName || 'Loading...'}</span>
+                  {/* Mobile: Compact | Desktop: Full Info */}
+                  <div className="flex items-center gap-1 xs:gap-1.5 sm:gap-4 mt-0.5 xs:mt-1 text-xs sm:text-sm text-[rgb(var(--text-muted))] flex-wrap">
+                    <p className="hidden sm:block text-xs">
+                      Admin: <span className="text-green-400 font-bold glow-green">{adminInfo?.adminName || 'Loading...'}</span>
                     </p>
-                    <p className={`font-medium ${onlineCount > 0 ? 'text-green-400' : 'text-[rgb(var(--text-muted))]'}`}>
+                    <p className={`font-medium text-xs sm:text-sm ${onlineCount > 0 ? 'text-green-400' : 'text-[rgb(var(--text-muted))]'}`}>
                       {onlineCount > 0 ? (
-                        <>🟢 {onlineCount} Online · {members.length} Members</>
+                        <>🟢 {onlineCount} · {members.length}</>
                       ) : (
-                        <>🔴 {members.length} Members</>
+                        <>🔴 {members.length}</>
                       )}
                     </p>
                   </div>
@@ -1192,10 +1187,10 @@ useEffect(() => {
                     console.log('🔵 3-dot clicked');
                     setShowOptionsMenu(prev => !prev);
                   }}
-                  className="p-2 sm:p-3 hover:bg-red-500/20 rounded-lg transition-all text-red-400 hover:text-red-300 shrink-0 border border-red-500/30 hover:border-red-400/50"
+                  className="p-1.5 xs:p-2 sm:p-3 hover:bg-red-500/20 rounded-lg transition-all text-red-400 hover:text-red-300 shrink-0 border border-red-500/30 hover:border-red-400/50"
                   title="Group Options"
                 >
-                  <MoreVertical className="w-5 h-5 sm:w-6 sm:h-6" />
+                  <MoreVertical className="w-4 xs:w-5 sm:w-6 h-4 xs:h-5 sm:h-6" />
                 </button>
 
                 {/* Dropdown Menu - MOBILE */}
@@ -1281,7 +1276,7 @@ useEffect(() => {
                       👥 Members ({members.length})
                     </h4>
                     <p className="text-xs text-[rgb(var(--text-muted))] mt-0.5 sm:mt-1">
-                      Admin: <span className="text-yellow-400 font-bold">{adminInfo?.adminName || 'N/A'}</span>
+                      Admin: <span className="text-green-400 font-bold glow-green">{adminInfo?.adminName || 'N/A'}</span>
                     </p>
                   </div>
                   {String(selectedGroup?.adminId) === String(currentUserId) && (
@@ -1331,7 +1326,7 @@ useEffect(() => {
                           key={memberId}
                           className={`flex items-center justify-between gap-2 sm:gap-3 p-2 sm:p-3 rounded-xl border transition-all group ${
                             isAdmin
-                              ? 'bg-yellow-500/10 hover:bg-yellow-500/20 border-yellow-500/30 hover:border-yellow-500/50'
+                              ? 'bg-green-500/10 hover:bg-green-500/20 border-green-500/30 hover:border-green-500/50'
                               : 'bg-[rgb(var(--bg-hover))]/40 hover:bg-[rgb(var(--bg-hover))]/70 border-[rgb(var(--border-secondary))]/50 hover:border-green-500/30'
                           }`}
                         >
@@ -1340,8 +1335,8 @@ useEffect(() => {
                             <div className="relative shrink-0">
                               <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white font-bold shadow-lg text-xs sm:text-sm ${
                                 isAdmin
-                                  ? 'bg-linear-to-br from-yellow-500 to-orange-600'
-                                  : 'bg-linear-to-br from-blue-500 to-cyan-600'
+                                  ? 'bg-linear-to-br from-green-500 to-emerald-700 glow-green'
+                                  : 'bg-linear-to-br from-blue-500 to-purple-600'
                               }`}>
                                 {memberName.charAt(0).toUpperCase()}
                               </div>
@@ -1367,14 +1362,14 @@ useEffect(() => {
                                 
                                 {/* Admin Badge */}
                                 {isAdmin && (
-                                  <span className="bg-yellow-500/30 border border-yellow-500/50 text-yellow-300 text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
+                                  <span className="bg-green-500/30 border border-green-500/50 text-green-300 text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap glow-green">
                                     👑 Admin
                                   </span>
                                 )}
                                 
                                 {/* Online Badge */}
                                 {isOnline && (
-                                  <span className="text-xs bg-green-500/20 text-green-400 px-1.5 sm:px-2 py-0.5 rounded-full font-bold whitespace-nowrap animate-pulse hidden sm:inline-block">
+                                  <span className="text-xs bg-green-500/20 text-green-300 px-1.5 sm:px-2 py-0.5 rounded-full font-bold whitespace-nowrap animate-pulse hidden sm:inline-block border border-green-500/30 shadow-sm shadow-green-500/20">
                                     ● Online
                                   </span>
                                 )}
@@ -1405,8 +1400,8 @@ useEffect(() => {
               </div>
             )}
 
-            {/* ✅ RESPONSIVE MESSAGES AREA */}
-            <div className="flex-1 overflow-y-auto p-2 sm:p-4 lg:p-6 space-y-2 sm:space-y-4 custom-scrollbar">
+            {/* MESSAGES AREA - Mobile Optimized */}
+            <div className="flex-1 overflow-y-auto p-2 xs:p-2.5 sm:p-4 lg:p-6 space-y-1 xs:space-y-2 sm:space-y-4 custom-scrollbar min-h-0">
               {loading ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
@@ -1434,16 +1429,16 @@ useEffect(() => {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* ✅ RESPONSIVE INPUT AREA */}
-            <div className="p-2 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))] flex-shrink-0">
+            {/* INPUT AREA - Mobile Optimized */}
+            <div className="p-2 xs:p-2.5 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))] flex-shrink-0">
               {error && (
                 <div className="mb-2 sm:mb-3 p-2 sm:p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-xs">
                   {error}
                 </div>
               )}
-              <div className="flex items-end gap-1.5 sm:gap-3">
-                {/* Emoji & Attachment - HIDDEN ON MOBILE */}
-                <div className="hidden sm:flex gap-1">
+              <div className="flex items-end gap-1 xs:gap-1.5 sm:gap-3">
+                {/* Emoji & Attachment - Hidden on mobile */}
+                <div className="hidden xs:flex gap-0.5 xs:gap-1">
                   <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400">
                     <Smile className="w-5 h-5" />
                   </button>
@@ -1452,8 +1447,8 @@ useEffect(() => {
                   </button>
                 </div>
 
-                {/* Input Box - RESPONSIVE */}
-                <div className="flex-1 glass-effect rounded-2xl border border-[rgb(var(--border-secondary))] focus-within:border-green-500/50 focus-within:ring-2 focus-within:ring-green-500/20 transition-all">
+                {/* Input Box - RESPONSIVE & THEME AWARE */}
+                <div className="flex-1 rounded-2xl border border-[rgb(var(--border-secondary))]/60 bg-[rgb(var(--bg-tertiary))]/40 backdrop-blur-md focus-within:border-green-500/80 focus-within:ring-2 focus-within:ring-green-500/40 transition-all duration-200 hover:border-[rgb(var(--border-secondary))]/80">
                   <textarea
                     ref={messageInputRef}
                     value={newMessage}
@@ -1466,7 +1461,7 @@ useEffect(() => {
                     }}
                     placeholder="Message..."
                     rows={1}
-                    className="w-full px-3 sm:px-4 py-2 sm:py-3 bg-transparent text-[rgb(var(--text-primary))] text-sm sm:text-base placeholder-[rgb(var(--text-muted))] resize-none focus:outline-none max-h-32 custom-scrollbar"
+                    className="w-full px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 md:py-3 bg-transparent text-sm sm:text-base md:text-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))]/70 resize-none focus:outline-none max-h-32 custom-scrollbar transition-colors"
                     style={{ minHeight: "44px" }}
                   />
                 </div>
@@ -1487,15 +1482,15 @@ useEffect(() => {
             </div>
           </>
         ) : (
-          // ✅ RESPONSIVE EMPTY STATE
-          <div className="flex-1 flex flex-col items-center justify-center text-[rgb(var(--text-muted))] p-4">
-            <div className="w-16 h-16 sm:w-24 sm:h-24 md:w-32 md:h-32 rounded-full bg-linear-to-br from-purple-500/20 to-pink-600/20 flex items-center justify-center mb-3 sm:mb-4 md:mb-6 shadow-2xl">
-              <Users className="w-8 h-8 sm:w-12 sm:h-12 md:w-16 md:h-16 text-purple-500/50" />
+          // EMPTY STATE - Mobile Optimized
+          <div className="flex-1 flex flex-col items-center justify-center text-[rgb(var(--text-muted))] p-3 xs:p-4 sm:p-6 min-h-0">
+            <div className="w-16 xs:w-20 sm:w-24 md:w-32 h-16 xs:h-20 sm:h-24 md:h-32 rounded-full bg-linear-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center mb-3 xs:mb-4 sm:mb-6 shadow-2xl">
+              <Users className="w-8 xs:w-10 sm:w-12 md:w-16 h-8 xs:h-10 sm:h-12 md:h-16 text-green-500/50" />
             </div>
-            <h3 className="text-lg sm:text-2xl md:text-3xl font-bold mb-1 sm:mb-2 md:mb-3 gradient-text text-center">
+            <h3 className="text-lg xs:text-xl sm:text-2xl md:text-3xl font-bold mb-1 xs:mb-2 sm:mb-3 gradient-text text-center">
               Select a Group
             </h3>
-            <p className="text-[rgb(var(--text-muted))] text-center text-xs sm:text-sm max-w-xs">
+            <p className="text-[rgb(var(--text-muted))] text-center text-xs sm:text-sm max-w-xs px-2">
               Choose from sidebar to chat
             </p>
           </div>
@@ -1616,7 +1611,7 @@ useEffect(() => {
                               : "hover:bg-[rgb(var(--bg-hover))]/50 border border-[rgb(var(--border-secondary))]/50"
                           }`}
                         >
-                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-linear-to-br from-orange-500 to-yellow-600 flex items-center justify-center text-white text-xs sm:text-sm font-bold shrink-0">
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs sm:text-sm font-bold shrink-0 shadow-lg">
                             {userName.charAt(0).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
