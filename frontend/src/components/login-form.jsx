@@ -96,13 +96,13 @@ export function LoginForm({ className, ...props }) {
         console.warn("⚠️ Socket connection warning:", socketErr.message)
       }
       
-      setMsg(response.message || "✨ Login successful! Redirecting...")
+      setMsg(response.message || "✨ Login successful! Opening chat in new tab...")
       setIsSuccess(true)
       setAttemptCount(0)
       
-      // ✅ Delay redirect to show success message
+      // ✅ Open chat page in new tab
       setTimeout(() => {
-        navigate("/chat", { replace: true })
+        window.open("/chat", "_blank")
       }, 1500)
       
     } catch (err) {
