@@ -44,6 +44,8 @@ export default function Chat({
   setAllUsers,
   sidebarOpen,
   setSidebarOpen,
+  onChatOpen,
+  isChatOpen,
 }) {
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
@@ -478,6 +480,13 @@ export default function Chat({
     }
   }, [messages]);
 
+  // ✅ HIDE MOBILE BOTTOM NAV WHEN CHAT IS OPEN
+  useEffect(() => {
+    if (onChatOpen) {
+      onChatOpen(!!selectedUserId);
+    }
+  }, [selectedUserId, onChatOpen]);
+
   // Filtered users (only friends now)
   const filteredUsers = useMemo(() => {
     const usersToFilter = allUsers;
@@ -678,7 +687,7 @@ export default function Chat({
             </>
           ) : socketStatus === 'disconnected' ? (
             <>
-              <WifiOff className="w-4 h-4 flex-shrink-0" />
+              <WifiOff className="w-4 h-4 shrink-0" />
               Connection lost - trying to reconnect...
             </>
           ) : (
@@ -691,7 +700,7 @@ export default function Chat({
       )}
 
       {/* Main Container - Responsive Layout */}
-      <div className="w-full h-full flex flex-col md:flex-row gap-0 overflow-hidden">
+      <div className={`w-full h-full flex flex-col md:flex-row gap-0 overflow-hidden ${isChatOpen ? 'pb-0' : 'pb-16'} md:pb-0`}>
         
         {/* SIDEBAR - Friends List */}
         <div
@@ -790,7 +799,7 @@ export default function Chat({
                         </div>
 
                         {/* User Info */}
-                        <div className="flex-1 min-w-0 flex-col">
+                        <div className={`flex-1 min-w-0 ${unreadCount > 0 ? 'sm:flex-1' : 'flex-1'}`}>
                           <div className="flex items-center justify-between gap-1">
                             <h5 className="font-semibold text-xs sm:text-sm text-[rgb(var(--text-primary))] truncate">
                               {name}
@@ -817,9 +826,9 @@ export default function Chat({
                           </p>
                         </div>
 
-                        {/* Unread Badge */}
+                        {/* Unread Badge - Always visible on mobile */}
                         {unreadCount > 0 && (
-                          <div className="w-6 h-6 bg-linear-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-xs font-bold text-black shadow-lg glow-green shrink-0">
+                          <div className="w-7 h-7 sm:w-6 sm:h-6 bg-linear-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-xs sm:text-xs font-bold text-black shadow-lg glow-green shrink-0 flex-shrink-0">
                             {unreadCount > 9 ? "9+" : unreadCount}
                           </div>
                         )}
@@ -857,17 +866,13 @@ export default function Chat({
                   <button
                     onClick={() => {
                       setSelectedUserId(null);
+                      if (window.innerWidth < 768) {
+                        setSidebarOpen(true); // ✅ OPEN SIDEBAR ON MOBILE
+                      }
                     }}
                     className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
                   >
                     <ChevronLeft className="w-5 h-5" />
-                  </button>
-
-                  <button
-                    onClick={() => setSidebarOpen(true)}
-                    className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 md:hidden flex-shrink-0"
-                  >
-                    <Menu className="w-5 h-5" />
                   </button>
 
                   {/* User Avatar & Info */}

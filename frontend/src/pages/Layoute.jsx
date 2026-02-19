@@ -27,6 +27,7 @@ import {
   Sun,
   Menu,
   X,
+  ChevronRight,
 } from "lucide-react";
 import FriendRequestModal from "@pages/FriendRequestModal";
 
@@ -57,10 +58,10 @@ export default function Layoute({ initialTab = "chats" }) {
     return savedTheme || "dark";
   });
 
-  // Mobile States - ✅ FIX: Initialize sidebarOpen to true
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(); // ✅ START AS TRUE
+  // Mobile States
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileBottomSheetOpen, setMobileBottomSheetOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false); // ✅ TRACK IF CHAT IS OPEN
 
   // ✅ APPLY THEME ON MOUNT
   useEffect(() => {
@@ -142,158 +143,6 @@ export default function Layoute({ initialTab = "chats" }) {
   return (
     <div className={`flex h-screen flex-col md:flex-row ${bgImage === "dark" ? "bg-gray-900" : "bg-slate-50"} overflow-hidden`}>
       
-      {/* MOBILE HEADER */}
-      <div className={`md:hidden w-full h-16 flex items-center justify-between px-4 border-b border-[rgb(var(--border-secondary))] bg-[rgb(var(--bg-secondary))] z-40 sticky top-0`}>
-        <button
-          onClick={() => setMobileNavOpen(!mobileNavOpen)}
-          className={`p-2 rounded-lg hover:bg-[rgb(var(--bg-hover))] text-[rgb(var(--text-primary))] transition-all`}
-        >
-          {mobileNavOpen ? (
-            <X className="w-6 h-6" />
-          ) : (
-            <Menu className="w-6 h-6" />
-          )}
-        </button>
-
-        <div
-          className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-lg shadow-lg cursor-pointer hover:scale-110 transition-transform"
-          title={currentUserName}
-        >
-          {currentUserName.charAt(0).toUpperCase()}
-        </div>
-
-        <button
-          onClick={() => setMobileSettingsOpen(!mobileSettingsOpen)}
-          className={`p-2 rounded-lg hover:bg-[rgb(var(--bg-hover))] text-[rgb(var(--text-primary))] transition-all`}
-        >
-          <Settings className="w-6 h-6" />
-        </button>
-      </div>
-
-      {/* MOBILE NAVIGATION DRAWER */}
-      {mobileNavOpen && (
-        <div className={`md:hidden fixed inset-0 top-16 left-0 w-64 bg-[rgb(var(--bg-secondary))] border-r border-[rgb(var(--border-secondary))] z-30 animate-in slide-in-from-left p-4 space-y-4`}>
-          <nav className="flex flex-col gap-3">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    setMobileNavOpen(false);
-                    setSidebarOpen(true); // ✅ SHOW SIDEBAR WHEN TAB CHANGES
-                  }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                    activeTab === item.id
-                      ? "text-green-400 bg-[rgb(var(--bg-hover))] glow-green"
-                      : "text-[rgb(var(--text-muted))] hover:text-green-400 hover:bg-[rgb(var(--bg-hover))]"
-                  }`}
-                  title={item.label}
-                >
-                  <Icon className="w-5 h-5 flex-shrink-0" />
-                  <span className="text-sm font-medium">{item.label}</span>
-                </button>
-              );
-            })}
-
-            <button
-              onClick={() => {
-                setShowFriendModal(true);
-                setMobileNavOpen(false);
-              }}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-[rgb(var(--text-muted))] hover:text-green-400 hover:bg-[rgb(var(--bg-hover))] transition-all"
-              title="Add Contact"
-            >
-              <Plus className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm font-medium">Add Contact</span>
-            </button>
-          </nav>
-
-          <div className="pt-4 border-t border-[rgb(var(--border-secondary))] space-y-3">
-            <button
-              onClick={() => {
-                setShowThemeModal(true);
-                setMobileNavOpen(false);
-              }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                bgImage === "dark"
-                  ? "text-green-400 bg-[rgb(var(--bg-hover))] glow-green"
-                  : "text-[rgb(var(--text-muted))] hover:text-green-400 hover:bg-[rgb(var(--bg-hover))]"
-              }`}
-              title={`Theme: ${bgImage === "dark" ? "Dark" : "Light"}`}
-            >
-              {bgImage === "dark" ? (
-                <Moon className="w-5 h-5 flex-shrink-0" />
-              ) : (
-                <Sun className="w-5 h-5 flex-shrink-0" />
-              )}
-              <span className="text-sm font-medium">
-                {bgImage === "dark" ? "Dark Mode" : "Light Mode"}
-              </span>
-            </button>
-
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-[rgb(var(--text-muted))] hover:text-red-400 hover:bg-red-500/10 transition-all"
-              title="Logout"
-            >
-              <LogOut className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm font-medium">Logout</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* MOBILE SETTINGS DRAWER */}
-      {mobileSettingsOpen && (
-        <div className={`md:hidden fixed inset-0 top-16 right-0 w-64 bg-[rgb(var(--bg-secondary))] border-l border-[rgb(var(--border-secondary))] z-30 animate-in slide-in-from-right p-4 space-y-4`}>
-          <h3 className="text-sm font-bold text-[rgb(var(--text-primary))] uppercase tracking-wider">Settings</h3>
-
-          <div className="space-y-4 pt-2">
-            {/* Sound Toggle */}
-            <div className="flex items-center justify-between p-3 bg-[rgb(var(--bg-hover))] rounded-lg">
-              <span className="text-sm text-[rgb(var(--text-muted))] flex items-center gap-2">
-                {soundEnabled ? (
-                  <Volume2 className="w-4 h-4" />
-                ) : (
-                  <VolumeX className="w-4 h-4" />
-                )}
-                Sound
-              </span>
-              <button
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`w-10 h-6 rounded-full transition-all ${soundEnabled ? "bg-green-500" : "bg-gray-600"} relative flex-shrink-0`}
-              >
-                <div
-                  className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${soundEnabled ? "right-1" : "left-1"}`}
-                />
-              </button>
-            </div>
-
-            {/* Notifications Toggle */}
-            <div className="flex items-center justify-between p-3 bg-[rgb(var(--bg-hover))] rounded-lg">
-              <span className="text-sm text-[rgb(var(--text-muted))] flex items-center gap-2">
-                {notificationsEnabled ? (
-                  <Bell className="w-4 h-4" />
-                ) : (
-                  <BellOff className="w-4 h-4" />
-                )}
-                Notifications
-              </span>
-              <button
-                onClick={() => setNotificationsEnabled(!notificationsEnabled)}
-                className={`w-10 h-6 rounded-full transition-all ${notificationsEnabled ? "bg-green-500" : "bg-gray-600"} relative flex-shrink-0`}
-              >
-                <div
-                  className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${notificationsEnabled ? "right-1" : "left-1"}`}
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* DESKTOP SIDEBAR - Navigation Icons */}
       <div className={`hidden md:flex md:w-16 lg:w-20 glass-effect bg-[rgb(var(--bg-secondary))] md:bg-transparent border-r border-[rgb(var(--border-secondary))] flex-col items-center py-4 gap-6 transition-colors duration-300`}>
         <div
@@ -369,57 +218,8 @@ export default function Layoute({ initialTab = "chats" }) {
         </div>
       </div>
 
-      {/* DESKTOP SETTINGS PANEL */}
-      {showSettings && !showThemeSettings && (
-        <div className={`hidden md:flex flex-col p-4 lg:p-6 bg-[rgb(var(--bg-secondary))]/50 border-r border-[rgb(var(--border-secondary))] space-y-3 lg:space-y-4 animate-in slide-in-from-left w-48 lg:w-56 transition-colors duration-300`}>
-          <h3 className="text-xs lg:text-sm font-bold text-[rgb(var(--text-muted))] uppercase tracking-wider">Settings</h3>
-
-          <div className="space-y-1 space-y-3 lg:space-y-4 pt-2">
-            {/* Sound Toggle */}
-            <div className="flex items-center justify-between p-2 lg:p-3 rounded-lg hover:bg-[rgb(var(--bg-hover))] transition-colors">
-              <span className="text-xs lg:text-sm text-[rgb(var(--text-muted))] flex items-center gap-2">
-                {soundEnabled ? (
-                  <Volume2 className="w-4 h-4" />
-                ) : (
-                  <VolumeX className="w-4 h-4" />
-                )}
-                <span className="hidden sm:inline">Sound</span>
-              </span>
-              <button
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`w-10 h-6 rounded-full transition-all flex-shrink-0 ${soundEnabled ? "bg-green-500" : "bg-gray-600"} relative`}
-              >
-                <div
-                  className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${soundEnabled ? "right-1" : "left-1"}`}
-                />
-              </button>
-            </div>
-
-            {/* Notifications Toggle */}
-            <div className="flex items-center justify-between p-2 lg:p-3 rounded-lg hover:bg-[rgb(var(--bg-hover))] transition-colors">
-              <span className="text-xs lg:text-sm text-[rgb(var(--text-muted))] flex items-center gap-2">
-                {notificationsEnabled ? (
-                  <Bell className="w-4 h-4" />
-                ) : (
-                  <BellOff className="w-4 h-4" />
-                )}
-                <span className="hidden sm:inline">Notifications</span>
-              </span>
-              <button
-                onClick={() => setNotificationsEnabled(!notificationsEnabled)}
-                className={`w-10 h-6 rounded-full transition-all flex-shrink-0 ${notificationsEnabled ? "bg-green-500" : "bg-gray-600"} relative`}
-              >
-                <div
-                  className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${notificationsEnabled ? "right-1" : "left-1"}`}
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* MAIN CONTENT AREA */}
-      <div className="flex-1 flex flex-col md:flex-row min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Render Chat or GroupChat based on active tab */}
         {activeTab === "chats" ? (
           <Chat
@@ -438,6 +238,8 @@ export default function Layoute({ initialTab = "chats" }) {
             notificationsEnabled={notificationsEnabled}
             setNotificationsEnabled={setNotificationsEnabled}
             token={token}
+            onChatOpen={setIsChatOpen}
+            isChatOpen={isChatOpen}
           />
         ) : (
           <GroupChatErrorBoundary>
@@ -449,10 +251,161 @@ export default function Layoute({ initialTab = "chats" }) {
               token={token}
               currentUserName={currentUserName}
               currentUserId={currentUserId}
+              onChatOpen={setIsChatOpen}
+              isChatOpen={isChatOpen}
             />
           </GroupChatErrorBoundary>
         )}
       </div>
+
+      {/* MOBILE BOTTOM NAVIGATION - HIDDEN WHEN CHAT IS OPEN */}
+      <div className={`md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[rgb(var(--bg-secondary))] border-t border-[rgb(var(--border-secondary))] flex items-center justify-between px-2 z-50 gap-1 transition-all duration-300 ${
+        isChatOpen ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'
+      }`}>
+        {/* Chats Tab */}
+        <button
+          onClick={() => setActiveTab("chats")}
+          className={`flex-1 flex flex-col items-center justify-center py-2 rounded-lg transition-all ${
+            activeTab === "chats"
+              ? "text-green-400 glow-green bg-[rgb(var(--bg-hover))]"
+              : "text-[rgb(var(--text-muted))] hover:text-green-400"
+          }`}
+          title="Chats"
+        >
+          <MessageCircle className="w-6 h-6 flex-shrink-0" />
+          <span className="text-xs font-medium mt-1">Chats</span>
+        </button>
+
+        {/* Groups Tab */}
+        <button
+          onClick={() => setActiveTab("groups")}
+          className={`flex-1 flex flex-col items-center justify-center py-2 rounded-lg transition-all ${
+            activeTab === "groups"
+              ? "text-green-400 glow-green bg-[rgb(var(--bg-hover))]"
+              : "text-[rgb(var(--text-muted))] hover:text-green-400"
+          }`}
+          title="Groups"
+        >
+          <Users className="w-6 h-6 flex-shrink-0" />
+          <span className="text-xs font-medium mt-1">Groups</span>
+        </button>
+
+        {/* Add Friend Tab */}
+        <button
+          onClick={() => setShowFriendModal(true)}
+          className="flex-1 flex flex-col items-center justify-center py-2 rounded-lg text-[rgb(var(--text-muted))] hover:text-green-400 hover:bg-[rgb(var(--bg-hover))] transition-all"
+          title="Add Contact"
+        >
+          <Plus className="w-6 h-6 flex-shrink-0" />
+          <span className="text-xs font-medium mt-1">Add</span>
+        </button>
+
+        {/* Settings/Theme Tab */}
+        <button
+          onClick={() => setMobileBottomSheetOpen(!mobileBottomSheetOpen)}
+          className={`flex-1 flex flex-col items-center justify-center py-2 rounded-lg transition-all ${
+            mobileBottomSheetOpen
+              ? "text-green-400 glow-green bg-[rgb(var(--bg-hover))]"
+              : "text-[rgb(var(--text-muted))] hover:text-green-400"
+          }`}
+          title="More Options"
+        >
+          <Settings className="w-6 h-6 flex-shrink-0" />
+          <span className="text-xs font-medium mt-1">More</span>
+        </button>
+      </div>
+
+      {/* MOBILE BOTTOM SHEET - Settings/More Options */}
+      {mobileBottomSheetOpen && (
+        <>
+          {/* Overlay */}
+          <div
+            className="md:hidden fixed inset-0 bg-black/50 z-40 bottom-16"
+            onClick={() => setMobileBottomSheetOpen(false)}
+          />
+          
+          {/* Bottom Sheet */}
+          <div className="md:hidden fixed bottom-16 left-0 right-0 bg-[rgb(var(--bg-secondary))] border-t border-[rgb(var(--border-secondary))] rounded-t-2xl z-40 animate-in slide-in-from-bottom max-h-[60vh] overflow-y-auto">
+            <div className="p-4 space-y-2">
+              <h3 className="text-sm font-bold text-[rgb(var(--text-primary))] uppercase tracking-wider mb-4">More Options</h3>
+              
+              {/* Sound Toggle */}
+              <div className="flex items-center justify-between p-3 bg-[rgb(var(--bg-hover))] rounded-lg">
+                <span className="text-sm text-[rgb(var(--text-muted))] flex items-center gap-2">
+                  {soundEnabled ? (
+                    <Volume2 className="w-4 h-4 flex-shrink-0" />
+                  ) : (
+                    <VolumeX className="w-4 h-4 flex-shrink-0" />
+                  )}
+                  Sound
+                </span>
+                <button
+                  onClick={() => setSoundEnabled(!soundEnabled)}
+                  className={`w-10 h-6 rounded-full transition-all flex-shrink-0 ${soundEnabled ? "bg-green-500" : "bg-gray-600"} relative`}
+                >
+                  <div
+                    className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${soundEnabled ? "right-1" : "left-1"}`}
+                  />
+                </button>
+              </div>
+
+              {/* Notifications Toggle */}
+              <div className="flex items-center justify-between p-3 bg-[rgb(var(--bg-hover))] rounded-lg">
+                <span className="text-sm text-[rgb(var(--text-muted))] flex items-center gap-2">
+                  {notificationsEnabled ? (
+                    <Bell className="w-4 h-4 flex-shrink-0" />
+                  ) : (
+                    <BellOff className="w-4 h-4 flex-shrink-0" />
+                  )}
+                  Notifications
+                </span>
+                <button
+                  onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+                  className={`w-10 h-6 rounded-full transition-all flex-shrink-0 ${notificationsEnabled ? "bg-green-500" : "bg-gray-600"} relative`}
+                >
+                  <div
+                    className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${notificationsEnabled ? "right-1" : "left-1"}`}
+                  />
+                </button>
+              </div>
+
+              {/* Theme Toggle */}
+              <button
+                onClick={() => {
+                  setBgImage(bgImage === "dark" ? "light" : "dark");
+                  setMobileBottomSheetOpen(false);
+                }}
+                className="w-full flex items-center justify-between p-3 bg-[rgb(var(--bg-hover))] rounded-lg hover:bg-[rgb(var(--bg-hover))]/80 transition-all"
+              >
+                <span className="text-sm text-[rgb(var(--text-muted))] flex items-center gap-2">
+                  {bgImage === "dark" ? (
+                    <Moon className="w-4 h-4 flex-shrink-0" />
+                  ) : (
+                    <Sun className="w-4 h-4 flex-shrink-0" />
+                  )}
+                  {bgImage === "dark" ? "Dark Mode" : "Light Mode"}
+                </span>
+                <ChevronRight className="w-4 h-4 text-[rgb(var(--text-muted))]" />
+              </button>
+
+              {/* Logout Button */}
+              <button
+                onClick={() => {
+                  handleLogout();
+                  setMobileBottomSheetOpen(false);
+                }}
+                className="w-full flex items-center justify-between p-3 bg-red-500/10 rounded-lg hover:bg-red-500/20 transition-all text-red-400"
+              >
+                <span className="text-sm flex items-center gap-2">
+                  <LogOut className="w-4 h-4 flex-shrink-0" />
+                  Logout
+                </span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Modals */}
       <FriendRequestModal
@@ -467,17 +420,6 @@ export default function Layoute({ initialTab = "chats" }) {
         onClose={() => setShowThemeModal(false)}
         onThemeChange={setBgImage}
       />
-
-      {/* Mobile Nav Overlay */}
-      {(mobileNavOpen || mobileSettingsOpen) && (
-        <div
-          className="md:hidden fixed inset-0 bg-black/50 z-20 top-16"
-          onClick={() => {
-            setMobileNavOpen(false);
-            setMobileSettingsOpen(false);
-          }}
-        />
-      )}
     </div>
   );
 }
