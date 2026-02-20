@@ -22,23 +22,7 @@ const generateToken = (user) => {
 // ✅ REGISTER WITH OTP VERIFICATION
 export const register = async (req, res) => {
   try {
-    // ✅ Log EVERYTHING
-    console.log('\n========== REGISTER REQUEST ==========');
-    console.log('Request received at:', new Date().toISOString());
-    console.log('req.method:', req.method);
-    console.log('req.path:', req.path);
-    console.log('req.headers:', req.headers);
-    console.log('req.body (RAW):', req.body);
-    console.log('req.body (JSON):', JSON.stringify(req.body, null, 2));
-    
     const { name, email, password, otp } = req.body;
-
-    console.log('\nDestructured values:');
-    console.log('  name:', name, '(type:', typeof name, ')');
-    console.log('  email:', email, '(type:', typeof email, ')');
-    console.log('  password:', password ? '***' : 'MISSING', '(type:', typeof password, ')');
-    console.log('  otp:', otp, '(type:', typeof otp, ')');
-    console.log('=========================================\n');
 
     // Validation
     if (!name || !email || !password) {

@@ -49,9 +49,6 @@ export async function handleJoinGroup(socket, io, payload, userId, name) {
         }
         groupOnlineUsers.get(groupId).add(userId);
 
-        console.log(`[GROUP] ${name} joined group ${groupId}`);
-        console.log(`[ONLINE] Group ${groupId} now has ${groupOnlineUsers.get(groupId).size} online members`);
-
         // Join socket room
         socket.join(groupId);
 
@@ -81,7 +78,6 @@ export async function handleJoinGroup(socket, io, payload, userId, name) {
         });
 
     } catch (error) {
-        console.error('[ERROR] Join group failed:', error.message);
         socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
             message: 'Failed to join group' 
         });

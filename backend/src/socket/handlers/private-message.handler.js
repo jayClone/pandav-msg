@@ -28,8 +28,6 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
         const receiverUser = onlineUsers.get(toUserId);
 
         // friends validation
-        console.log(`[FRIEND-CHECK] varifying friendship between ${userId} and ${toUserId}`);
-
         const areFriends = await Friend.findOne({
             $or: [
                 {senderId: userId, receiverId: toUserId, status: 'accepted' },
@@ -38,13 +36,11 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
         });
 
         if (!areFriends) {
-            console.warn(`⚠️ [BLOCKED] Non-friend message attempt: ${userId} → ${toUserId}`)
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
                 message: MESSAGES.FRIEND.CANNOT_MESSAGE 
             });
             return;
         }
-        console.log(`✅ [FRIEND-CHECK] Users are friends, proceeding...`);
 
 
         // Save message to DB
@@ -56,9 +52,7 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
                 message: trimmedMessage,
                 chatType: 'private'
             });
-            console.log(`[DB] Message saved: ${savedMessage._id}`);
         } catch (dbError) {
-            console.error('[DB ERROR] Failed to save message:', dbError.message);
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
                 message: 'Failed to save message'
             });
@@ -81,17 +75,13 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
                 ...messagePayload,
                 delivered: true
             });
-            console.log(`[MSG-LIVE] ${name} → ${receiverUser.name}: ${trimmedMessage.substring(0, 30)}...`);
         }
         else {
             // If receiver is OFFLINE: Still saved in DB
-            console.log(`[MSG-QUEUED] ${name} → ${toUserId} (offline): ${trimmedMessage.substring(0, 30)}...`);
-            
             socket.emit('user_offline', {
                 toUserId: toUserId,
                 message: 'User is offline. Message queued for delivery.'
             });
-            console.log(`[OFFLINE] ${toUserId} is offline`);
         }
 
         // Send confirmation back to sender
@@ -105,8 +95,6 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             delivered: !!receiverUser,
             saved: true
         });
-
-        console.log(`[CONFIRM] Sent confirmation to ${name}`);
 
     } catch (error) {
         console.error('[ERROR] Message sending failed:', error.message);

@@ -116,6 +116,7 @@ export const searchUsers = async (req, res) => {
   try {
     const { q } = req.query;
     const currentUserId = req.user._id;
+    const { skip, limit } = req.pagination;  // ✅ USE pagination middleware
 
     if (!q || q.trim().length === 0) {
       return res.status(400).json({
@@ -124,43 +125,49 @@ export const searchUsers = async (req, res) => {
       });
     }
 
-    // Search by name or email (case-insensitive)
+    const searchTerm = q.trim();
+
+    // ✅ COUNT TOTAL for pagination info
+    const total = await User.countDocuments({
+      _id: { $ne: currentUserId },
+      $or: [
+        { name: { $regex: searchTerm, $options: 'i' } },
+        { email: { $regex: searchTerm, $options: 'i' } }
+      ]
+    });
+
     const users = await User.find({
       _id: { $ne: currentUserId },
       $or: [
-        { name: { $regex: q, $options: 'i' } },
-        { email: { $regex: q, $options: 'i' } }
+        { name: { $regex: searchTerm, $options: 'i' } },
+        { email: { $regex: searchTerm, $options: 'i' } }
       ]
     })
-      .select('_id name email isOnline lastSeen createdAt')
-      .sort({ name: 1 })
-      .limit(20)
-      .lean();
-
-    const formattedUsers = users.map(user => ({
-      _id: user._id,
-      userId: user._id,
-      name: user.name,
-      email: user.email,
-      isOnline: user.isOnline,
-      lastSeen: user.lastSeen,
-      createdAt: user.createdAt,
-      status: user.isOnline ? 'online' : 'offline'
-    }));
+      .select('_id name email isOnline lastSeen')
+      .lean()
+      .skip(skip)        // ✅ ADD
+      .limit(limit)      // ✅ ADD
+      .sort({ name: 1 });
 
     return res.status(200).json({
       success: true,
-      message: 'Search results',
-      data: formattedUsers,
-      count: formattedUsers.length
+      data: users.map(user => ({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        status: user.isOnline ? 'online' : 'offline'
+      })),
+      count: users.length,
+      total,             // ✅ ADD
+      page: req.pagination.page,
+      limit: req.pagination.limit,
+      pages: Math.ceil(total / limit)
     });
-
   } catch (error) {
-    console.error('Search users error:', error.message);
+    console.error('❌ Search users error:', error.message);
     return res.status(500).json({
       success: false,
-      message: 'Failed to search users',
-      error: error.message
+      message: 'Search failed'
     });
   }
 };

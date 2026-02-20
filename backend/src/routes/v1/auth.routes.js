@@ -3,6 +3,7 @@ import { register, login, getCurrentUser } from '../../controllers/auth.Controll
 import { protect } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { validate } from '../../middlewares/validate.js';
+import { authArcjet } from '../../middlewares/arcjet.js';
 import { RegisterSchema, LoginSchema } from '../../validators/auth.validator.js';
 
 const router = express.Router();
@@ -14,7 +15,7 @@ const router = express.Router();
  */
 router.post(
   '/register',
-  validate(RegisterSchema, 'body'),  // ✅ ADD VALIDATION
+  validate(RegisterSchema, 'body'), authArcjet,
   asyncHandler(register)
 );
 
@@ -25,7 +26,7 @@ router.post(
  */
 router.post(
   '/login',
-  validate(LoginSchema, 'body'),  // ✅ ADD VALIDATION
+  validate(LoginSchema, 'body'),  authArcjet,
   asyncHandler(login)
 );
 

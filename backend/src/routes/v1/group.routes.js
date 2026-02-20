@@ -3,6 +3,7 @@ import express from 'express';
 import { createGroup, getMyGroups, getGroup, addMember, removeMember, getGroupMessages, leaveGroup, deleteGroup } from '../../controllers/group.controller.js';
 import { protect } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
+import { pagination } from '../../middlewares/pagination.js';
 
 
 const router = express.Router();
@@ -19,7 +20,7 @@ router.post('/', protect, asyncHandler(createGroup));
  * @desc Get all groups for logged-in user
  * @access Private
  */
-router.get('/', protect, asyncHandler(getMyGroups));
+router.get('/', protect,pagination, asyncHandler(getMyGroups));
 
 /**
  * @route GET /api/v1/groups/:groupId
@@ -54,7 +55,7 @@ router.post('/:groupId/leave', protect, asyncHandler(leaveGroup));
  * @desc Get group chat history
  * @access Private
  */
-router.get('/:groupId/messages', protect, asyncHandler(getGroupMessages));
+router.get('/:groupId/messages', protect,pagination, asyncHandler(getGroupMessages));
 
 /**
  * @route DELETE /api/v1/groups/:groupId

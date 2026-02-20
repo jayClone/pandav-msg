@@ -5,6 +5,7 @@ import {
   searchUsers
 } from '../../controllers/user.controller.js';
 import { protect } from '../../middlewares/auth.js';
+import { pagination } from '../../middlewares/pagination.js';  
 import { asyncHandler } from '../../utils/asyncHandler.js';
 
 
@@ -16,7 +17,7 @@ const router = express.Router();
  * @access Private
  * Returns: Array of users with online status
  */
-router.get('/', protect, asyncHandler(getAllUsers));
+router.get('/', protect,pagination, asyncHandler(getAllUsers));
 
 /**
  * @route GET /api/v1/users/search
@@ -24,7 +25,8 @@ router.get('/', protect, asyncHandler(getAllUsers));
  * @access Private
  * Query: q=searchTerm
  */
-router.get('/search', protect, asyncHandler(searchUsers));
+// ✅ ADD pagination to search
+router.get('/search', protect, pagination, asyncHandler(searchUsers));
 
 /**
  * @route GET /api/v1/users/:userId

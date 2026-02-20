@@ -1,8 +1,10 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import compression from 'compression';
 import logger from './config/logger.js';
 import apiRoutes from './routes/index.js';
+import { globalArcjet } from './middlewares/arcjet.js'; 
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -22,9 +24,28 @@ if (!fs.existsSync(logsDir)) {
 // CRITICAL: BODY PARSER MUST BE FIRST
 // ============================================
 
-// ✅ 1. Body parser BEFORE any other middleware
-app.use(express.json({ limit: '50mb' }));  // ✅ INCREASED LIMIT
+//  1. Body parser BEFORE any other middleware
+app.use(express.json({ limit: '50mb' }));  
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+//  ADD COMPRESSION MIDDLEWARE (AFTER body parser, BEFORE routes)
+app.use(compression({
+  level: 6,  // Balance between compression ratio and speed
+  threshold: 10 * 1024,  // Only compress responses larger than 10KB
+  filter: (req, res) => {
+    // Don't compress if client doesn't want it
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    // Use the default filter
+    return compression.filter(req, res);
+  }
+}));
+
+// ============================================
+// RATE LIMITING (GLOBAL - AFTER COMPRESSION)
+// ============================================
+app.use(globalArcjet);
 
 // 2. THEN security headers
 app.use(helmet());
@@ -66,33 +87,37 @@ app.use(cors({
 }));
 
 // ============================================
-// DEBUG MIDDLEWARE - Log all requests (DETAILED)
+// DEBUG MIDDLEWARE - Only in development
 // ============================================
 
-app.use((req, res, next) => {
-  // ✅ DETAILED LOGGING
-  if (req.path.includes('/auth/register') || req.path.includes('/otp')) {
-    console.log(`\n🔍 [DETAILED-LOG] ${req.method} ${req.path}`);
-    console.log('━'.repeat(50));
-    console.log('Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('Raw Body:', req.body);
-    console.log('Body Keys:', Object.keys(req.body));
-    console.log('Body.otp:', req.body.otp, 'Type:', typeof req.body.otp);
-    console.log('━'.repeat(50) + '\n');
-  }
-  next();
-});
+if (process.env.NODE_ENV === 'development') {
+  // ✅ KEEP detailed logging only in dev
+  app.use((req, res, next) => {
+    if (req.path.includes('/auth/register') || req.path.includes('/otp')) {
+      console.log(`\n🔍 [DETAILED-LOG] ${req.method} ${req.path}`);
+      console.log('━'.repeat(50));
+      console.log('Headers:', JSON.stringify(req.headers, null, 2));
+      console.log('Raw Body:', req.body);
+      console.log('Body Keys:', Object.keys(req.body));
+      console.log('━'.repeat(50) + '\n');
+    }
+    next();
+  });
 
-// ============================================
-// DEBUG MIDDLEWARE - Log all requests
-// ============================================
-
-app.use((req, res, next) => {
-  console.log(`📨 [${req.method}] ${req.path}`);
-  console.log('📦 req.body:', JSON.stringify(req.body, null, 2));
-  console.log('📦 Content-Type:', req.headers['content-type']);
-  next();
-});
+  app.use((req, res, next) => {
+    console.log(`📨 [${req.method}] ${req.path}`);
+    next();
+  });
+} else {
+  // ✅ MINIMAL logging in production
+  app.use((req, res, next) => {
+    // Only log errors or important endpoints
+    if (req.path.includes('/auth') || req.path.includes('/error')) {
+      console.log(`📨 [${req.method}] ${req.path}`);
+    }
+    next();
+  });
+}
 
 // ============================================
 // HEALTH CHECK

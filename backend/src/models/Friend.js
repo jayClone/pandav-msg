@@ -1,44 +1,55 @@
-import mongoose  from "mongoose";
+import mongoose from "mongoose";
 
 const friendSchema = new mongoose.Schema(
-    {
+  {
     senderId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
+      index: true, // ✅ ADD: For sender-based queries
     },
     
     // User who receives the request
     receiverId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
+      index: true, // ✅ ADD: For receiver-based queries
     },
 
     status: {
-        type: String,
-        enum : ['pending', 'accepted', 'blocked'],
-        default: 'pending',
+      type: String,
+      enum: ["pending", "accepted", "blocked"],
+      default: "pending",
+      index: true, // ✅ ADD: Filter by status early
     },
 
     createdAt: {
-        type: Date,
-        default: null,
+      type: Date,
+      default: null,
+      index: true, // ✅ ADD: For sorting by creation time
     },
 
     acceptedAt: {
-        type: Date,
-        default: null,
+      type: Date,
+      default: null
     },
-    },
-    {timestamps: true}
+  },
+  { timestamps: true }
 );
 
-// compound index to prevent duplicate request
-friendSchema.index({ senderId: 1, receiverId:1}, {unique: true});
+// ✅ COMPOUND INDEXES (ordered by query frequency)
 
-//index for quick lookup
-friendSchema.index({receiverId: 1, status:1});
-friendSchema.index({senderId: 1, status: 1});
+// 1️⃣ Prevent duplicate requests + quick lookup
+friendSchema.index({ senderId: 1, receiverId: 1 }, { unique: true, sparse: true });
 
-export default mongoose.model('Friend', friendSchema);
+// 2️⃣ Find pending requests for user (MOST COMMON)
+friendSchema.index({ receiverId: 1, status: 1, createdAt: -1 });
+
+// 3️⃣ Find sent requests by user
+friendSchema.index({ senderId: 1, status: 1, createdAt: -1 });
+
+// 4️⃣ Find accepted friends (for group creation validation)
+friendSchema.index({ senderId: 1, receiverId: 1, status: 1 });
+
+export default mongoose.model("Friend", friendSchema);

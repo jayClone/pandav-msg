@@ -7,13 +7,11 @@ import Group from '../../models/Group.js';
  */
 export async function handleUserConnect(socket, io, userId, email, name, onlineUsers) {
     try {
-        console.log(`[SOCKET] User connected: ${name} (${userId})`);
-
         // Set user online in db
         await User.findByIdAndUpdate(userId, {
             isOnline: true,
             lastSeen: Date.now()
-        }).catch(err => console.error('Failed to update user online status:', err));
+        }).catch(() => {});
 
         // Store user in online users map
         onlineUsers.set(userId, {
@@ -22,9 +20,6 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
             email: email,
             userId: userId
         });
-        
-        console.log(`✅ [ONLINE] ${name} connected`);
-        console.log(`   Total online: ${onlineUsers.size}`);
 
         // ✅ UPDATE ALL GROUPS - ADD TO ONLINE MEMBERS
         const userGroups = await Group.find({
@@ -56,7 +51,7 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
         })));
 
     } catch (error) {
-        console.error('Error in handleUserConnect:', error.message);
+        // Silently handle connection errors
     }
 }
 
@@ -66,15 +61,12 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
 export async function handleUserDisconnect(socket, io, userId, name, onlineUsers) {
     try {
         onlineUsers.delete(userId);
-        
-        console.log(`🔴 [OFFLINE] ${name} disconnected`);
-        console.log(`   Total online: ${onlineUsers.size}`);
 
         // Set user offline in DB
         await User.findByIdAndUpdate(userId, { 
             isOnline: false,
             lastSeen: Date.now()
-        }).catch(err => console.error('Failed to update user offline status:', err));
+        }).catch(() => {});
         
         // ✅ UPDATE ALL GROUPS - REMOVE FROM ONLINE MEMBERS
         const userGroups = await Group.find({
@@ -108,7 +100,7 @@ export async function handleUserDisconnect(socket, io, userId, name, onlineUsers
         io.emit('user_offline', { userId, name });
 
     } catch (error) {
-        console.error('Error in handleUserDisconnect:', error.message);
+        // Silently handle disconnection errors
     }
 }
 

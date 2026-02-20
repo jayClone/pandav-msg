@@ -4,14 +4,7 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
   try {
     const { messageId, groupId } = payload;
 
-    console.log(`\n📖 [READ RECEIPT] Processing`);
-    console.log(`   Message ID: ${messageId}`);
-    console.log(`   Group ID: ${groupId || 'Private'}`);
-    console.log(`   User: ${name} (${userId})`);
-    console.log(`   Socket: ${socket.id}`);
-
     if (!messageId) {
-      console.error('❌ Missing messageId');
       return;
     }
 
@@ -19,15 +12,11 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
     const message = await Message.findById(messageId);
 
     if (!message) {
-      console.error('❌ Message not found:', messageId);
       return;
     }
 
     // ✅ CRITICAL FIX: Verify the user reading is the RECEIVER, not sender
-    console.log(`[CHECK] Sender: ${message.senderId}, Reader: ${userId}`);
-    
     if (message.senderId.toString() === userId.toString()) {
-      console.log('⚠️  Sender cannot mark their own message as read');
       return;  // ✅ FIX: Sender should NOT mark as read
     }
 
@@ -37,11 +26,8 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
     );
 
     if (userAlreadyRead) {
-      console.log('⚠️  User already marked as read');
       return;
     }
-
-    console.log('✅ [1/3] Validation passed');
 
     // ✅ UPDATE MESSAGE IN DB
     const updatedMessage = await Message.findByIdAndUpdate(
@@ -59,8 +45,6 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
       { new: true }
     ).populate('readBy.userId', 'name email _id');
 
-    console.log(`✅ [2/3] Message saved to DB - Read by: ${updatedMessage.readBy.length}`);
-
     // ✅ FORMAT RESPONSE DATA
     const readReceiptData = {
       messageId: messageId,
@@ -75,23 +59,15 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
       readCount: updatedMessage.readBy.length,
     };
 
-    console.log(`✅ [3/3] Broadcasting read receipt to:`);
-
     // ✅ BROADCAST TO ALL CONNECTIONS
     if (groupId) {
-      console.log(`   📤 GROUP: ${groupId}`);
       readReceiptData.groupId = groupId;
       io.to(groupId.toString()).emit('message_read', readReceiptData);
     } else {
-      console.log(`   📤 TO SENDER: ${message.senderId}`);
       io.to(message.senderId.toString()).emit('message_read', readReceiptData);
     }
 
-    console.log(`✅ Read receipt completed\n`);
-
   } catch (error) {
-    console.error('❌ [ERROR] Read receipt handler failed:');
-    console.error('   Message:', error.message);
-    console.error('   Stack:', error.stack);
+    // Silently handle read receipt errors
   }
 }

@@ -5,7 +5,8 @@ const userSchema = new mongoose.Schema({
   name: {
     type: String,
     required: [true, 'Name is required'],
-    trim: true
+    trim: true,
+    index: true 
   },
   email: {
     type: String,
@@ -22,23 +23,28 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Password is required'],
     minlength: 8,
-    select: false  // Don't return password by default
+    select: false  
   },
 
   isOnline: {
-      type: Boolean,
-      default: false
-    },
+    type: Boolean,
+    default: false,
+    index: true  
+  },
     
   lastSeen: {
-      type: Date,
-      default: Date.now
-    },
+    type: Date,
+    default: Date.now
+  },
+  
   createdAt: {
     type: Date,
     default: Date.now
   }
 });
+
+// ✅ Compound index for faster searches
+userSchema.index({ email: 1, isOnline: 1 });
 
 //  Hash password BEFORE saving
 // Using proper Mongoose pre-save hook syntax

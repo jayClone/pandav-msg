@@ -80,8 +80,6 @@ export const createGroup = async (req, res) => {
         }
 
         // CHECK IF ALL MEMBERS ARE FRIENDS WITH CREATOR
-        console.log(`🔐 [FRIEND CHECK] Validating group members are friends with creator`);
-        
         for (const memberId of uniqueMemberIds) {
             // Skip the creator themselves
             if (memberId === userIdStr) {
@@ -104,8 +102,6 @@ export const createGroup = async (req, res) => {
                 });
             }
         }
-
-        console.log(`✅ [FRIEND CHECK] All members are friends with creator`);
 
         //  CREATE GROUP WITH VALIDATED DATA
         const group = await Group.create({
@@ -300,8 +296,6 @@ export const addMember = async(req, res) => {
         }
 
         // ✅ NEW: CHECK IF ADMIN IS FRIENDS WITH NEW MEMBER
-        console.log(`🔐 [FRIEND CHECK] Verifying admin is friends with new member`);
-        
         const friendship = await Friend.findOne({
             $or: [
                 { senderId: myId, receiverId: userId, status: 'accepted' },
@@ -315,8 +309,6 @@ export const addMember = async(req, res) => {
                 message: `Cannot add ${userExists.name} - you must be friends first`,
             });
         }
-
-        console.log(`✅ [FRIEND CHECK] Admin is friends with new member`);
 
 
         // Add member

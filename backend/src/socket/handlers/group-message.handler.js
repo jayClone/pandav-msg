@@ -10,7 +10,6 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
     const { groupId, message } = payload;
 
     if (!groupId || !message?.trim()) {
-      console.error('❌ Missing required fields');
       return;
     }
 
@@ -29,8 +28,6 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
       .populate('senderId', 'name email _id')
       .populate('readBy.userId', 'name email _id');
 
-    console.log('✅ Message saved:', populatedMessage._id);
-
     // ✅ BROADCAST WITH EMPTY readBy (only receiver marks as read)
     io.to(groupId.toString()).emit(SOCKET_EVENTS.GROUP_MESSAGE, {
       _id: populatedMessage._id,
@@ -45,8 +42,6 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
       senderId: userId,
       senderName: name,
     });
-
-    console.log('✅ Message broadcasted to group:', groupId);
 
   } catch (error) {
     console.error('❌ Error in handleGroupMessage:', error.message);

@@ -10,6 +10,8 @@ import {
   getMessageReadReceipts
 } from '../../controllers/message.controller.js';
 import { protect } from '../../middlewares/auth.js';
+import { pagination } from '../../middlewares/pagination.js'; 
+import { messageArcjet } from '../../middlewares/arcjet.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 
 
@@ -22,7 +24,7 @@ const router = express.Router();
  * @param {string} receiverId - User to receive message
  * @param {string} message - Message content
  */
-router.post('/private', protect, asyncHandler(sendPrivateMessage));
+router.post('/private', protect,messageArcjet, asyncHandler(sendPrivateMessage));
 
 /**
  * @route POST /api/v1/messages/group
@@ -31,21 +33,21 @@ router.post('/private', protect, asyncHandler(sendPrivateMessage));
  * @param {string} groupId - Group to receive message
  * @param {string} message - Message content
  */
-router.post('/group', protect, asyncHandler(sendGroupMessage));
+router.post('/group', protect,messageArcjet, asyncHandler(sendGroupMessage));
 
 /**
  * @route GET /api/v1/messages/:userId
  * @desc Get chat history with specific user
  * @access Private
  */
-router.get('/:userId', protect, asyncHandler(getChatHistory));
+router.get('/:userId', protect, pagination, asyncHandler(getChatHistory));
 
 /**
  * @route GET /api/v1/messages/conversations/all
  * @desc Get all conversations with unread counts
  * @access Private
  */
-router.get('/conversations/all', protect, asyncHandler(getConversations));
+router.get('/conversations/all', protect,pagination, asyncHandler(getConversations));
 
 /**
  * @route PUT /api/v1/messages/read/:userId
@@ -59,7 +61,7 @@ router.put('/read/:userId', protect, asyncHandler(markAsRead));
  * @desc Get who has read a specific message
  * @access Private
  */
-router.get('/:messageId/read-receipts', protect, getMessageReadReceipts);
+router.get('/:messageId/read-receipts', protect,pagination, getMessageReadReceipts);
 
 /**
  * @route PUT /api/v1/messages/group/:groupId/read

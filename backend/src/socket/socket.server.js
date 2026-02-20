@@ -26,11 +26,35 @@ export function createSocketServer(httpServer) {
       credentials: true,
     },
     transports: ['websocket'],
+
+    //  Enable compression
+    perMessageDeflate: {
+      zlibDeflateOptions: {
+        chunkSize: 1024,
+        memLevel: 7,
+        level: 3,
+      },
+      zlibInflateOptions: {
+        chunkSize: 10 * 1024,
+      },
+      clientNoContextTakeover: true,
+      serverNoContextTakeover: true,
+      serverMaxWindowBits: 10,
+      concurrencyLimit: 10,
+    },
+
     maxHttpBufferSize: 1e6,
     pingInterval: 25000,
     pingTimeout: 90000,
+
+    // ✅ OPTIMIZATION 5: Reduce reconnection spam
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: 5,
   });
 
+  
   const onlineUsers = new Map();
 
   io.use((socket, next) => {

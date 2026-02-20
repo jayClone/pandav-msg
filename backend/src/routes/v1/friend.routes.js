@@ -11,7 +11,7 @@ import {
 } from '../../controllers/friend.controller.js';
 import { protect } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
-
+import { pagination } from '../../middlewares/pagination.js'; 
 
 const router = express.Router();
 
@@ -28,13 +28,13 @@ router.patch('/:requestId/accept', asyncHandler(acceptFriendRequest));
 router.delete('/:requestId', asyncHandler(rejectFriendRequest));
 
 // get sent request
-router.get('/sent', asyncHandler(getSentRequests));
+router.get('/sent', pagination, asyncHandler(getSentRequests));
 
 // ✅ Get pending requests
-router.get('/pending', asyncHandler(getPendingRequests));
+router.get('/pending',pagination, asyncHandler(getPendingRequests));
 
 // ✅ Get friends list
-router.get('/', asyncHandler(getFriends));
+router.get('/', pagination, asyncHandler(getFriends));
 
 // ✅ Check friendship status
 router.get('/check/:otherUserId', asyncHandler(checkFriendStatus));
