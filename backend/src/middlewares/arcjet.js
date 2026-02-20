@@ -1,55 +1,39 @@
 import arcjet, { tokenBucket, shield, detectBot } from "@arcjet/node";
 
 /**
- * Extract real client IP from Render proxy headers
- */
-function getClientIP(req) {
-  // Try multiple header sources (in order of reliability)
-  return (
-    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
-    req.headers["x-real-ip"] ||
-    req.headers["cf-connecting-ip"] ||
-    req.headers["x-client-ip"] ||
-    req.socket?.remoteAddress ||
-    "0.0.0.0"
-  );
-}
-
-/**
  * Initialize Arcjet for Bun + Express
- * Includes: Rate limiting + Bot detection + DDoS protection
+ * Uses more reliable characteristics that are always present
  */
 const aj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
   
-  // ✅ FIX: Use custom fingerprint instead of IP (more reliable on Render)
+  // ✅ FIX: Use characteristics that are ALWAYS present
   characteristics: [
-    "http.request.headers['user-agent']",  // User-Agent
-    "http.request.headers['accept-language']",  // Accept-Language
+    "http.request.headers['user-agent']",
+    // DON'T use accept-language - it's optional and often missing
+    // Instead, use the request method (GET, POST, etc) as a tiebreaker
+    "http.request.method",
   ],
   
   rules: [
-    // ✅ Shield: Protects from SQL injection, XSS, etc
     shield({
       mode: "LIVE",
     }),
 
-    // ✅ Bot Detection: Block malicious bots
     detectBot({
       mode: "LIVE",
       allow: [
-        "CATEGORY:SEARCH_ENGINE",    // Google, Bing, etc
-        "CATEGORY:MONITOR",           // Uptime monitoring
-        "CATEGORY:PREVIEW",           // Link previews (Slack, Discord)
+        "CATEGORY:SEARCH_ENGINE",
+        "CATEGORY:MONITOR",
+        "CATEGORY:PREVIEW",
       ],
     }),
 
-    // ✅ Global rate limit: 100 requests per 10 minutes
     tokenBucket({
       mode: "LIVE",
       refillRate: 100,
-      interval: 600,  // 10 minutes
+      interval: 600,
       capacity: 100,
     }),
   ],
@@ -57,9 +41,14 @@ const aj = arcjet({
 
 /**
  * Global Arcjet middleware
- * Protects against: rate limits, bots, DDoS, SQL injection
+ * ✅ Skips /health endpoint
  */
 export const globalArcjet = async (req, res, next) => {
+  // ✅ SKIP ARCJET FOR HEALTH CHECK
+  if (req.path === "/health" || req.path === "/api/v1/health") {
+    return next();
+  }
+
   try {
     const decision = await aj.protect(req, {
       requested: 1,
@@ -94,7 +83,7 @@ export const globalArcjet = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("❌ Arcjet error:", error.message);
-    next();  // Graceful degradation
+    next();
   }
 };
 
@@ -106,14 +95,14 @@ const authAj = arcjet({
   environment: process.env.ARCJET_ENV || "production",
   characteristics: [
     "http.request.headers['user-agent']",
-    "http.request.headers['accept-language']",
+    "http.request.method",
   ],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
       mode: "LIVE",
       refillRate: 5,
-      interval: 900,  // 15 minutes
+      interval: 900,
       capacity: 5,
     }),
   ],
@@ -154,14 +143,14 @@ const otpAj = arcjet({
   environment: process.env.ARCJET_ENV || "production",
   characteristics: [
     "http.request.headers['user-agent']",
-    "http.request.headers['accept-language']",
+    "http.request.method",
   ],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
       mode: "LIVE",
       refillRate: 3,
-      interval: 3600,  // 1 hour
+      interval: 3600,
       capacity: 3,
     }),
   ],
@@ -202,14 +191,14 @@ const msgAj = arcjet({
   environment: process.env.ARCJET_ENV || "production",
   characteristics: [
     "http.request.headers['user-agent']",
-    "http.request.headers['accept-language']",
+    "http.request.method",
   ],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
       mode: "LIVE",
       refillRate: 50,
-      interval: 60,  // 1 minute
+      interval: 60,
       capacity: 50,
     }),
   ],
