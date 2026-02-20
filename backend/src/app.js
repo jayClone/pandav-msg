@@ -13,6 +13,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 // ============================================
+// ✅ TRUST PROXY (RENDER PASSES REAL IP HERE)
+// ============================================
+app.set('trust proxy', 1);
+
+// ============================================
 // ✅ ENSURE LOGS DIRECTORY EXISTS
 // ============================================
 const logsDir = path.join(__dirname, '..', 'logs');

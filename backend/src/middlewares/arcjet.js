@@ -8,8 +8,8 @@ const aj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",  // ✅ ADD
   
-  // ✅ FIX: Handle proxies - use fingerprinting instead of IP
-  characteristics: ["http.request.headers['user-agent']"],  // User-agent instead of IP
+  // ✅ FIX: Use IP for proper rate limiting (Render will pass real IP in headers)
+  characteristics: ["ip.src"],  // Rate limit by IP address
   
   rules: [
     // ✅ Shield: Protects from SQL injection, XSS, etc
@@ -87,8 +87,8 @@ export const globalArcjet = async (req, res, next) => {
  */
 const authAj = arcjet({
   key: process.env.ARCJET_KEY,
-  environment: process.env.ARCJET_ENV || "production",  // ✅ ADD
-  characteristics: ["http.request.headers['user-agent']"],  // ✅ FIX
+  environment: process.env.ARCJET_ENV || "production",
+  characteristics: ["ip.src"],  // ✅ Use IP
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -132,8 +132,8 @@ export const authArcjet = async (req, res, next) => {
  */
 const otpAj = arcjet({
   key: process.env.ARCJET_KEY,
-  environment: process.env.ARCJET_ENV || "production",  // ✅ ADD
-  characteristics: ["http.request.headers['user-agent']"],  // ✅ FIX
+  environment: process.env.ARCJET_ENV || "production",
+  characteristics: ["ip.src"],  // ✅ Use IP
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -177,8 +177,8 @@ export const otpArcjet = async (req, res, next) => {
  */
 const msgAj = arcjet({
   key: process.env.ARCJET_KEY,
-  environment: process.env.ARCJET_ENV || "production",  // ✅ ADD
-  characteristics: ["http.request.headers['user-agent']"],  // ✅ FIX
+  environment: process.env.ARCJET_ENV || "production",
+  characteristics: ["ip.src"],  // ✅ Use IP
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
