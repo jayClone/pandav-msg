@@ -1,15 +1,33 @@
 import arcjet, { tokenBucket, shield, detectBot } from "@arcjet/node";
 
 /**
+ * Extract real client IP from Render proxy headers
+ */
+function getClientIP(req) {
+  // Try multiple header sources (in order of reliability)
+  return (
+    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+    req.headers["x-real-ip"] ||
+    req.headers["cf-connecting-ip"] ||
+    req.headers["x-client-ip"] ||
+    req.socket?.remoteAddress ||
+    "0.0.0.0"
+  );
+}
+
+/**
  * Initialize Arcjet for Bun + Express
  * Includes: Rate limiting + Bot detection + DDoS protection
  */
 const aj = arcjet({
   key: process.env.ARCJET_KEY,
-  environment: process.env.ARCJET_ENV || "production",  // ✅ ADD
+  environment: process.env.ARCJET_ENV || "production",
   
-  // ✅ FIX: Use IP for proper rate limiting (Render will pass real IP in headers)
-  characteristics: ["ip.src"],  // Rate limit by IP address
+  // ✅ FIX: Use custom fingerprint instead of IP (more reliable on Render)
+  characteristics: [
+    "http.request.headers['user-agent']",  // User-Agent
+    "http.request.headers['accept-language']",  // Accept-Language
+  ],
   
   rules: [
     // ✅ Shield: Protects from SQL injection, XSS, etc
@@ -44,10 +62,9 @@ const aj = arcjet({
 export const globalArcjet = async (req, res, next) => {
   try {
     const decision = await aj.protect(req, {
-      requested: 1,  // Cost 1 token per request
+      requested: 1,
     });
 
-    // Add headers for debugging
     res.set("X-Arcjet-Decision", decision.conclusion);
 
     if (decision.isDenied()) {
@@ -77,8 +94,7 @@ export const globalArcjet = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("❌ Arcjet error:", error.message);
-    // Graceful degradation: allow request if Arcjet fails
-    next();
+    next();  // Graceful degradation
   }
 };
 
@@ -88,7 +104,10 @@ export const globalArcjet = async (req, res, next) => {
 const authAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["ip.src"],  // ✅ Use IP
+  characteristics: [
+    "http.request.headers['user-agent']",
+    "http.request.headers['accept-language']",
+  ],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -133,7 +152,10 @@ export const authArcjet = async (req, res, next) => {
 const otpAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["ip.src"],  // ✅ Use IP
+  characteristics: [
+    "http.request.headers['user-agent']",
+    "http.request.headers['accept-language']",
+  ],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -178,7 +200,10 @@ export const otpArcjet = async (req, res, next) => {
 const msgAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["ip.src"],  // ✅ Use IP
+  characteristics: [
+    "http.request.headers['user-agent']",
+    "http.request.headers['accept-language']",
+  ],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
