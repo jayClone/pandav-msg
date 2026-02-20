@@ -35,6 +35,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import ThemeChanger from "@/components/ThemeChanger";
+import { useDebounce } from '@hooks/useDebounce';
 
 export default function Chat({
   currentUserName,
@@ -64,6 +65,9 @@ export default function Chat({
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showThemeChanger, setShowThemeChanger] = useState(false);
+  
+  // ✅ ADD THIS: Debounce the search query
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   
   // ✅ NEW: Socket connection status
   const [socketStatus, setSocketStatus] = useState('connecting');
@@ -152,7 +156,7 @@ export default function Chat({
     window.addEventListener('keydown', handleKeyDown);
 
     // 6️⃣ PREVENT OPENING CONTEXT MENU / RIGHT CLICK (optional, can remove if needed)
-    const handleContextMenu = (e) => {
+    const handleContextMenu = () => {
       // You can disable right-click, but it's better to allow it for accessibility
       // Uncomment if you want to disable it:
       // e.preventDefault();
@@ -564,7 +568,7 @@ export default function Chat({
     return usersToFilter
       .filter((user) => user.userId !== currentUserId)
       .filter((user) =>
-        user.name.toLowerCase().includes(searchQuery.toLowerCase())
+        user.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
       )
       .sort((a, b) => {
         const aIsPinned = pinnedChats.includes(a.userId);
@@ -579,7 +583,8 @@ export default function Chat({
         const bUnread = unreadCounts[b.userId] || 0;
         return bUnread - aUnread;
       });
-  }, [allUsers, currentUserId, searchQuery, pinnedChats, unreadCounts]);
+    // ✅ CHANGE DEPENDENCY: Use debouncedSearchQuery
+  }, [allUsers, currentUserId, debouncedSearchQuery, pinnedChats, unreadCounts]);
 
   // Current chat messages
   const currentChatMessages = useMemo(() => {

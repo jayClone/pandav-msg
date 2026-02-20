@@ -72,7 +72,6 @@ export default function Layoute({ initialTab = "chats" }) {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
-  const [showThemeSettings] = useState(false);
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
   const [showFriendModal, setShowFriendModal] = useState(false);
@@ -125,11 +124,9 @@ export default function Layoute({ initialTab = "chats" }) {
   };
 
   const handleFriendRemoved = useCallback((removedUserId) => {
-    console.log(`✅ [LAYOUT] Friend removed from system:`, removedUserId);
     
     setAllUsers(prevUsers => {
       const filtered = prevUsers.filter(user => user.userId !== removedUserId);
-      console.log(`✅ [LAYOUT] Remaining users:`, filtered.length);
       return filtered;
     });
   }, [setAllUsers]);

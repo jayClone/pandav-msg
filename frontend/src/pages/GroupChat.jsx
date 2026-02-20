@@ -21,6 +21,7 @@ import {
   LogOut, UserPlus, MoreVertical, Menu
 } from 'lucide-react'
 import friendAPI from '@api/friend.api.js'
+import { useDebounce } from '@hooks/useDebounce'
 
 export default function GroupChat({
   sidebarOpen,
@@ -45,6 +46,10 @@ export default function GroupChat({
   const [showMembersPreview, setShowMembersPreview] = useState(false);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // ✅ ADD THIS LINE: Debounce the search query
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+
   const [pinnedGroups, setPinnedGroups] = useState([]);
   const [unreadCounts, setUnreadCounts] = useState({});
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
@@ -230,6 +235,7 @@ export default function GroupChat({
     };
   }, [selectedGroup]);
 
+  // ✅ FIXED: Now uses debouncedSearchQuery (which is defined above)
   const filteredGroups = useMemo(() => {
     const safeGroups = Array.isArray(groups) ? groups : [];
     
@@ -241,8 +247,9 @@ export default function GroupChat({
         }
         return true;
       })
+      // ✅ USE DEBOUNCED QUERY HERE
       .filter((group) =>
-        group.name.toLowerCase().includes(searchQuery.toLowerCase())
+        group.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
       )
       .sort((a, b) => {
         const aIsPinned = pinnedGroups.includes(a.id);
@@ -251,7 +258,7 @@ export default function GroupChat({
         if (!aIsPinned && bIsPinned) return 1;
         return 0;
       });
-  }, [groups, searchQuery, pinnedGroups]);
+  }, [groups, debouncedSearchQuery, pinnedGroups]); // ✅ CORRECT DEPENDENCY
 
   // ═══════════════════════════════════════════════════════════════════
   // CALLBACK FUNCTIONS (THIRD - BEFORE useEffect)
