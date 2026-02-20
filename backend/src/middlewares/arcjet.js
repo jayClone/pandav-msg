@@ -2,18 +2,15 @@ import arcjet, { tokenBucket, shield, detectBot } from "@arcjet/node";
 
 /**
  * Initialize Arcjet for Bun + Express
- * Uses more reliable characteristics that are always present
+ * Uses ONLY user-agent - most reliable characteristic
  */
 const aj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
   
-  // ✅ FIX: Use characteristics that are ALWAYS present
+  // ✅ FIX: User-Agent ONLY - always present, never empty
   characteristics: [
     "http.request.headers['user-agent']",
-    // DON'T use accept-language - it's optional and often missing
-    // Instead, use the request method (GET, POST, etc) as a tiebreaker
-    "http.request.method",
   ],
   
   rules: [
@@ -95,7 +92,6 @@ const authAj = arcjet({
   environment: process.env.ARCJET_ENV || "production",
   characteristics: [
     "http.request.headers['user-agent']",
-    "http.request.method",
   ],
   rules: [
     shield({ mode: "LIVE" }),
@@ -143,7 +139,6 @@ const otpAj = arcjet({
   environment: process.env.ARCJET_ENV || "production",
   characteristics: [
     "http.request.headers['user-agent']",
-    "http.request.method",
   ],
   rules: [
     shield({ mode: "LIVE" }),
@@ -191,7 +186,6 @@ const msgAj = arcjet({
   environment: process.env.ARCJET_ENV || "production",
   characteristics: [
     "http.request.headers['user-agent']",
-    "http.request.method",
   ],
   rules: [
     shield({ mode: "LIVE" }),
