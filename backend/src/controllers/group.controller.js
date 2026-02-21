@@ -24,7 +24,7 @@ export const createGroup = async (req, res) => {
         const userId = req.user.userId;  // This is a STRING from auth middleware
 
         //  VALIDATE NAME
-        if(!name || name.trim().length === 0){
+        if (!name || name.trim().length === 0) {
             return res.status(400).json({
                 success: false,
                 message: "Group name is required"
@@ -32,7 +32,7 @@ export const createGroup = async (req, res) => {
         }
 
         //  VALIDATE MEMBERS PROVIDED
-        if (!Array.isArray(memberIds) || memberIds.length === 0){
+        if (!Array.isArray(memberIds) || memberIds.length === 0) {
             return res.status(400).json({
                 success: false,
                 message: "At least one member is required"
@@ -72,29 +72,33 @@ export const createGroup = async (req, res) => {
         }
 
         //  VERIFY GROUP HAS AT LEAST 2 PARTICIPANTS
-        if (uniqueMemberIds.length < 2){
+        if (uniqueMemberIds.length < 2) {
             return res.status(400).json({
                 success: false,
                 message: "Group must have at least 2 participants (creator + at least 1 other)"
             });
         }
 
-        // CHECK IF ALL MEMBERS ARE FRIENDS WITH CREATOR
-        for (const memberId of uniqueMemberIds) {
-            // Skip the creator themselves
-            if (memberId === userIdStr) {
-                continue;
-            }
+        // ✅ OPTIMIZED: Batch check if creator is friends with all members in ONE query
+        const otherMemberIds = uniqueMemberIds.filter(id => id !== userIdStr);
 
-            // Check if creator is friends with this member
-            const friendship = await Friend.findOne({
-                $or: [
-                    { senderId: userId, receiverId: memberId, status: 'accepted' },
-                    { senderId: memberId, receiverId: userId, status: 'accepted' },
-                ],
-            });
+        const friendships = await Friend.find({
+            $or: [
+                { senderId: userId, receiverId: { $in: otherMemberIds }, status: 'accepted' },
+                { receiverId: userId, senderId: { $in: otherMemberIds }, status: 'accepted' }
+            ]
+        });
 
-            if (!friendship) {
+        // Find which members are actually friends
+        const friendIdsSet = new Set();
+        friendships.forEach(f => {
+            const friendId = f.senderId.toString() === userIdStr ? f.receiverId.toString() : f.senderId.toString();
+            friendIdsSet.add(friendId);
+        });
+
+        // Check if any provided member is NOT a friend
+        for (const memberId of otherMemberIds) {
+            if (!friendIdsSet.has(memberId)) {
                 const memberUser = members.find(m => m._id.toString() === memberId);
                 return res.status(403).json({
                     success: false,
@@ -120,7 +124,7 @@ export const createGroup = async (req, res) => {
             data: group
         });
 
-    } catch (error){
+    } catch (error) {
         console.error('Create group error:', error.message);
         return res.status(500).json({
             success: false,
@@ -131,13 +135,13 @@ export const createGroup = async (req, res) => {
 };
 
 // get my groups
-export const getMyGroups = async(req, res) =>{
+export const getMyGroups = async (req, res) => {
     try {
         const userId = toObjectId(req.user.userId);
 
         // Find groups where user is participant
         const groups = await Group.find({
-            participants: { $in: [userId]}
+            participants: { $in: [userId] }
         })
             .populate('participants', 'name email _id')
             .populate('adminId', 'name email _id')  // ✅ CRITICAL: Populate admin
@@ -167,12 +171,12 @@ export const getMyGroups = async(req, res) =>{
             success: false,
             message: 'Failed to fetch groups',
             error: error.message
-        });    
+        });
     }
 };
 
 // get single group
-export const getGroup = async (req, res) =>{
+export const getGroup = async (req, res) => {
     try {
         const { groupId } = req.params;
         const userId = toObjectId(req.user.userId);
@@ -233,7 +237,7 @@ export const getGroup = async (req, res) =>{
 };
 
 // add member to group
-export const addMember = async(req, res) => {
+export const addMember = async (req, res) => {
     try {
         const { groupId } = req.params;
         const { userId } = req.body;  // ✅ Receive 'userId' from frontend
@@ -256,11 +260,11 @@ export const addMember = async(req, res) => {
 
         const group = await Group.findById(groupId);
 
-        if (!group){
+        if (!group) {
             return res.status(404).json({
                 success: false,
                 message: 'Group not found'
-            });    
+            });
         }
 
         // Check if user is admin
@@ -334,7 +338,7 @@ export const addMember = async(req, res) => {
 };
 
 // remove member from group
-export const removeMember = async(req, res) => {
+export const removeMember = async (req, res) => {
     try {
         const { groupId } = req.params;
         const { memberId } = req.body;  // ✅ CONSISTENT: Use singular 'memberId'
@@ -357,11 +361,11 @@ export const removeMember = async(req, res) => {
 
         const group = await Group.findById(groupId);
 
-        if (!group){
+        if (!group) {
             return res.status(404).json({
                 success: false,
                 message: 'Group not found'
-            });    
+            });
         }
 
         // Check if user is admin
@@ -517,80 +521,80 @@ export const getGroupMessages = async (req, res) => {
  * - Returns updated group
  */
 export const leaveGroup = async (req, res) => {
-  try {
-    const { groupId } = req.params;
-    const userId = toObjectId(req.user.userId);
+    try {
+        const { groupId } = req.params;
+        const userId = toObjectId(req.user.userId);
 
-    // ✅ VALIDATE OBJECTID
-    if (!isValidObjectId(groupId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid group ID format'
-      });
+        // ✅ VALIDATE OBJECTID
+        if (!isValidObjectId(groupId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid group ID format'
+            });
+        }
+
+        const group = await Group.findById(groupId);
+
+        if (!group) {
+            return res.status(404).json({
+                success: false,
+                message: 'Group not found'
+            });
+        }
+
+        // ✅ CHECK: User is member
+        const isMember = group.participants.some(
+            p => p.toString() === userId.toString()
+        );
+
+        if (!isMember) {
+            return res.status(400).json({
+                success: false,
+                message: 'You are not a member of this group'
+            });
+        }
+
+        // ✅ CHECK: Admin cannot leave if only admin (prevent orphaned groups)
+        const isAdmin = group.adminId.toString() === userId.toString();
+        const otherMembers = group.participants.filter(
+            p => p.toString() !== userId.toString()
+        );
+
+        if (isAdmin && otherMembers.length === 0) {
+            return res.status(403).json({
+                success: false,
+                message: 'Admin cannot leave an empty group. Add another admin or delete the group.'
+            });
+        }
+
+        // ✅ REMOVE USER FROM GROUP
+        group.participants = group.participants.filter(
+            p => p.toString() !== userId.toString()
+        );
+
+        // ✅ IF ADMIN LEFT, REASSIGN ADMIN TO FIRST REMAINING MEMBER
+        if (isAdmin && group.participants.length > 0) {
+            group.adminId = group.participants[0];
+        }
+
+        await group.save();
+        await group.populate('participants', 'name email');
+        await group.populate('adminId', 'name email');
+
+        return res.status(200).json({
+            success: true,
+            message: 'You have left the group successfully',
+            data: group
+        });
+
+    } catch (error) {
+        console.error('Leave group error:', error.message);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to leave group',
+            error: error.message
+        });
     }
-
-    const group = await Group.findById(groupId);
-
-    if (!group) {
-      return res.status(404).json({
-        success: false,
-        message: 'Group not found'
-      });
-    }
-
-    // ✅ CHECK: User is member
-    const isMember = group.participants.some(
-      p => p.toString() === userId.toString()
-    );
-
-    if (!isMember) {
-      return res.status(400).json({
-        success: false,
-        message: 'You are not a member of this group'
-      });
-    }
-
-    // ✅ CHECK: Admin cannot leave if only admin (prevent orphaned groups)
-    const isAdmin = group.adminId.toString() === userId.toString();
-    const otherMembers = group.participants.filter(
-      p => p.toString() !== userId.toString()
-    );
-
-    if (isAdmin && otherMembers.length === 0) {
-      return res.status(403).json({
-        success: false,
-        message: 'Admin cannot leave an empty group. Add another admin or delete the group.'
-      });
-    }
-
-    // ✅ REMOVE USER FROM GROUP
-    group.participants = group.participants.filter(
-      p => p.toString() !== userId.toString()
-    );
-
-    // ✅ IF ADMIN LEFT, REASSIGN ADMIN TO FIRST REMAINING MEMBER
-    if (isAdmin && group.participants.length > 0) {
-      group.adminId = group.participants[0];
-    }
-
-    await group.save();
-    await group.populate('participants', 'name email');
-    await group.populate('adminId', 'name email');
-
-    return res.status(200).json({
-      success: true,
-      message: 'You have left the group successfully',
-      data: group
-    });
-
-  } catch (error) {
-    console.error('Leave group error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to leave group',
-      error: error.message
-    });
-  }
 };
 
 /**
@@ -607,62 +611,62 @@ export const leaveGroup = async (req, res) => {
  * - Returns success message
  */
 export const deleteGroup = async (req, res) => {
-  try {
-    const { groupId } = req.params;
-    const userId = toObjectId(req.user.userId);
+    try {
+        const { groupId } = req.params;
+        const userId = toObjectId(req.user.userId);
 
-    // ✅ VALIDATE OBJECTID
-    if (!isValidObjectId(groupId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid group ID format'
-      });
+        // ✅ VALIDATE OBJECTID
+        if (!isValidObjectId(groupId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid group ID format'
+            });
+        }
+
+        const group = await Group.findById(groupId);
+
+        if (!group) {
+            return res.status(404).json({
+                success: false,
+                message: 'Group not found'
+            });
+        }
+
+        // ✅ CHECK: User is admin
+        if (group.adminId.toString() !== userId.toString()) {
+            return res.status(403).json({
+                success: false,
+                message: 'Only admin can delete this group'
+            });
+        }
+
+        // ✅ DELETE ALL MESSAGES IN THIS GROUP
+        const deleteMessagesResult = await Message.deleteMany({
+            groupId: groupId,
+            chatType: 'group'
+        });
+
+        console.log(`🗑️ Deleted ${deleteMessagesResult.deletedCount} messages from group ${groupId}`);
+
+        // ✅ DELETE THE GROUP
+        const deletedGroup = await Group.findByIdAndDelete(groupId);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Group deleted successfully',
+            data: {
+                groupId: deletedGroup._id,
+                groupName: deletedGroup.name,
+                messagesDeleted: deleteMessagesResult.deletedCount
+            }
+        });
+
+    } catch (error) {
+        console.error('Delete group error:', error.message);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to delete group',
+            error: error.message
+        });
     }
-
-    const group = await Group.findById(groupId);
-
-    if (!group) {
-      return res.status(404).json({
-        success: false,
-        message: 'Group not found'
-      });
-    }
-
-    // ✅ CHECK: User is admin
-    if (group.adminId.toString() !== userId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Only admin can delete this group'
-      });
-    }
-
-    // ✅ DELETE ALL MESSAGES IN THIS GROUP
-    const deleteMessagesResult = await Message.deleteMany({
-      groupId: groupId,
-      chatType: 'group'
-    });
-
-    console.log(`🗑️ Deleted ${deleteMessagesResult.deletedCount} messages from group ${groupId}`);
-
-    // ✅ DELETE THE GROUP
-    const deletedGroup = await Group.findByIdAndDelete(groupId);
-
-    return res.status(200).json({
-      success: true,
-      message: 'Group deleted successfully',
-      data: {
-        groupId: deletedGroup._id,
-        groupName: deletedGroup.name,
-        messagesDeleted: deleteMessagesResult.deletedCount
-      }
-    });
-
-  } catch (error) {
-    console.error('Delete group error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to delete group',
-      error: error.message
-    });
-  }
 };

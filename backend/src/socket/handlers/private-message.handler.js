@@ -1,25 +1,26 @@
 import { MESSAGES, SOCKET_EVENTS } from "../../constant/response.messages.js";
 import Friend from "../../models/Friend";
 import Message from '../../models/Message.js';
+import { getCache, setCache } from '../../config/redis.js';
 
 /**
  * Handle private messages
  */
 export async function handlePrivateMessage(socket, io, payload, userId, name, onlineUsers) {
-    const { toUserId, message, uniqueId} = payload;
+    const { toUserId, message, uniqueId } = payload;
 
     try {
         // Validation Layer
         if (!toUserId || typeof toUserId !== "string") {
-            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-                message: MESSAGES.SOCKET.TO_USER_REQUIRED 
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+                message: MESSAGES.SOCKET.TO_USER_REQUIRED
             });
             return;
         }
-        
+
         if (!message || typeof message !== "string" || message.trim().length === 0) {
-            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-                message: MESSAGES.SOCKET.MESSAGE_EMPTY 
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+                message: MESSAGES.SOCKET.MESSAGE_EMPTY
             });
             return;
         }
@@ -27,17 +28,26 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
         const trimmedMessage = message.trim();
         const receiverUser = onlineUsers.get(toUserId);
 
-        // friends validation
-        const areFriends = await Friend.findOne({
-            $or: [
-                {senderId: userId, receiverId: toUserId, status: 'accepted' },
-                {senderId: toUserId, receiverId: userId, status: 'accepted' },
-            ]
-        });
+        // ✅ FRIENDS VALIDATION (With short-term caching to prevent spamming DB)
+        const friendshipCacheKey = `friendship:${userId}:${toUserId}`;
+        let areFriends = await getCache(friendshipCacheKey);
+
+        if (areFriends === null) {
+            const friendship = await Friend.findOne({
+                $or: [
+                    { senderId: userId, receiverId: toUserId, status: 'accepted' },
+                    { senderId: toUserId, receiverId: userId, status: 'accepted' },
+                ]
+            });
+
+            areFriends = !!friendship;
+            // Cache result for 30 seconds (short but effective for active chats)
+            await setCache(friendshipCacheKey, areFriends, 30);
+        }
 
         if (!areFriends) {
-            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-                message: MESSAGES.FRIEND.CANNOT_MESSAGE 
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+                message: MESSAGES.FRIEND.CANNOT_MESSAGE
             });
             return;
         }
@@ -53,7 +63,7 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
                 chatType: 'private'
             });
         } catch (dbError) {
-            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
                 message: 'Failed to save message'
             });
             return;
@@ -98,8 +108,8 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
 
     } catch (error) {
         console.error('[ERROR] Message sending failed:', error.message);
-        socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-            message: MESSAGES.SOCKET.SOMETHING_WENT_WRONG 
+        socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+            message: MESSAGES.SOCKET.SOMETHING_WENT_WRONG
         });
     }
 }

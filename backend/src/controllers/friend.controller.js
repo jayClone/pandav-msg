@@ -230,19 +230,50 @@ export const rejectFriendRequest = async (req, res) => {
 export const getSentRequests = async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
+    const { skip, limit, page } = req.pagination || { skip: 0, limit: 50, page: 1 };
 
-    const requests = await Friend.find({
-      senderId: userId,
-      status: 'pending',
-    })
-      .populate('senderId', 'name email _id')
-      .populate('receiverId', 'name email _id')
-      .sort({ createdAt: -1 });
+    // ✅ 1. Try Cache First
+    const cacheKey = `requests:sent:${userId}:page:${page}:limit:${limit}`;
+    const cachedData = await getCache(cacheKey);
+    if (cachedData) {
+      return res.status(200).json({
+        success: true,
+        message: 'Sent requests retrieved from cache',
+        ...cachedData
+      });
+    }
+
+    // ✅ 2. Database Fetch
+    const [requests, total] = await Promise.all([
+      Friend.find({
+        senderId: userId,
+        status: 'pending',
+      })
+        .populate('senderId', 'name email _id')
+        .populate('receiverId', 'name email _id')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Friend.countDocuments({ senderId: userId, status: 'pending' })
+    ]);
+
+    const responseData = {
+      data: requests,
+      count: requests.length,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit)
+    };
+
+    // ✅ 3. Store in Cache (30 seconds - requests change frequently)
+    await setCache(cacheKey, responseData, 30);
 
     return res.status(200).json({
       success: true,
       message: 'Sent requests retrieved',
-      data: requests,
+      ...responseData
     });
   } catch (error) {
     console.error('❌ Error fetching sent requests:', error.message);
@@ -260,19 +291,50 @@ export const getSentRequests = async (req, res) => {
 export const getPendingRequests = async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
+    const { skip, limit, page } = req.pagination || { skip: 0, limit: 50, page: 1 };
 
-    const requests = await Friend.find({
-      receiverId: userId,
-      status: 'pending',
-    })
-      .populate('senderId', 'name email _id')
-      .populate('receiverId', 'name email _id')
-      .sort({ createdAt: -1 });
+    // ✅ 1. Try Cache First
+    const cacheKey = `requests:pending:${userId}:page:${page}:limit:${limit}`;
+    const cachedData = await getCache(cacheKey);
+    if (cachedData) {
+      return res.status(200).json({
+        success: true,
+        message: 'Pending requests retrieved from cache',
+        ...cachedData
+      });
+    }
+
+    // ✅ 2. Database Fetch
+    const [requests, total] = await Promise.all([
+      Friend.find({
+        receiverId: userId,
+        status: 'pending',
+      })
+        .populate('senderId', 'name email _id')
+        .populate('receiverId', 'name email _id')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Friend.countDocuments({ receiverId: userId, status: 'pending' })
+    ]);
+
+    const responseData = {
+      data: requests,
+      count: requests.length,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit)
+    };
+
+    // ✅ 3. Store in Cache (30 seconds)
+    await setCache(cacheKey, responseData, 30);
 
     return res.status(200).json({
       success: true,
       message: 'Pending requests retrieved',
-      data: requests,
+      ...responseData
     });
   } catch (error) {
     console.error('❌ Error fetching pending requests:', error.message);
@@ -301,15 +363,28 @@ export const getFriends = async (req, res) => {
     }
 
     // ✅ 2. Database Fetch
-    const friends = await Friend.find({
-      $or: [
-        { senderId: userId, status: 'accepted' },
-        { receiverId: userId, status: 'accepted' },
-      ],
-    })
-      .populate('senderId', 'name email _id')
-      .populate('receiverId', 'name email _id')
-      .sort({ acceptedAt: -1 });
+    const { skip, limit, page } = req.pagination || { skip: 0, limit: 50, page: 1 };
+
+    const [friends, total] = await Promise.all([
+      Friend.find({
+        $or: [
+          { senderId: userId, status: 'accepted' },
+          { receiverId: userId, status: 'accepted' },
+        ],
+      })
+        .populate('senderId', 'name email _id')
+        .populate('receiverId', 'name email _id')
+        .sort({ acceptedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Friend.countDocuments({
+        $or: [
+          { senderId: userId, status: 'accepted' },
+          { receiverId: userId, status: 'accepted' },
+        ],
+      })
+    ]);
 
     // ✅ Flatten friends list
     const friendsList = friends.map((friend) => {
@@ -326,13 +401,22 @@ export const getFriends = async (req, res) => {
       };
     });
 
+    const responseData = {
+      data: friendsList,
+      count: friendsList.length,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit)
+    };
+
     // ✅ 3. Store in Cache (1 hour)
-    await setCache(cacheKey, friendsList, 3600);
+    await setCache(cacheKey, responseData, 3600);
 
     return res.status(200).json({
       success: true,
       message: 'Friends list retrieved',
-      data: friendsList,
+      ...responseData
     });
   } catch (error) {
     console.error('❌ Error fetching friends:', error.message);
