@@ -77,7 +77,7 @@ export function LoginForm({ className, ...props }) {
       
       // ✅ Use authService.login()
       const response = await authService.login({
-        email: form.email.trim(),
+        email: form.email.trim().toLowerCase(),
         password: form.password
       })
 
@@ -103,8 +103,6 @@ export function LoginForm({ className, ...props }) {
       }, 1500)
       
     } catch (err) {
-      console.error("❌ Login error caught in component:", err)
-      
       const status = err?.status || err?.response?.status
       const errorMessage = err?.message || "Login failed"
       
@@ -118,9 +116,7 @@ export function LoginForm({ className, ...props }) {
               password: "Or your password is incorrect"
             })
           } else {
-            setFieldErrors({
-              password: "Wrong credentials"
-            })
+            setFieldErrors({ password: "Wrong credentials" })
           }
           setFailedField("password")
           break
@@ -135,8 +131,7 @@ export function LoginForm({ className, ...props }) {
           break
           
         case 400:
-          setError("⚠️ " + errorMessage)
-          setFieldErrors({ email: "", password: "" })
+          setError(errorMessage.includes("⚠️") ? errorMessage : `⚠️ ${errorMessage}`)
           break
           
         case 403:
@@ -144,7 +139,7 @@ export function LoginForm({ className, ...props }) {
           break
           
         default:
-          setError("❌ " + errorMessage)
+          setError(`❌ ${errorMessage}`)
       }
       
     } finally {

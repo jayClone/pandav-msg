@@ -22,6 +22,25 @@ API.interceptors.request.use((config) => {
     return config;
 });
 
+/**
+ * ✅ Standardized Error Extractor
+ * Pulls the most useful error message from the backend response
+ */
+const extractErrorMessage = (error) => {
+    if (error.response) {
+        // Server responded with a status code other than 2xx
+        return error.response.data?.message ||
+            error.response.data?.error ||
+            `Error ${error.response.status}: ${error.response.statusText}`;
+    } else if (error.request) {
+        // Request was made but no response received
+        return "No response from server. Please check your internet connection.";
+    } else {
+        // Something happened in setting up the request
+        return error.message || "An unexpected error occurred.";
+    }
+};
+
 // ✅ FIXED: Handle errors WITHOUT auto-redirect on login page
 API.interceptors.response.use(
     (response) => response,
@@ -29,30 +48,29 @@ API.interceptors.response.use(
         const isLoginPage = window.location.pathname === "/login";
         const isRegisterPage = window.location.pathname === "/register";
 
+        const normalizedError = {
+            success: false,
+            message: extractErrorMessage(error),
+            status: error.response?.status,
+            data: error.response?.data
+        };
+
         if (error.response?.status === 401) {
             if (!isLoginPage && !isRegisterPage) {
                 console.warn("⚠️ Unauthorized - redirecting to login");
                 localStorage.removeItem("token");
                 window.location.href = "/login";
-                return Promise.reject(error);
+                return Promise.reject(normalizedError);
             }
-
-            if (isLoginPage || isRegisterPage) {
-                return Promise.reject(error);
-            }
-        }
-
-        if (error.response?.status === 403) {
-            console.warn("⚠️ Forbidden");
         }
 
         if (error.response?.status === 500) {
-            console.error("❌ Server error:", error.response?.data?.message);
+            console.error("❌ Server error:", normalizedError.message);
+        } else {
+            console.error(`[API-ERROR] ${normalizedError.status}`, normalizedError.message);
         }
 
-        console.error(`[API-ERROR]`, error.response?.status, error.response?.data);
-
-        return Promise.reject(error);
+        return Promise.reject(normalizedError);
     }
 );
 

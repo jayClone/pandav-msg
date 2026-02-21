@@ -466,8 +466,7 @@ export default function Chat({
         }
         setError("");
       } catch (err) {
-        console.error("❌ Failed to fetch chat history:", err);
-        setError("⚠️ Failed to load chat history");
+        setError(err.message || "Failed to load chat history");
         setMessages([]);
       } finally {
         setLoading(false);
@@ -521,8 +520,7 @@ export default function Chat({
       });
 
     } catch (err) {
-      console.error("❌ Failed to load more messages:", err);
-      setError("⚠️ Failed to load more history");
+      setError(err.message || "Failed to load more history");
     } finally {
       setLoadingMore(false);
     }

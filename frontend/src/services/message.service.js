@@ -52,7 +52,6 @@ class MessageService {
 
       return result
     } catch (error) {
-      console.error("fetchChatHistory error:", error)
       throw error
     }
   }
@@ -90,7 +89,6 @@ class MessageService {
 
       return sorted
     } catch (error) {
-      console.error("fetchConversations error:", error)
       throw error
     }
   }
@@ -110,7 +108,6 @@ class MessageService {
 
       return true
     } catch (error) {
-      console.error("markMessagesAsRead error:", error)
       throw error
     }
   }
@@ -134,7 +131,6 @@ class MessageService {
 
       return data.data
     } catch (error) {
-      console.error("sendPrivateMessage error:", error)
       throw error
     }
   }
@@ -155,7 +151,6 @@ class MessageService {
 
       return data.data
     } catch (error) {
-      console.error("sendGroupMessage error:", error)
       throw error
     }
   }
@@ -176,7 +171,6 @@ class MessageService {
 
       return true
     } catch (error) {
-      console.error("markGroupMessagesAsRead error:", error)
       throw error
     }
   }
@@ -196,7 +190,6 @@ class MessageService {
 
       return true
     } catch (error) {
-      console.error("deleteMessage error:", error)
       throw error
     }
   }

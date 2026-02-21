@@ -25,11 +25,7 @@ const authService = {
 
       return response.data;
     } catch (error) {
-      console.error('❌ Registration error:', error.response?.data);
-      throw error.response?.data || {
-        success: false,
-        message: error.message || 'Registration failed'
-      };
+      throw error; // Axios interceptor already standardized this
     }
   },
 
@@ -50,11 +46,7 @@ const authService = {
       return response.data;
     } catch (error) {
       localStorage.removeItem('token');
-      console.error('❌ Login error:', error.response?.data);
-      throw error.response?.data || {
-        success: false,
-        message: 'Login failed'
-      };
+      throw error;
     }
   },
 
@@ -66,8 +58,7 @@ const authService = {
       const response = await API.get('/auth/current');
       return response.data;
     } catch (error) {
-      console.error('❌ Get user error:', error.response?.data);
-      throw error.response?.data || { message: 'Failed to fetch user' };
+      throw error;
     }
   },
 

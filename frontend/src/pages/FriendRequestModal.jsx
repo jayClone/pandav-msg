@@ -16,12 +16,21 @@ export default function FriendRequestModal({
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [sendingRequest, setSendingRequest] = useState({});
   const [activeTab, setActiveTab] = useState('contacts');
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (isOpen && token) {
       fetchAllData();
     }
   }, [isOpen, token]);
+
+  // ✅ AUTO-CLEAR ERRORS
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   // ✅ Close modal on escape key
   useEffect(() => {
@@ -57,8 +66,8 @@ export default function FriendRequestModal({
         }
       })) || []);
 
-    } catch (error) {
-      console.error('❌ Error loading friend data:', error.message);
+    } catch (err) {
+      setError(err.message || 'Failed to load friend data');
     } finally {
       setLoadingUsers(false);
     }
@@ -84,9 +93,8 @@ export default function FriendRequestModal({
       })) || []);
       
       setSendingRequest(prev => ({ ...prev, [userId]: false }));
-    } catch (error) {
-      console.error('❌ Error sending request:', error.message);
-      alert(error.response?.data?.message || 'Failed to send request');
+    } catch (err) {
+      setError(err.message || 'Failed to send request');
     } finally {
       setSendingRequest(prev => ({ ...prev, [userId]: false }));
     }
@@ -97,9 +105,8 @@ export default function FriendRequestModal({
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.rejectFriendRequest(requestId);
       await fetchAllData(); // ✅ Refetch to get fresh server state
-    } catch (error) {
-      console.error('❌ Error cancelling request:', error.message);
-      alert('Failed to cancel request');
+    } catch (err) {
+      setError(err.message || 'Failed to cancel request');
     } finally {
       setSendingRequest(prev => ({ ...prev, [requestId]: false }));
     }
@@ -110,9 +117,8 @@ export default function FriendRequestModal({
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.acceptFriendRequest(requestId);
       await fetchAllData(); // ✅ Refetch to get fresh server state
-    } catch (error) {
-      console.error('❌ Error accepting request:', error.message);
-      alert(error.response?.data?.message || 'Failed to accept request');
+    } catch (err) {
+      setError(err.message || 'Failed to accept request');
     } finally {
       setSendingRequest(prev => ({ ...prev, [requestId]: false }));
     }
@@ -123,9 +129,8 @@ export default function FriendRequestModal({
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.rejectFriendRequest(requestId);
       await fetchAllData(); // ✅ Refetch to get fresh server state
-    } catch (error) {
-      console.error('❌ Error rejecting request:', error.message);
-      alert(error.response?.data?.message || 'Failed to reject request');
+    } catch (err) {
+      setError(err.message || 'Failed to reject request');
     } finally {
       setSendingRequest(prev => ({ ...prev, [requestId]: false }));
     }
@@ -142,9 +147,8 @@ export default function FriendRequestModal({
       if (onFriendRemoved) {
         onFriendRemoved(userId);
       }
-    } catch (error) {
-      console.error('❌ Error removing friend:', error.message);
-      alert('Failed to remove friend');
+    } catch (err) {
+      setError(err.message || 'Failed to remove friend');
     } finally {
       setSendingRequest(prev => ({ ...prev, [userId]: false }));
     }
@@ -207,6 +211,12 @@ export default function FriendRequestModal({
             <X className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
           </button>
         </div>
+
+        {error && (
+          <div className="bg-red-500/10 border-b border-red-500/30 p-2 sm:p-3 text-red-400 text-xs sm:text-sm text-center font-medium animate-in fade-in slide-in-from-top-2">
+            ⚠️ {error}
+          </div>
+        )}
 
         {/* ✅ RESPONSIVE TABS - Scrollable on small screens */}
         <div className="flex gap-1 p-2 sm:p-4 border-b border-[rgb(var(--border-secondary))] bg-[rgb(var(--bg-primary))] overflow-x-auto scrollbar-hide flex-shrink-0">

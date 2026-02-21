@@ -144,8 +144,8 @@ export function SignupForm({ ...props }) {
 
     try {
       const response = await authService.register({
-        name: form.name,
-        email: form.email,
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
         password: form.password,
         otp: otpCode
       })
@@ -158,7 +158,6 @@ export function SignupForm({ ...props }) {
         setStep('otp')
       }
     } catch (err) {
-      console.error('❌ Registration error:', err);
       setError(err.message || "Registration failed")
       setStep('otp')
     } finally {

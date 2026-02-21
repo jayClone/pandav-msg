@@ -525,21 +525,27 @@ export default function GroupChat({
   }, []);
 
   const handleCreateGroup = async () => {
-    if (!groupName.trim()) {
-      alert("Please enter a group name");
+    const trimmedName = groupName.trim();
+    if (!trimmedName) {
+      setError("Group name is required");
+      return;
+    }
+
+    if (trimmedName.length < 3) {
+      setError("Group name must be at least 3 characters");
       return;
     }
 
     if (selectedMembers.length === 0) {
-      alert("Please select at least one member");
+      setError("Please select at least one member to join the group");
       return;
     }
 
     setCreatingGroup(true);
+    setError(null);
     try {
-
       const newGroup = await groupService.createGroup(
-        groupName,
+        trimmedName,
         selectedMembers
       );
 
@@ -559,11 +565,10 @@ export default function GroupChat({
       setSelectedMembers([]);
       setSearchUsers("");
       setShowCreateGroupModal(false);
-      alert("✅ Group created successfully!");
+      // alert("✅ Group created successfully!");
     } catch (err) {
-      console.error("❌ Failed to create group:", err);
-      const errorMsg = err.response?.data?.message || err.message || "Unknown error";
-      alert("Failed to create group: " + errorMsg);
+      const errorMsg = err.message || "Failed to create group";
+      setError(errorMsg);
     } finally {
       setCreatingGroup(false);
     }
@@ -651,11 +656,11 @@ export default function GroupChat({
         )
       );
 
-      alert('✅ Member removed from group');
+      setMsg('✅ Member removed from group');
       
     } catch (err) {
-      console.error('❌ Failed to remove member:', err);
-      alert('Failed to remove member: ' + (err.response?.data?.message || err.message));
+      const errorMessage = err.message || 'Failed to remove member';
+      setError(errorMessage);
     } finally {
       setRemoveMemberLoading(null);
     }
@@ -698,7 +703,7 @@ export default function GroupChat({
       console.error('Delete group error:', err);
       const errorMsg = err.response?.data?.message || 'Failed to delete group';
       setError(errorMsg);
-      alert('❌ Failed to delete group: ' + errorMsg);
+      // Error already handled by setError in catch block
     } finally {
       setDeletingGroup(false);
     }
@@ -1032,15 +1037,12 @@ export default function GroupChat({
         setPinnedGroups((prev) => prev.filter((id) => id !== groupId));
 
         setError(null);
-        alert(`✅ You have left the group "${selectedGroup.name}"`);
+        // Success handled by state transition (selectedGroup becomes null)
       
       }
     } catch (err) {
-      console.error("❌ Leave group error:", err);
-      const errorMessage =
-        err?.response?.data?.message || err?.message || "Failed to leave group";
+      const errorMessage = err.message || "Failed to leave group";
       setError(errorMessage);
-      alert(`❌ Error: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -1879,7 +1881,7 @@ useEffect(() => {
               <button
                 onClick={async () => {
                   if (selectedUsersToAdd.length === 0) {
-                    alert('Please select at least one member');
+                    setError('Please select at least one member');
                     return;
                   }
 
@@ -1922,14 +1924,9 @@ useEffect(() => {
                     setShowAddMemberModal(false);
                     setSelectedUsersToAdd([]);
                     setSearchUsersToAdd('');
-                    alert(`✅ Added ${selectedUsersToAdd.length} member(s) successfully!`);
-                    console.log(`✅ Added ${selectedUsersToAdd.length} members`);
-                    
                   } catch (err) {
-                    console.error('Add members error:', err);
-                    const errorMsg = err.response?.data?.message || err.message || 'Failed to add members';
+                    const errorMsg = err.message || 'Failed to add members';
                     setError(errorMsg);
-                    alert('❌ ' + errorMsg);
                   } finally {
                     setAddMemberLoading(false);
                   }

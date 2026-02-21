@@ -23,7 +23,6 @@ class GroupService {
 
       return data.data
     } catch (error) {
-      console.error('createGroup error:', error)
       throw error
     }
   }
@@ -39,7 +38,6 @@ class GroupService {
 
       return data.data || []
     } catch (error) {
-      console.error('getMyGroups error:', error)
       throw error
     }
   }
@@ -61,7 +59,6 @@ class GroupService {
 
       return group
     } catch (error) {
-      console.error('getGroup error:', error.message || error)
       throw error
     }
   }
@@ -92,7 +89,6 @@ class GroupService {
         totalPages: data.totalPages
       }
     } catch (error) {
-      console.error('getGroupMessages error:', error.message || error)
       throw error
     }
   }
@@ -116,7 +112,6 @@ class GroupService {
         members: data.data.participants || [] // Backend uses 'participants', frontend uses 'members'
       }
     } catch (error) {
-      console.error('addMember error:', error.message || error)
       throw error
     }
   }
@@ -140,7 +135,6 @@ class GroupService {
         members: data.data.participants || []
       }
     } catch (error) {
-      console.error('removeMember error:', error.message || error)
       throw error
     }
   }
@@ -160,7 +154,6 @@ class GroupService {
 
       return data.data
     } catch (error) {
-      console.error('leaveGroup error:', error.message || error)
       throw error
     }
   }
@@ -179,7 +172,6 @@ class GroupService {
 
       return data.data
     } catch (error) {
-      console.error('deleteGroup error:', error.message || error)
       throw error
     }
   }
