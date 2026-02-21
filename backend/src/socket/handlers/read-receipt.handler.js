@@ -61,10 +61,20 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
 
     // ✅ BROADCAST TO ALL CONNECTIONS
     if (groupId) {
+      console.log(`📢 [READ_RECEIPT] Group broadcast: ${groupId}`);
       readReceiptData.groupId = groupId;
       io.to(groupId.toString()).emit('message_read', readReceiptData);
     } else {
-      io.to(message.senderId.toString()).emit('message_read', readReceiptData);
+      const senderRoom = message.senderId.toString();
+      const receiverRoom = userId.toString();
+
+      console.log(`📢 [READ_RECEIPT] Private broadcast -> Sender: ${senderRoom}, Receiver: ${receiverRoom}`);
+
+      // ✅ Notify SENDER (so they see blue tick)
+      io.to(senderRoom).emit('message_read', readReceiptData);
+
+      // ✅ Notify RECEIVER (so their other tabs sync)
+      io.to(receiverRoom).emit('message_read', readReceiptData);
     }
 
   } catch (error) {

@@ -253,82 +253,31 @@ export default function Chat({
   }, [selectedUserId, fetchFriends, setAllUsers]);
 
   useEffect(() => {
-    // ✅ PHASE 5: Resilient socket initialization
-    // Children might mount before Layout's useEffect connects the socket.
-    // We poll briefly until the socket is available.
+    // ✅ PHASE 6: CLEAN SOCKET INITIALIZATION
     let socketInitInterval;
-
-    const setupSocket = () => {
-      const socket = getSocket();
-      if (!socket) return false;
-
-      // Update status immediately if already connected
-      if (socket.connected) {
-        setSocketStatus('connected');
-      }
-
-    // ✅ CONNECTION SUCCESS
-    socket.on('connect', () => {
-      console.log('✅ Socket connected');
-      setSocketStatus('connected');
-      setSocketError('');
-    });
-
-    // ✅ CONNECTION ERROR
-    socket.on('connect_error', (error) => {
-      console.error('🔴 Socket error:', error.message);
-      setSocketStatus('error');
-      setSocketError(`🔴 Connection Error: ${error.message}`);
-    });
-
-    // ✅ DISCONNECTED
-    socket.on('disconnect', (reason) => {
-      console.log('❌ Socket disconnected:', reason);
-      setSocketStatus('disconnected');
-      setSocketError(`📴 Connection lost: ${reason}`);
-    });
+    let cleanup;
 
     // ✅ ONLINE USERS HANDLER
     const handleOnlineUsers = (users) => {
       console.log("📡 [ONLINE_USERS] Received:", users?.length, "users");
       if (users && users.length > 0) {
         setAllUsers((prevUsers) => {
-          const updated = prevUsers.map((friendUser) => {
+          return prevUsers.map((friendUser) => {
             const onlineUser = users.find(
-              (ou) => ou.userId === friendUser.userId || ou._id === friendUser.userId
+              (ou) => String(ou.userId) === String(friendUser.userId)
             );
-            
-            if (onlineUser) {
-              return { 
-                ...friendUser, 
-                online: onlineUser.online || true 
-              };
-            }
-            
-            return friendUser;
+            return { ...friendUser, online: !!onlineUser };
           });
-
-          return updated;
         });
       }
     };
 
     // ✅ INCOMING MESSAGE HANDLER
     const handlePrivateMessage = (data) => {
-      if (!data._id || !data.fromUserId || !data.message) {
-        console.error("❌ Invalid message data:", data);
-        setSocketError("❌ Invalid message received");
-        return;
-      }
-
-      const isInCurrentChat = data.fromUserId === selectedUserIdRef.current;
+      const isInCurrentChat = String(data.fromUserId) === String(selectedUserIdRef.current);
 
       setMessages((prev) => {
-        const messageExists = prev.some((m) => m._id === data._id);
-        if (messageExists) {
-          console.warn(`⚠️ Message ${data._id} already exists, skipping`);
-          return prev;
-        }
+        if (prev.some((m) => String(m._id) === String(data._id))) return prev;
 
         const newMessage = {
           _id: data._id,
@@ -336,22 +285,22 @@ export default function Chat({
           fromUserName: data.fromUserName || "Unknown",
           toUserId: data.toUserId || currentUserId,
           message: data.message,
-          time: data.time || data.createdAt || new Date().toISOString(),
+          time: data.time || new Date().toISOString(),
           read: isInCurrentChat,
-          delivered: data.delivered || true,
+          delivered: true,
         };
-
         return [...prev, newMessage];
       });
 
       if (isInCurrentChat) {
-        setTimeout(() => {
+        const socket = getSocket();
+        if (socket) {
           socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
             messageId: data._id,
             senderId: data.fromUserId,
             receiverId: currentUserId,
           });
-        }, 50);
+        }
       } else {
         setUnreadCounts((prev) => ({
           ...prev,
@@ -362,90 +311,64 @@ export default function Chat({
 
     // ✅ MESSAGE SENT CONFIRMATION
     const handleMessageSent = (data) => {
-      console.log("✅ [MESSAGE_SENT] Confirmed:", {
-        _id: data._id,
-        message: data.message.substring(0, 30)
-      });
-
       setMessages((prev) => {
-        const messageExists = prev.some((m) => m._id === data._id);
-        if (messageExists) {
-          console.warn(`⚠️ Message ${data._id} already in state`);
-          return prev;
-        }
-
+        if (prev.some((m) => String(m._id) === String(data._id))) return prev;
         return [
           ...prev,
           {
-            _id: data._id,  
+            _id: data._id,
             fromUserId: data.fromUserId,
             toUserId: data.toUserId,
             fromUserName: data.fromUserName,
             message: data.message,
             time: data.time,
             delivered: data.delivered,
-            read: false, 
+            read: false,
           }
         ];
       });
     };
 
-    // ✅ MESSAGE READ
+    // ✅ MESSAGE READ HANDLER
     const handleMessageRead = (data) => {
-      console.log("🔵 [MESSAGE_READ]:", data.messageId);
-
+      console.log("🔵 [MESSAGE_READ] Received:", data.messageId);
       setMessages((prev) => {
-        const messageExists = prev.find((m) => m._id === data.messageId);
-        
-        if (!messageExists) {
-          console.warn(`⚠️ Message ${data.messageId} not found`);
-          return prev;
-        }
+        const index = prev.findIndex((m) => String(m._id) === String(data.messageId));
+        if (index === -1) return prev;
+        if (prev[index].read) return prev;
 
-        if (messageExists.read) {
-          console.log(`ℹ️ Message already read`);
-          return prev;
-        }
-
-        return prev.map((m) => 
-          m._id === data.messageId ? { ...m, read: true } : m
-        );
+        const updated = [...prev];
+        updated[index] = { ...updated[index], read: true };
+        return updated;
       });
     };
 
     // ✅ USER OFFLINE HANDLER
-    const handleUserOffline = ({ toUserId }) => {
-      setAllUsers((prevUsers) => {
-        const userIndex = prevUsers.findIndex((u) => u.userId === toUserId);
-        if (userIndex !== -1 && prevUsers[userIndex].online) {
-          const updated = [...prevUsers];
-          updated[userIndex] = { ...updated[userIndex], online: false };
-          return updated;
-        }
-        return prevUsers;
-      });
+    const handleUserOffline = ({ userId: offlineUserId }) => {
+      setAllUsers((prev) => prev.map(u => 
+        String(u.userId) === String(offlineUserId) ? { ...u, online: false } : u
+      ));
     };
 
     // ✅ TYPING HANDLER
     const handleTyping = ({ fromUserId, isTyping }) => {
-      setTypingUsers((prev) => ({
-        ...prev,
-        [fromUserId]: isTyping,
-      }));
+      setTypingUsers((prev) => ({ ...prev, [fromUserId]: isTyping }));
     };
 
     // ✅ MESSAGE DELETED HANDLER
     const handleMessageDeleted = (data) => {
-      console.log("🗑️ [MESSAGE_DELETED] Received:", data);
-      setMessages((prev) => prev.filter((m) => m._id !== data.messageId));
+      setMessages((prev) => prev.filter((m) => String(m._id) !== String(data.messageId)));
     };
 
-    socket.on(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers);
-    socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage);
-    socket.on(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent);
-    socket.on(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline);
-    socket.on(SOCKET_EVENTS.TYPING, handleTyping);
-    socket.on(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
+    const registerListeners = (socket) => {
+      if (socket.connected) setSocketStatus('connected');
+      
+      socket.on(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers);
+      socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage);
+      socket.on(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent);
+      socket.on(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline);
+      socket.on(SOCKET_EVENTS.TYPING, handleTyping);
+      socket.on(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
       socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
 
       return () => {
@@ -459,17 +382,24 @@ export default function Chat({
       };
     };
 
-    if (!setupSocket()) {
+    const init = () => {
+      const s = getSocket();
+      if (s) {
+        cleanup = registerListeners(s);
+        return true;
+      }
+      return false;
+    };
+
+    if (!init()) {
       socketInitInterval = setInterval(() => {
-        if (setupSocket()) {
-          clearInterval(socketInitInterval);
-        }
+        if (init()) clearInterval(socketInitInterval);
       }, 100);
     }
 
     return () => {
       if (socketInitInterval) clearInterval(socketInitInterval);
-      // Clean up happens via setupSocket's return if it ran
+      if (cleanup) cleanup();
     };
   }, [token, navigate, currentUserId, currentUserName, setAllUsers]);
 
