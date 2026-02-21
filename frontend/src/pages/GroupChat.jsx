@@ -676,7 +676,9 @@ export default function GroupChat({
     const fetchFriendsForGroup = async () => {
       try {
         const response = await friendAPI.getFriends();
-        setAvailableUsers(response.data.data || []);
+        const rawData = response.data?.data;
+        const friends = Array.isArray(rawData) ? rawData : (rawData?.data || []);
+        setAvailableUsers(friends);
       } catch (error) {
         console.error('❌ Error fetching friends:', error.message);
       }
@@ -763,28 +765,39 @@ export default function GroupChat({
       return;
     }
 
-    const socket = getSocket();
-    if (!socket) {
-      console.warn('⚠️ Socket not initialized');
-      return;
-    }
+    let socketInitInterval;
+
+    const setupSocket = () => {
+      const socket = getSocket();
+      if (!socket) return false;
   
-    console.log('🔌 [GROUP] Using global socket connection:', socket.id);
+      console.log('🔌 [GROUP] Using global socket connection:', socket.id);
 
-    socket.on('connect', () => {
-      console.log('✅ Socket connected successfully');
-    });
+      socket.on('connect', () => {
+        console.log('✅ Socket connected successfully');
+      });
 
-    socket.on('disconnect', () => {
-      console.log('❌ Socket disconnected');
-    });
+      socket.on('disconnect', () => {
+        console.log('❌ Socket disconnected');
+      });
 
-    socket.on('connect_error', (error) => {
-      console.error('❌ Socket connection error:', error.message);
-    });
+      socket.on('connect_error', (error) => {
+        console.error('❌ Socket connection error:', error.message);
+      });
+
+      return true;
+    };
+
+    if (!setupSocket()) {
+      socketInitInterval = setInterval(() => {
+        if (setupSocket()) {
+          clearInterval(socketInitInterval);
+        }
+      }, 100);
+    }
 
     return () => {
-      // Don't disconnect on unmount
+      if (socketInitInterval) clearInterval(socketInitInterval);
     };
   }, [token])
 

@@ -358,7 +358,7 @@ export const getFriends = async (req, res) => {
       return res.status(200).json({
         success: true,
         message: 'Friends list retrieved from cache',
-        data: cachedData,
+        ...cachedData
       });
     }
 

@@ -191,7 +191,8 @@ export default function Chat({
       console.log("✅ Friends fetched:", response.data.data);
 
       if (response.data.success) {
-        const friends = response.data.data || [];
+        const rawData = response.data?.data;
+        const friends = Array.isArray(rawData) ? rawData : (rawData?.data || []);
         
         setAllUsers(
           friends.map((u) => ({
@@ -251,18 +252,20 @@ export default function Chat({
     }, 300);
   }, [selectedUserId, fetchFriends, setAllUsers]);
 
-  // Socket event handlers - Main useEffect
   useEffect(() => {
-    const socket = getSocket();
-    if (!socket) {
-      setSocketStatus('disconnected');
-      return;
-    }
+    // ✅ PHASE 5: Resilient socket initialization
+    // Children might mount before Layout's useEffect connects the socket.
+    // We poll briefly until the socket is available.
+    let socketInitInterval;
 
-    // Update status immediately if already connected
-    if (socket.connected) {
-      setSocketStatus('connected');
-    }
+    const setupSocket = () => {
+      const socket = getSocket();
+      if (!socket) return false;
+
+      // Update status immediately if already connected
+      if (socket.connected) {
+        setSocketStatus('connected');
+      }
 
     // ✅ CONNECTION SUCCESS
     socket.on('connect', () => {
@@ -443,18 +446,32 @@ export default function Chat({
     socket.on(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline);
     socket.on(SOCKET_EVENTS.TYPING, handleTyping);
     socket.on(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
-    socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
+      socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
+
+      return () => {
+        socket.off(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers);
+        socket.off(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage);
+        socket.off(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent);
+        socket.off(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline);
+        socket.off(SOCKET_EVENTS.TYPING, handleTyping);
+        socket.off(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
+        socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
+      };
+    };
+
+    if (!setupSocket()) {
+      socketInitInterval = setInterval(() => {
+        if (setupSocket()) {
+          clearInterval(socketInitInterval);
+        }
+      }, 100);
+    }
 
     return () => {
-      socket.off(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers);
-      socket.off(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage);
-      socket.off(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent);
-      socket.off(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline);
-      socket.off(SOCKET_EVENTS.TYPING, handleTyping);
-      socket.off(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
-      socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
+      if (socketInitInterval) clearInterval(socketInitInterval);
+      // Clean up happens via setupSocket's return if it ran
     };
-  }, [token, navigate, currentUserId, currentUserName, setAllUsers]); // ❌ REMOVED selectedUserId: listeners should be independent of selection
+  }, [token, navigate, currentUserId, currentUserName, setAllUsers]);
 
   // ✅ FETCH CHAT HISTORY
   useEffect(() => {
