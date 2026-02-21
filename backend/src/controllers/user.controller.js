@@ -1,22 +1,37 @@
 import User from '../models/User.js';
 import mongoose from 'mongoose';
+import { getCache, setCache } from '../config/redis.js';
 
 /**
- * Get all registered users
- * 
- * @route GET /api/v1/users
- * @access Private
- * @returns Array of all users with online status
+ * Get all registered users with pagination and caching
  */
 export const getAllUsers = async (req, res) => {
   try {
     const currentUserId = req.user._id;
+    const { skip, limit, page } = req.pagination;
 
-    // Get all users except current user
-    const users = await User.find({ _id: { $ne: currentUserId } })
-      .select('_id name email isOnline lastSeen createdAt')
-      .sort({ name: 1 })
-      .lean();
+    // ✅ 1. Try Cache First
+    const cacheKey = `users:all:page:${page}:limit:${limit}:exclude:${currentUserId}`;
+    const cachedData = await getCache(cacheKey);
+
+    if (cachedData) {
+      return res.status(200).json({
+        success: true,
+        message: 'Users fetched from cache',
+        ...cachedData
+      });
+    }
+
+    // ✅ 2. Database Fetch
+    const [users, total] = await Promise.all([
+      User.find({ _id: { $ne: currentUserId } })
+        .select('_id name email isOnline lastSeen createdAt')
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      User.countDocuments({ _id: { $ne: currentUserId } })
+    ]);
 
     // Format response
     const formattedUsers = users.map(user => ({
@@ -30,11 +45,22 @@ export const getAllUsers = async (req, res) => {
       status: user.isOnline ? 'online' : 'offline'
     }));
 
+    const responseData = {
+      data: formattedUsers,
+      count: formattedUsers.length,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit)
+    };
+
+    // ✅ 3. Store in Cache for 5 minutes
+    await setCache(cacheKey, responseData, 300);
+
     return res.status(200).json({
       success: true,
       message: 'Users fetched successfully',
-      data: formattedUsers,
-      count: formattedUsers.length
+      ...responseData
     });
 
   } catch (error) {

@@ -143,7 +143,7 @@ export const login = async (req, res) => {
     const normalizedEmail = email.trim().toLowerCase();
 
     const user = await User.findOne({ email: normalizedEmail }).select('+password');
-    
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -152,7 +152,7 @@ export const login = async (req, res) => {
     }
 
     const isMatch = await user.matchPassword(password);
-    
+
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -160,8 +160,11 @@ export const login = async (req, res) => {
       });
     }
 
-    user.lastSeen = new Date();
-    await user.save();
+    // ✅ BACKGROUND UPDATE: lastSeen (don't block the response)
+    User.findByIdAndUpdate(user._id, { lastSeen: new Date() }).catch(err =>
+      logger.error(`❌ Background lastSeen update error: ${err.message}`)
+    );
+
 
     const token = generateToken(user);
 

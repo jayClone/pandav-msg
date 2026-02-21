@@ -1,6 +1,7 @@
 import Friend from '../models/Friend.js';
 import User from '../models/User.js';
 import mongoose from 'mongoose';
+import { getCache, setCache, deleteCache } from '../config/redis.js';
 
 /**
  * Send friend request
@@ -18,7 +19,7 @@ export const sendFriendRequest = async (req, res) => {
     }
 
     // validate objectId format First
-    if (!mongoose.Types.ObjectId.isValid(receiverId)){
+    if (!mongoose.Types.ObjectId.isValid(receiverId)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid user ID format',
@@ -148,6 +149,12 @@ export const acceptFriendRequest = async (req, res) => {
 
     console.log(`✅ Friend request accepted between ${friendRequest.senderId} and ${receiverId}`);
 
+    // ✅ Invalidate cache for both users
+    await Promise.all([
+      deleteCache(`friends:${friendRequest.senderId}`),
+      deleteCache(`friends:${receiverId}`)
+    ]);
+
     return res.status(200).json({
       success: true,
       message: 'Friend request accepted',
@@ -196,6 +203,12 @@ export const rejectFriendRequest = async (req, res) => {
     await Friend.findByIdAndDelete(requestId);
 
     console.log(`✅ Friend request rejected/cancelled`);
+
+    // ✅ Invalidate cache in case they were friends (unlikely in rejection but safe for cancellation)
+    await Promise.all([
+      deleteCache(`friends:${friendRequest.senderId}`),
+      deleteCache(`friends:${friendRequest.receiverId}`)
+    ]);
 
     return res.status(200).json({
       success: true,
@@ -271,13 +284,23 @@ export const getPendingRequests = async (req, res) => {
   }
 };
 
-/**
- * Get friends list
- */
 export const getFriends = async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
 
+    // ✅ 1. Try Cache First
+    const cacheKey = `friends:${userId}`;
+    const cachedData = await getCache(cacheKey);
+
+    if (cachedData) {
+      return res.status(200).json({
+        success: true,
+        message: 'Friends list retrieved from cache',
+        data: cachedData,
+      });
+    }
+
+    // ✅ 2. Database Fetch
     const friends = await Friend.find({
       $or: [
         { senderId: userId, status: 'accepted' },
@@ -302,6 +325,9 @@ export const getFriends = async (req, res) => {
         acceptedAt: friend.acceptedAt,
       };
     });
+
+    // ✅ 3. Store in Cache (1 hour)
+    await setCache(cacheKey, friendsList, 3600);
 
     return res.status(200).json({
       success: true,
@@ -371,7 +397,7 @@ export const checkFriendStatus = async (req, res) => {
 export const removeFriend = async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
-    const { friendId } = req.params; 
+    const { friendId } = req.params;
 
     // ✅ Validate ObjectId format
     if (!mongoose.Types.ObjectId.isValid(friendId)) {
@@ -398,6 +424,12 @@ export const removeFriend = async (req, res) => {
     await Friend.findByIdAndDelete(friend._id);
 
     console.log(`✅ Friendship removed between ${userId} and ${friendId}`);
+
+    // ✅ Invalidate cache for both users
+    await Promise.all([
+      deleteCache(`friends:${userId}`),
+      deleteCache(`friends:${friendId}`)
+    ]);
 
     return res.status(200).json({
       success: true,
