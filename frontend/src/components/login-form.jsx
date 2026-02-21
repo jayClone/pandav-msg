@@ -74,15 +74,12 @@ export function LoginForm({ className, ...props }) {
     setAttemptCount(prev => prev + 1)
 
     try {
-      console.log("🔐 Submitting login form for:", form.email)
       
       // ✅ Use authService.login()
       const response = await authService.login({
         email: form.email.trim(),
         password: form.password
       })
-
-      console.log("✅ Login response:", response)
 
       if (!response?.token) {
         throw new Error("No token received from server")
@@ -110,8 +107,6 @@ export function LoginForm({ className, ...props }) {
       
       const status = err?.status || err?.response?.status
       const errorMessage = err?.message || "Login failed"
-      
-      console.log(`Error status: ${status}, message: ${errorMessage}`)
       
       // ✅ Show error for 5+ seconds before any redirect
       switch (status) {

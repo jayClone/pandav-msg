@@ -92,8 +92,6 @@ export const sendFriendRequest = async (req, res) => {
       status: 'pending',
     });
 
-    console.log(`✅ Friend request sent from ${senderId} to ${receiverId}`);
-
     return res.status(201).json({
       success: true,
       message: 'Friend request sent successfully',
@@ -154,8 +152,6 @@ export const acceptFriendRequest = async (req, res) => {
     friendRequest.status = 'accepted';
     friendRequest.acceptedAt = new Date();
     await friendRequest.save();
-
-    console.log(`✅ Friend request accepted between ${friendRequest.senderId} and ${receiverId}`);
 
     // ✅ Invalidate cache for both users (friends list + summary)
     await Promise.all([
@@ -221,8 +217,6 @@ export const rejectFriendRequest = async (req, res) => {
 
     // ✅ Delete request
     await Friend.findByIdAndDelete(requestId);
-
-    console.log(`✅ Friend request rejected/cancelled`);
 
     // ✅ Invalidate cache for both users (friends list + summary)
     await Promise.all([
@@ -530,8 +524,6 @@ export const removeFriend = async (req, res) => {
     }
 
     await Friend.findByIdAndDelete(friend._id);
-
-    console.log(`✅ Friendship removed between ${userId} and ${friendId}`);
 
     // ✅ Invalidate cache for both users
     await Promise.all([

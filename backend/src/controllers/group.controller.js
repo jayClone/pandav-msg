@@ -658,8 +658,6 @@ export const deleteGroup = async (req, res) => {
             chatType: 'group'
         });
 
-        console.log(`🗑️ Deleted ${deleteMessagesResult.deletedCount} messages from group ${groupId}`);
-
         // ✅ DELETE THE GROUP
         const deletedGroup = await Group.findByIdAndDelete(groupId);
 

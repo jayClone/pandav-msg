@@ -5,8 +5,6 @@ const API_VERSION = 'v1';
 // ✅ USE RELATIVE PATH - Vercel rewrites /api/* to Railway
 const API_BASE_URL = `/api/${API_VERSION}`;
 
-console.log('🔍 API_BASE_URL:', API_BASE_URL);
-
 const API = axios.create({
     baseURL: API_BASE_URL,
     withCredentials: true,
@@ -21,7 +19,6 @@ API.interceptors.request.use((config) => {
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
-    console.log('📤 Request:', config.baseURL + config.url);
     return config;
 });
 
@@ -31,7 +28,7 @@ API.interceptors.response.use(
     (error) => {
         const isLoginPage = window.location.pathname === "/login";
         const isRegisterPage = window.location.pathname === "/register";
-        
+
         if (error.response?.status === 401) {
             if (!isLoginPage && !isRegisterPage) {
                 console.warn("⚠️ Unauthorized - redirecting to login");
@@ -39,23 +36,22 @@ API.interceptors.response.use(
                 window.location.href = "/login";
                 return Promise.reject(error);
             }
-            
+
             if (isLoginPage || isRegisterPage) {
-                console.log("📝 Login/Register attempt - showing error to user");
                 return Promise.reject(error);
             }
         }
-        
+
         if (error.response?.status === 403) {
             console.warn("⚠️ Forbidden");
         }
-        
+
         if (error.response?.status === 500) {
             console.error("❌ Server error:", error.response?.data?.message);
         }
-        
+
         console.error(`[API-ERROR]`, error.response?.status, error.response?.data);
-        
+
         return Promise.reject(error);
     }
 );

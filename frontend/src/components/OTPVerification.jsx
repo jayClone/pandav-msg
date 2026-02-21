@@ -66,18 +66,11 @@ export default function OTPVerification({
     setError('');
 
     try {
-      console.log('🔐 [OTP-VERIFY] Verifying OTP:', {
-        email,
-        otpCode: otpCode,  // ✅ LOG ACTUAL CODE
-        purpose
-      });
 
       const response = await otpAPI.verifyOTP(email, otpCode, purpose);
 
       if (response.success) {
         setSuccess(true);
-        console.log('✅ [OTP-VERIFY] OTP verified successfully');
-        console.log('📤 [OTP-VERIFY] Calling onSuccess with OTP:', otpCode);  // ✅ LOG THIS
 
         // ✅ CALL SUCCESS IMMEDIATELY with OTP code
         onSuccess(otpCode);
@@ -109,7 +102,6 @@ export default function OTPVerification({
         setOtp(['', '', '', '', '', '']);  // ✅ CLEAR OTP INPUTS
         inputRefs.current[0]?.focus();
         setError('');
-        console.log('✅ OTP resent successfully');
       } else {
         setError(response.message || 'Failed to resend OTP');
       }

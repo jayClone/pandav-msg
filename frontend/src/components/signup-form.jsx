@@ -132,7 +132,6 @@ export function SignupForm({ ...props }) {
   }
 
   const handleOTPSuccess = async (otpCode) => {
-    console.log('✅ [SIGNUP] OTP Success with code:', otpCode);
     
     if (!otpCode) {
       setError('OTP verification failed');
