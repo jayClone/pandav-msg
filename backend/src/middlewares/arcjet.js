@@ -10,7 +10,6 @@ const aj = arcjet({
 
   // ✅ Fixed: Proper characteristics
   characteristics: [
-    "ip.src",
     "http.request.headers['user-agent']",
   ],
 
@@ -91,7 +90,7 @@ export const globalArcjet = async (req, res, next) => {
 const authAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["ip.src", "http.request.headers['user-agent']"],
+  characteristics: ["http.request.headers['user-agent']"],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -139,7 +138,7 @@ export const authArcjet = async (req, res, next) => {
 const otpAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["ip.src", "http.request.headers['user-agent']"],
+  characteristics: ["http.request.headers['user-agent']"],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -186,7 +185,7 @@ export const otpArcjet = async (req, res, next) => {
 const msgAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["ip.src", "http.request.headers['user-agent']"],
+  characteristics: ["http.request.headers['user-agent']"],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
