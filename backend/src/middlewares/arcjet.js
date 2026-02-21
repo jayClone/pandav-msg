@@ -7,12 +7,13 @@ import arcjet, { tokenBucket, shield, detectBot } from "@arcjet/node";
 const aj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  
+
   // ✅ Fixed: Proper characteristics
   characteristics: [
+    "ip.src",
     "http.request.headers['user-agent']",
   ],
-  
+
   rules: [
     shield({
       mode: "LIVE",
@@ -90,7 +91,7 @@ export const globalArcjet = async (req, res, next) => {
 const authAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["http.request.headers['user-agent']"],
+  characteristics: ["ip.src", "http.request.headers['user-agent']"],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -116,7 +117,7 @@ export const authArcjet = async (req, res, next) => {
     if (decision.isDenied()) {
       const retryAfter = Math.ceil((resetTime - Date.now()) / 1000);
       console.warn(`⚠️  Auth rate limit exceeded. Retry after: ${retryAfter}s`);
-      
+
       return res.status(429).json({
         success: false,
         message: "Too many login attempts. Please try again later.",
@@ -138,7 +139,7 @@ export const authArcjet = async (req, res, next) => {
 const otpAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["http.request.headers['user-agent']"],
+  characteristics: ["ip.src", "http.request.headers['user-agent']"],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -164,7 +165,7 @@ export const otpArcjet = async (req, res, next) => {
     if (decision.isDenied()) {
       const retryAfter = Math.ceil((resetTime - Date.now()) / 1000);
       console.warn(`⚠️  OTP rate limit exceeded. Retry after: ${retryAfter}s`);
-      
+
       return res.status(429).json({
         success: false,
         message: "Too many OTP requests. Please try again later.",
@@ -185,7 +186,7 @@ export const otpArcjet = async (req, res, next) => {
 const msgAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["http.request.headers['user-agent']"],
+  characteristics: ["ip.src", "http.request.headers['user-agent']"],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -211,7 +212,7 @@ export const messageArcjet = async (req, res, next) => {
     if (decision.isDenied()) {
       const retryAfter = Math.ceil((resetTime - Date.now()) / 1000);
       console.warn(`⚠️  Message rate limit exceeded. Retry after: ${retryAfter}s`);
-      
+
       return res.status(429).json({
         success: false,
         message: "Too many messages. Please slow down.",
