@@ -8,7 +8,7 @@ COPY package*.json ./
 COPY bun.lock* ./
 
 # ✅ Install dependencies with bun
-RUN bun install --production
+RUN bun install --production --no-frozen-lockfile
 
 # ✅ Copy source code
 COPY src ./src
