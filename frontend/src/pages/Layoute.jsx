@@ -6,6 +6,7 @@ import React, {
 import { useNavigate } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
 import {
+  connectSocket,
   disconnectSocket,
 } from "@socket/socketClient.js";
 import { applyTheme } from "@utils/themeUtils.js";
@@ -68,6 +69,19 @@ export default function Layoute({ initialTab = "chats" }) {
     const savedTheme = localStorage.getItem("selectedTheme") || "dark";
     applyTheme(savedTheme);
   }, []);
+  
+  // ✅ PHASE 5: CENTRALIZED SOCKET CONNECTION
+  useEffect(() => {
+    if (token) {
+      console.log('🔌 [LAYOUT] Initializing centralized socket connection...');
+      const socket = connectSocket(token);
+      
+      return () => {
+        // Socket should stay alive throughout the app session
+        // disconnectSocket() is usually called on manual logout
+      };
+    }
+  }, [token]);
 
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);

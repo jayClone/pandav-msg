@@ -62,7 +62,13 @@ export default function Chat({
   const [unreadCounts, setUnreadCounts] = useState({});
   const [pinnedChats, setPinnedChats] = useState([]);
   const [typingUsers, setTypingUsers] = useState({});
-  const [selectedUserId, setSelectedUserId] = useState(null);
+  const [selectedUserId, setSelectedUserIdState] = useState(null);
+  
+  // Wrapper to keep ref in sync
+  const setSelectedUserId = useCallback((id) => {
+    selectedUserIdRef.current = id;
+    setSelectedUserIdState(id);
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [showThemeChanger, setShowThemeChanger] = useState(false);
   
@@ -76,6 +82,7 @@ export default function Chat({
   const typingTimeoutRef = useRef(null);
   const lastTypingTimeRef = useRef(0);
   const errorTimeoutRef = useRef(null);
+  const selectedUserIdRef = useRef(null); // ✅ TRACK CURRENT SELECTION WITHOUT RE-RENDERS
 
   // ✅ AUTO-CLEAR ERRORS AFTER 5 SECONDS
   useEffect(() => {
@@ -246,16 +253,15 @@ export default function Chat({
 
   // Socket event handlers - Main useEffect
   useEffect(() => {
-    if (!token) {
-      navigate("/login");
+    const socket = getSocket();
+    if (!socket) {
+      setSocketStatus('disconnected');
       return;
     }
 
-    let socket = connectSocket(token);
-    if (!socket) {
-      setSocketStatus('disconnected');
-      setSocketError('Failed to initialize socket');
-      return;
+    // Update status immediately if already connected
+    if (socket.connected) {
+      setSocketStatus('connected');
     }
 
     // ✅ CONNECTION SUCCESS
@@ -312,7 +318,7 @@ export default function Chat({
         return;
       }
 
-      const isInCurrentChat = data.fromUserId === selectedUserId;
+      const isInCurrentChat = data.fromUserId === selectedUserIdRef.current;
 
       setMessages((prev) => {
         const messageExists = prev.some((m) => m._id === data._id);
@@ -431,7 +437,6 @@ export default function Chat({
       setMessages((prev) => prev.filter((m) => m._id !== data.messageId));
     };
 
-    // Register all listeners
     socket.on(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers);
     socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage);
     socket.on(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent);
@@ -449,7 +454,7 @@ export default function Chat({
       socket.off(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
       socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
     };
-  }, [token, navigate, currentUserId, currentUserName, setAllUsers, selectedUserId]);
+  }, [token, navigate, currentUserId, currentUserName, setAllUsers]); // ❌ REMOVED selectedUserId: listeners should be independent of selection
 
   // ✅ FETCH CHAT HISTORY
   useEffect(() => {
@@ -512,38 +517,7 @@ export default function Chat({
     messageInputRef.current?.focus();
   }, [selectedUserId, currentUserId]);
 
-  // ✅ POLL FOR READ STATUS UPDATES
-  useEffect(() => {
-    if (!selectedUserId) return;
-
-    const pollInterval = setInterval(async () => {
-      try {
-        const data = await messageService.fetchChatHistory(selectedUserId);
-        
-        setMessages((prev) => {
-          let hasChanges = false;
-          const updated = prev.map((msg) => {
-            if (msg.fromUserId === currentUserId && !msg.read) {
-              const updatedMsg = data.messages.find((m) => m._id === msg._id);
-              
-              if (updatedMsg && updatedMsg.read) {
-                console.log(`🔵 [POLL] Blue tick appeared for: ${msg._id}`);
-                hasChanges = true;
-                return { ...msg, read: true };
-              }
-            }
-            return msg;
-          });
-
-          return hasChanges ? updated : prev;
-        });
-      } catch  {
-        console.debug("[POLL] Read status check failed");
-      }
-    }, 2000);
-
-    return () => clearInterval(pollInterval);
-  }, [selectedUserId, currentUserId]);
+  // ✅ REMOVED inefficient 2-second history polling
 
   // Auto-scroll
   useEffect(() => {
@@ -702,7 +676,7 @@ export default function Chat({
 
         socket.emit(SOCKET_EVENTS.MESSAGE_DELETED, {
           messageId: messageId,
-          toUserId: selectedUserId,
+          toUserId: selectedUserIdRef.current,
         });
 
         console.log("📤 [DELETE] Delete notification sent to backend");

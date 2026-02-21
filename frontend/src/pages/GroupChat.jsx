@@ -763,14 +763,13 @@ export default function GroupChat({
       return;
     }
 
-    console.log('🔌 Connecting socket...');
-    const socket = connectSocket(token);
+    const socket = getSocket();
+    if (!socket) {
+      console.warn('⚠️ Socket not initialized');
+      return;
+    }
   
-    console.log('🔌 Socket connected:', {
-      id: socket?.id,
-      connected: socket?.connected,
-      url: socket?.io?.uri
-    });
+    console.log('🔌 [GROUP] Using global socket connection:', socket.id);
 
     socket.on('connect', () => {
       console.log('✅ Socket connected successfully');
