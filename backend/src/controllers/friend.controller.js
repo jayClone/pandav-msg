@@ -528,3 +528,95 @@ export const removeFriend = async (req, res) => {
     });
   }
 };
+
+/**
+ * ✅ AGGREGATED SUMMARY: Fetch all contact/friend data in ONE call
+ */
+export const getFriendshipSummary = async (req, res) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+
+    // ✅ 1. Try Cache First
+    const cacheKey = `friendship:summary:${userId}`;
+    const cachedData = await getCache(cacheKey);
+    if (cachedData) {
+      return res.status(200).json({
+        success: true,
+        message: 'Friendship summary fetched from cache',
+        data: cachedData
+      });
+    }
+
+    // ✅ 2. Database Fetch (Parallel)
+    const [allUsers, friends, pending, sent] = await Promise.all([
+      // 1. All Users (exclude self, limit to 50 for performance)
+      User.find({ _id: { $ne: userId } })
+        .select('_id name email isOnline lastSeen')
+        .sort({ name: 1 })
+        .limit(50)
+        .lean(),
+
+      // 2. Accepted Friends
+      Friend.find({
+        $or: [
+          { senderId: userId, status: 'accepted' },
+          { receiverId: userId, status: 'accepted' },
+        ],
+      })
+        .populate('senderId', 'name email _id')
+        .populate('receiverId', 'name email _id')
+        .sort({ acceptedAt: -1 })
+        .lean(),
+
+      // 3. Pending Received Requests
+      Friend.find({
+        receiverId: userId,
+        status: 'pending',
+      })
+        .populate('senderId', 'name email _id')
+        .populate('receiverId', 'name email _id')
+        .sort({ createdAt: -1 })
+        .lean(),
+
+      // 4. Sent Requests
+      Friend.find({
+        senderId: userId,
+        status: 'pending',
+      })
+        .populate('senderId', 'name email _id')
+        .populate('receiverId', 'name email _id')
+        .sort({ createdAt: -1 })
+        .lean()
+    ]);
+
+    // ✅ Flatten friends list (match frontend expectations)
+    const friendsList = friends.map((f) => {
+      const friendUser = f.senderId._id.toString() === userId.toString() ? f.receiverId : f.senderId;
+      return { _id: friendUser._id, name: friendUser.name, email: friendUser.email };
+    });
+
+    const summaryData = {
+      users: allUsers,
+      friends: friendsList,
+      pending: pending,
+      sent: sent
+    };
+
+    // ✅ 3. Store in Cache (30 seconds)
+    await setCache(cacheKey, summaryData, 30);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Friendship summary retrieved successfully',
+      data: summaryData
+    });
+
+  } catch (error) {
+    console.error('❌ Friendship summary error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch friendship summary',
+      error: error.message
+    });
+  }
+};

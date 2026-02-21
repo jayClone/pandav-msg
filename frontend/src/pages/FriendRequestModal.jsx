@@ -38,26 +38,18 @@ export default function FriendRequestModal({
     try {
       setLoadingUsers(true);
       
-      // ✅ OPTIMIZED: Fetch all data in parallel
-      const [usersRes, friendsRes, pendingRes, sentRes] = await Promise.all([
-        friendAPI.getAllUsers(),
-        friendAPI.getFriends(),
-        friendAPI.getPendingRequests(),
-        friendAPI.getSentRequests()
-      ]);
+      // ✅ PHASE 4: Single Aggregated Call (Much faster)
+      const res = await friendAPI.getFriendshipSummary();
+      const { users, friends, pending, sent } = res.data.data;
 
-      // Set state in parallel too (React 18 batches these)
-      setAllUsers(usersRes.data.data?.map(user => ({
+      setAllUsers(users.map(user => ({
         _id: user._id,
         name: user.name
       })) || []);
 
-      setFriendsList(friendsRes.data.data?.map(friend => ({
-        _id: friend._id,
-        name: friend.name
-      })) || []);
+      setFriendsList(friends || []);
 
-      setPendingRequests(pendingRes.data.data?.map(req => ({
+      setPendingRequests(pending.map(req => ({
         _id: req._id,
         senderId: {
           _id: req.senderId._id,
@@ -65,7 +57,7 @@ export default function FriendRequestModal({
         }
       })) || []);
 
-      setSentRequests(sentRes.data.data?.map(req => ({
+      setSentRequests(sent.map(req => ({
         _id: req._id,
         senderId: {
           _id: req.senderId._id,
@@ -77,7 +69,7 @@ export default function FriendRequestModal({
         }
       })) || []);
 
-      console.log('✅ Contact data parallel load complete');
+      console.log('✅ Contact data aggregated load complete');
     } catch (error) {
       console.error('❌ Error loading friend data:', error.message);
     } finally {

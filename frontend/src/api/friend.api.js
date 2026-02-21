@@ -9,10 +9,10 @@ const friendAPI = {
   getPendingRequests: () =>
     axios.get('/friends/pending'),
 
-    // ✅ GET SENT REQUESTS (sent by user) - ADD THIS
+  // ✅ GET SENT REQUESTS (sent by user) - ADD THIS
   getSentRequests: () =>
     axios.get('/friends/sent'),
-  
+
   // Accept friend request
   acceptFriendRequest: (requestId) =>
     axios.patch(`/friends/${requestId}/accept`),
@@ -36,6 +36,10 @@ const friendAPI = {
   // Get all users (for global contact list)
   getAllUsers: () =>
     axios.get('/users'),
+
+  // ✅ GET SUMMARY (Phase 4 optimization)
+  getFriendshipSummary: () =>
+    axios.get('/friends/summary'),
 };
 
 export default friendAPI;

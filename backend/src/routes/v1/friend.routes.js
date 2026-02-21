@@ -8,10 +8,11 @@ import {
   getFriends,
   checkFriendStatus,
   removeFriend,
+  getFriendshipSummary,
 } from '../../controllers/friend.controller.js';
 import { protect } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
-import { pagination } from '../../middlewares/pagination.js'; 
+import { pagination } from '../../middlewares/pagination.js';
 
 const router = express.Router();
 
@@ -27,11 +28,14 @@ router.patch('/:requestId/accept', asyncHandler(acceptFriendRequest));
 // ✅ Reject/Cancel friend request
 router.delete('/:requestId', asyncHandler(rejectFriendRequest));
 
+// ✅ GET AGGREGATED SUMMARY (Phase 4 optimization)
+router.get('/summary', asyncHandler(getFriendshipSummary));
+
 // get sent request
 router.get('/sent', pagination, asyncHandler(getSentRequests));
 
 // ✅ Get pending requests
-router.get('/pending',pagination, asyncHandler(getPendingRequests));
+router.get('/pending', pagination, asyncHandler(getPendingRequests));
 
 // ✅ Get friends list
 router.get('/', pagination, asyncHandler(getFriends));
