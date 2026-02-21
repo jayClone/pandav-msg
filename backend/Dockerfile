@@ -1,14 +1,14 @@
-FROM oven/bun:1 AS builder
+FROM oven/bun:1
 
 WORKDIR /app
 
 # ✅ Copy dependency files
 COPY bunfig.toml .
 COPY package*.json ./
-COPY bun.lock* ./
+COPY bun.lock ./
 
 # ✅ Install dependencies with bun
-RUN bun install --production --no-frozen-lockfile
+RUN bun install --production --frozen-lockfile
 
 # ✅ Copy source code
 COPY src ./src
