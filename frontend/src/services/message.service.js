@@ -26,8 +26,6 @@ class MessageService {
       if (!before && this.chatCache.has(userId)) {
         const cached = this.chatCache.get(userId)
         if (Date.now() - cached.time < 1000) {
-          const IS_DEV = import.meta.env.DEV;
-          if (IS_DEV) console.log("✅ Using cached chat history for", userId)
           return cached.data
         }
       }
@@ -64,7 +62,6 @@ class MessageService {
     try {
       // Check cache (15 second TTL)
       if (this.conversationsCache && Date.now() - this.conversationsCacheTime < 15000) {
-        console.log("✅ Using cached conversations")
         return this.conversationsCache
       }
 

@@ -106,7 +106,6 @@ export default function GroupChat({
   // HELPER FUNCTION: Handle message read
   // ═══════════════════════════════════════════════════════════════════
   const handleMessageRead = useCallback((messageId, readByData) => {
-    console.log('📖 Handling message read:', { messageId, readByData });
     
     setMessageReadStatus((prev) => ({
       ...prev,
@@ -249,7 +248,6 @@ export default function GroupChat({
     return safeGroups
       .filter(group => {
         if (!group || !group.id || !group.name) {
-          console.warn('⚠️ Invalid group filtered out:', group);
           return false;
         }
         return true;
@@ -273,17 +271,14 @@ export default function GroupChat({
 
   const fetchAllGroups = useCallback(async () => {
     if (!token) {
-      console.warn('⚠️ No token available');
       setGroups([]);
       return;
     }
 
     try {
-      console.log('📥 Fetching groups...');
       const groups = await groupService.getMyGroups();
       
       if (!Array.isArray(groups)) {
-        console.error('❌ Groups response is not an array:', groups);
         setGroups([]);
         return;
       }
@@ -295,7 +290,6 @@ export default function GroupChat({
           const groupId = g._id || g.groupId;
           
           if (!groupId) {
-            console.warn('⚠️ Group without ID found:', g);
             return null;
           }
           
@@ -310,7 +304,6 @@ export default function GroupChat({
         })
         .filter(Boolean);
 
-      console.log(`✅ ${formattedGroups.length} groups loaded`);
       setGroups(formattedGroups);
     } catch (err) {
       console.error('❌ Failed to fetch groups:', err.message);
@@ -343,8 +336,6 @@ export default function GroupChat({
         adminName: groupDetails.adminName,
         adminEmail: groupDetails.adminEmail
       });
-      
-      console.log('✅ Group admin:', groupDetails.adminName);
       
       // ✅ ADD THIS: Update selectedGroup with adminId
       setSelectedGroup(prev => ({
@@ -396,8 +387,6 @@ export default function GroupChat({
           }
         });
         setMessageReadStatus(initialReadStatus);
-
-        console.log('✅ Messages loaded with read status:', Object.keys(initialReadStatus).length);
         
         if (formattedMessages.length > 0) {
           const lastMsg = formattedMessages[formattedMessages.length - 1];
@@ -511,10 +500,6 @@ export default function GroupChat({
     setNewMessage("");
     
     try {
-      console.log("📤 Sending message via Socket:", {
-        groupId: selectedGroup.id,
-        message: messageText,
-      });
       
       socket.emit(SOCKET_EVENTS.GROUP_MESSAGE, {
         groupId: selectedGroup.id,
@@ -523,7 +508,6 @@ export default function GroupChat({
         fromUserName: currentUserName,
       });
 
-      console.log('✅ Message emitted to socket');
       messageInputRef.current?.focus();
       
     } catch (err) {
@@ -553,18 +537,12 @@ export default function GroupChat({
 
     setCreatingGroup(true);
     try {
-      console.log("📤 Creating group with:", {
-        groupName,
-        memberIds: selectedMembers,
-      });
 
       const newGroup = await groupService.createGroup(
         groupName,
         selectedMembers
       );
 
-      console.log("✅ Group created:", newGroup);
-      
       setGroups((prev) => [
         ...prev,
         {
@@ -620,7 +598,6 @@ export default function GroupChat({
           );
         });
 
-        console.log(`✅ Fetched ${availableUsers.length} friends not in group`);
         setUsersToAddList(availableUsers);
         setSelectedUsersToAdd([]); // Reset selection
       } else {
@@ -646,15 +623,11 @@ export default function GroupChat({
 
     setRemoveMemberLoading(memberId);
     try {
-      console.log('🗑️ Removing member:', memberId);
-      
       const groupId = selectedGroup._id || selectedGroup.id;
       
       // ✅ Call remove member API
       const updatedGroupResponse = await groupService.removeMember(groupId, memberId);
 
-      console.log('✅ Remove response:', updatedGroupResponse);
-      
       // ✅ Get updated members list
       const updatedMembers = updatedGroupResponse.members || updatedGroupResponse.participants || [];
       
@@ -678,7 +651,6 @@ export default function GroupChat({
         )
       );
 
-      console.log('✅ Member removed successfully');
       alert('✅ Member removed from group');
       
     } catch (err) {
@@ -701,7 +673,6 @@ export default function GroupChat({
       setDeletingGroup(true);
       setError(null);
 
-      console.log('🗑️ Deleting group:', groupId);
       await groupService.deleteGroup(groupId);
 
       // ✅ UPDATE STATE IMMEDIATELY
@@ -710,7 +681,6 @@ export default function GroupChat({
           const gId = g._id || g.id || g.groupId;
           return gId !== groupId;
         });
-        console.log(`✅ Removed group from list. Remaining: ${filtered.length}`);
         return filtered;
       });
 
@@ -722,7 +692,6 @@ export default function GroupChat({
       setAdminInfo(null);
       setShowOptionsMenu(false);
       
-      console.log(`✅ Group deleted successfully`);
       alert('✅ Group deleted successfully');
       
     } catch (err) {
@@ -832,13 +801,11 @@ export default function GroupChat({
   // ═══════════════════════════════════════════════════════════════════
 
   useEffect(() => {
-    console.log('🔄 GroupChat mounted - fetching groups...');
     fetchAllGroups();
   }, [token, fetchAllGroups]);
 
   useEffect(() => {
     if (!token) {
-      console.warn('⚠️ No token available for socket');
       return;
     }
 
@@ -847,15 +814,12 @@ export default function GroupChat({
     const setupSocket = () => {
       const socket = getSocket();
       if (!socket) return false;
-  
-      console.log('🔌 [GROUP] Using global socket connection:', socket.id);
 
       socket.on('connect', () => {
         console.log('✅ Socket connected successfully');
       });
 
       socket.on('disconnect', () => {
-        console.log('❌ Socket disconnected');
       });
 
       socket.on('connect_error', (error) => {
@@ -896,13 +860,9 @@ export default function GroupChat({
     const socket = getSocket();
     if (!socket) return;
 
-    console.log('🎧 Setting up group_message listener...');
-
     socket.on(SOCKET_EVENTS.GROUP_MESSAGE, (data) => {
-      console.log('💬 Received group_message event:', data);
       
       if (!data?.groupId) {
-        console.warn('⚠️ Invalid message data:', data);
         return;
       }
 
@@ -918,7 +878,6 @@ export default function GroupChat({
           readBy: data.readBy || [],
         };
 
-        console.log('✅ Adding message:', newMsg._id);
         setMessages((prev) => [...prev, newMsg]);
         
         setLastMessages((prev) => ({
@@ -946,7 +905,6 @@ export default function GroupChat({
     if (!socket) return;
 
     socket.on('message_read', (data) => {
-      console.log('📖 Message read receipt:', data);
       
       if (data.messageId && data.readBy) {
         handleMessageRead(data.messageId, data.readBy);
@@ -968,7 +926,6 @@ export default function GroupChat({
     const timer = setTimeout(() => {
       messages.forEach((msg) => {
         if (msg.fromUserId === currentUserId) {
-          console.log(`⏭️  Skipping own message: ${msg._id}`);
           return;
         }
 
@@ -977,7 +934,6 @@ export default function GroupChat({
         );
 
         if (!alreadyRead && msg._id) {
-          console.log(`📖 Emitting read receipt for message: ${msg._id}`);
           socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
             messageId: msg._id,
             groupId: selectedGroup._id || selectedGroup.id,
@@ -1000,18 +956,10 @@ export default function GroupChat({
   }, [token, showCreateGroupModal, fetchAvailableUsers]);
 
   useEffect(() => {
-    if (!selectedGroup?.id && !selectedGroup?._id) return;
-    
     const socket = getSocket();
     if (!socket?.connected) return;
 
-    console.log("📡 [LISTEN] Setting up group_online_members listener");
-
     const handleGroupOnlineMembers = (data) => {
-      console.log(`🟢 [ONLINE] Group ${data.groupId} has ${data.onlineCount}/${data.totalMembers} members online:`, 
-        data.onlineMembers.map(u => u.name).join(', ')
-      );
-      
       setGroupOnlineMembers(data.onlineMembers || []);
       setOnlineCount(data.onlineCount || 0);
     };
@@ -1028,12 +976,10 @@ export default function GroupChat({
     if (!socket?.connected) return;
 
     socket.on('user_joined_group', (data) => {
-      console.log('👤 User joined group:', data.userName);
       setOnlineCount(data.onlineCount || 0);
     });
 
     socket.on('user_left_group', (data) => {
-      console.log('👤 User left group:', data.userName);
     });
 
     return () => {
@@ -1059,17 +1005,14 @@ export default function GroupChat({
       setError(null);
 
       const groupId = selectedGroup._id || selectedGroup.id;
-      console.log("🚪 [LEAVE GROUP] Attempting to leave group:", groupId);
 
       const response = await groupService.leaveGroup(groupId);
 
       if (response.success) {
-        console.log("✅ [LEAVE GROUP] Successfully left group");
 
         // ✅ UPDATE STATE IMMEDIATELY
         setGroups((prevGroups) => {
           const filtered = prevGroups.filter((g) => (g._id || g.id) !== groupId);
-          console.log(`✅ Removed group. Remaining: ${filtered.length}`);
           return filtered;
         });
 
@@ -1090,7 +1033,6 @@ export default function GroupChat({
 
         setError(null);
         alert(`✅ You have left the group "${selectedGroup.name}"`);
-        console.log("✅ Group left successfully");
       
       }
     } catch (err) {
@@ -1104,9 +1046,6 @@ export default function GroupChat({
     }
   };
   
-useEffect(() => {
-  console.log('📊 showOptionsMenu state changed:', showOptionsMenu);
-}, [showOptionsMenu]);
 
 // Add this RIGHT AFTER all your other useEffect hooks (around line 900):
 
@@ -1122,7 +1061,6 @@ useEffect(() => {
       buttonElement &&
       !buttonElement.contains(event.target)
     ) {
-      console.log('❌ Click outside menu - closing');
       setShowOptionsMenu(false);
     }
   };
@@ -1134,19 +1072,6 @@ useEffect(() => {
   }
 }, [showOptionsMenu]);
 
-useEffect(() => {
-  if (selectedGroup) {
-    console.log('🔍 DEBUG ADMIN CHECK:', {
-      selectedGroup_adminId: selectedGroup?.adminId,
-      selectedGroup_adminId_type: typeof selectedGroup?.adminId,
-      currentUserId: currentUserId,
-      currentUserId_type: typeof currentUserId,
-      adminId_string: String(selectedGroup?.adminId),
-      isAdmin: selectedGroup?.adminId === currentUserId,
-      isAdmin_string: String(selectedGroup?.adminId) === String(currentUserId),
-    });
-  }
-}, [selectedGroup, currentUserId]);
 
   // ✅ HIDE MOBILE BOTTOM NAV WHEN GROUP CHAT IS OPEN
   useEffect(() => {
@@ -1212,7 +1137,6 @@ useEffect(() => {
             <div className="space-y-1 p-2 sm:p-3">
               {filteredGroups.map((group) => {
                 if (!group || !group.id) {
-                  console.warn('⚠️ Invalid group in list:', group);
                   return null;
                 }
                 
@@ -1355,7 +1279,6 @@ useEffect(() => {
                   onClick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
-                    console.log('🔵 3-dot clicked');
                     setShowOptionsMenu(prev => !prev);
                   }}
                   className="p-1.5 xs:p-2 sm:p-3 hover:bg-red-500/20 rounded-lg transition-all text-red-400 hover:text-red-300 shrink-0 border border-red-500/30 hover:border-red-400/50"
@@ -1377,7 +1300,6 @@ useEffect(() => {
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
-                          console.log('✅ Add Member clicked');
                           setShowAddMemberModal(true);
                           setSearchUsersToAdd("");
                           setSelectedUsersToAdd([]);
@@ -1476,7 +1398,6 @@ useEffect(() => {
                   ) : (
                     members.map((member) => {
                       if (!member || (!member._id && !member.userId)) {
-                        console.warn('⚠️ Invalid member found:', member);
                         return null;
                       }
 

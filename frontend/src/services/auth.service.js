@@ -17,28 +17,22 @@ const authService = {
         otp: userData.otp.toString().trim()
       };
 
-      console.log('📤 [AUTH-SERVICE] Registering:', payload.email);
-
       const response = await API.post('/auth/register', payload);
 
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
-        console.log('✅ Registration successful');
       }
 
       return response.data;
     } catch (error) {
       console.error('❌ Registration error:', error.response?.data);
-      throw error.response?.data || { 
+      throw error.response?.data || {
         success: false,
-        message: error.message || 'Registration failed' 
+        message: error.message || 'Registration failed'
       };
     }
   },
 
-  /**
-   * Login user
-   */
   login: async (credentials) => {
     try {
       const payload = {
@@ -47,22 +41,19 @@ const authService = {
         ...(credentials.otp && { otp: credentials.otp.toString() })
       };
 
-      console.log('🔐 [AUTH-SERVICE] Login attempt for:', payload.email);
-
       const response = await API.post('/auth/login', payload);
 
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
-        console.log('✅ Login successful');
       }
 
       return response.data;
     } catch (error) {
       localStorage.removeItem('token');
       console.error('❌ Login error:', error.response?.data);
-      throw error.response?.data || { 
+      throw error.response?.data || {
         success: false,
-        message: 'Login failed' 
+        message: 'Login failed'
       };
     }
   },
@@ -84,7 +75,6 @@ const authService = {
    * Logout user
    */
   logout: () => {
-    console.log('🚪 Logging out...');
     localStorage.removeItem('token');
     return Promise.resolve();
   },

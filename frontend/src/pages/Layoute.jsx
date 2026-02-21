@@ -73,7 +73,6 @@ export default function Layoute({ initialTab = "chats" }) {
   // ✅ PHASE 5: CENTRALIZED SOCKET CONNECTION
   useEffect(() => {
     if (token) {
-      console.log('🔌 [LAYOUT] Initializing centralized socket connection...');
       const socket = connectSocket(token);
       
       return () => {

@@ -24,12 +24,11 @@ export const connectSocket = (token) => {
         reconnectionDelay: 2000,
         timeout: 20000,
         perMessageDeflate: {
-        threshold: 1024 // Only compress messages > 1KB
-  }
+            threshold: 1024 // Only compress messages > 1KB
+        }
     });
 
     socket.on('connect', () => {
-        if (IS_DEV) console.log('✅ Socket connected:', socket.id); // ✅ DEV ONLY
     });
 
     socket.on('connect_error', (error) => {
@@ -37,7 +36,6 @@ export const connectSocket = (token) => {
     });
 
     socket.on('disconnect', (reason) => {
-        if (IS_DEV) console.log('🔌 Socket disconnected:', reason);
     });
 
     return socket;

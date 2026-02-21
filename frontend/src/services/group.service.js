@@ -102,8 +102,7 @@ class GroupService {
       if (!groupId || !memberId) {
         throw new Error('Group ID and Member ID are required')
       }
-      console.log('GroupService.addMember:', { groupId: String(groupId), memberId: String(memberId) })
-      
+
       const response = await groupApi.addMember(groupId, memberId)
       const { data } = response
 
@@ -127,8 +126,7 @@ class GroupService {
       if (!groupId || !memberId) {
         throw new Error('Group ID and Member ID are required')
       }
-      console.log('GroupService.removeMember:', { groupId: String(groupId), memberId: String(memberId) })
-      
+
       const response = await groupApi.removeMember(groupId, memberId)
       const { data } = response
 
@@ -152,8 +150,7 @@ class GroupService {
       if (!groupId) {
         throw new Error('Group ID is required')
       }
-      console.log('GroupService.leaveGroup:', { groupId: String(groupId) })
-      
+
       const response = await groupApi.leaveGroup(groupId)
       const { data } = response
 
@@ -172,8 +169,7 @@ class GroupService {
       if (!groupId) {
         throw new Error('Group ID is required')
       }
-      console.log('GroupService.deleteGroup:', { groupId: String(groupId) })
-      
+
       const response = await groupApi.deleteGroup(groupId)
       const { data } = response
 

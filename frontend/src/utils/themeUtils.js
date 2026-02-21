@@ -6,8 +6,7 @@ export const initializeTheme = () => {
 
   const savedTheme = localStorage.getItem('selectedTheme') || 'dark';
   applyTheme(savedTheme);
-  console.log(`✅ Theme initialized at load: ${savedTheme}`);
-};
+}
 
 // Theme configuration with CSS variables - Dark and Light only
 export const themeConfig = {
@@ -52,20 +51,18 @@ export const applyTheme = (themeName, e) => {
   if (!theme) return;
 
   const root = document.documentElement;
-  
+
   root.style.setProperty('--bg-primary', theme['--bg-primary'], 'important');
   root.style.setProperty('--bg-secondary', theme['--bg-secondary'], 'important');
   root.style.setProperty('--bg-tertiary', theme['--bg-tertiary'], 'important');
   root.style.setProperty('--bg-hover', theme['--bg-hover'], 'important');
   root.style.setProperty('--border-secondary', theme['--border-secondary'], 'important');
-  
+
   root.style.setProperty('--text-primary', theme['--text-primary'], 'important');
   root.style.setProperty('--text-secondary', theme['--text-secondary'], 'important');
   root.style.setProperty('--text-muted', theme['--text-muted'], 'important');
   root.style.setProperty('--text-lighter', theme['--text-lighter'], 'important');
   root.style.setProperty('--text-darker-muted', theme['--text-darker-muted'], 'important');
-
-  console.log(`✅ Theme applied: ${themeName}`);
 };
 
 // Get theme name from localStorage

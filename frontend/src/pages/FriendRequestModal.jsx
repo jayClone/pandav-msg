@@ -57,19 +57,6 @@ export default function FriendRequestModal({
         }
       })) || []);
 
-      setSentRequests(sent.map(req => ({
-        _id: req._id,
-        senderId: {
-          _id: req.senderId._id,
-          name: req.senderId.name
-        },
-        receiverId: {
-          _id: req.receiverId._id,
-          name: req.receiverId.name
-        }
-      })) || []);
-
-      console.log('✅ Contact data aggregated load complete');
     } catch (error) {
       console.error('❌ Error loading friend data:', error.message);
     } finally {
@@ -96,7 +83,7 @@ export default function FriendRequestModal({
         }
       })) || []);
       
-      console.log('✅ Friend request sent and synced');
+      setSendingRequest(prev => ({ ...prev, [userId]: false }));
     } catch (error) {
       console.error('❌ Error sending request:', error.message);
       alert(error.response?.data?.message || 'Failed to send request');
@@ -109,7 +96,6 @@ export default function FriendRequestModal({
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.rejectFriendRequest(requestId);
-      console.log('✅ Friend request cancelled');
       await fetchAllData(); // ✅ Refetch to get fresh server state
     } catch (error) {
       console.error('❌ Error cancelling request:', error.message);
@@ -123,7 +109,6 @@ export default function FriendRequestModal({
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.acceptFriendRequest(requestId);
-      console.log('✅ Friend request accepted');
       await fetchAllData(); // ✅ Refetch to get fresh server state
     } catch (error) {
       console.error('❌ Error accepting request:', error.message);
@@ -137,7 +122,6 @@ export default function FriendRequestModal({
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.rejectFriendRequest(requestId);
-      console.log('✅ Friend request rejected');
       await fetchAllData(); // ✅ Refetch to get fresh server state
     } catch (error) {
       console.error('❌ Error rejecting request:', error.message);
@@ -157,10 +141,7 @@ export default function FriendRequestModal({
       
       if (onFriendRemoved) {
         onFriendRemoved(userId);
-        console.log('✅ [MODAL] Notified parent about friend removal:', userId);
       }
-      
-      console.log('✅ Friend removed');
     } catch (error) {
       console.error('❌ Error removing friend:', error.message);
       alert('Failed to remove friend');

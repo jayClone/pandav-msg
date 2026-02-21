@@ -190,12 +190,9 @@ export default function Chat({
   // ✅ FETCH ONLY FRIENDS (not all users)
   const fetchFriends = useCallback(async () => {
     try {
-      console.log("🔄 Fetching friends only...");
       setLoadingFriends(true);
 
       const response = await friendAPI.getFriends();
-
-      console.log("✅ Friends fetched:", response.data.data);
 
       if (response.data.success) {
         const rawData = response.data?.data;
@@ -211,8 +208,6 @@ export default function Chat({
             createdAt: u.createdAt,
           }))
         );
-        
-        console.log(`✅ [CHAT] Loaded ${friends.length} friends`);
         setError("");
       }
     } catch (err) {
@@ -231,16 +226,11 @@ export default function Chat({
 
   // ✅ HANDLE FRIEND REMOVAL - REFETCH FRIENDS
   const handleFriendRemoved = useCallback((removedUserId) => {
-    console.log(`✅ [CHAT] Friend removed:`, removedUserId);
-    
     setAllUsers(prevUsers => {
-      const filtered = prevUsers.filter(user => user.userId !== removedUserId);
-      console.log(`✅ [CHAT] Removed from UI. Remaining:`, filtered.length);
-      return filtered;
+      return prevUsers.filter(user => user.userId !== removedUserId);
     });
 
     if (selectedUserId === removedUserId) {
-      console.log(`✅ [CHAT] Closing chat with removed friend`);
       setSelectedUserId(null);
       setMessages([]);
     }
@@ -254,7 +244,6 @@ export default function Chat({
     setPinnedChats(prev => prev.filter(id => id !== removedUserId));
 
     setTimeout(() => {
-      console.log(`📡 [CHAT] Refetching friends list from backend...`);
       fetchFriends();
     }, 300);
   }, [selectedUserId, fetchFriends, setAllUsers]);
@@ -266,7 +255,6 @@ export default function Chat({
 
     // ✅ ONLINE USERS HANDLER
     const handleOnlineUsers = (users) => {
-      console.log("📡 [ONLINE_USERS] Received:", users?.length, "users");
       if (users && users.length > 0) {
         setAllUsers((prevUsers) => {
           return prevUsers.map((friendUser) => {
@@ -338,7 +326,6 @@ export default function Chat({
 
     // ✅ MESSAGE READ HANDLER
     const handleMessageRead = (data) => {
-      console.log("🔵 [MESSAGE_READ] Received:", data.messageId);
       setMessages((prev) => {
         const index = prev.findIndex((m) => String(m._id) === String(data.messageId));
         if (index === -1) return prev;
@@ -371,13 +358,11 @@ export default function Chat({
       if (socket.connected) setSocketStatus('connected');
       
       const onConnect = () => {
-        console.log('✅ Socket connected');
         setSocketStatus('connected');
         setSocketError('');
       };
 
       const onDisconnect = (reason) => {
-        console.log('❌ Socket disconnected:', reason);
         setSocketStatus('disconnected');
         setSocketError(`📴 Connection lost: ${reason}`);
       };

@@ -12,19 +12,17 @@ export function ProtectedRoute({ children }) {
         const token = localStorage.getItem("token");
         
         if (!token) {
-          console.log("❌ No token found");
           setIsAuthenticated(false);
           setLoading(false);
           return;
         }
         
-        console.log("🔑 Token found, verifying with backend...");
-        
         // ✅ FIXED: Use /auth/me instead of /auth/current
         const response = await authService.getCurrentUser();
         
-        console.log("✅ Auth verified:", response.data);
-        setIsAuthenticated(true);
+        if (response.success) {
+          setIsAuthenticated(true);
+        }
       } catch (error) {
         console.error("❌ Auth check failed:", error.message);
         localStorage.removeItem("token");
