@@ -117,6 +117,14 @@ export const acceptFriendRequest = async (req, res) => {
     const receiverId = req.user?.id || req.user?._id;
     const { requestId } = req.params;
 
+    // ✅ Validate ObjectId format first
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request ID format',
+      });
+    }
+
     const friendRequest = await Friend.findById(requestId);
 
     if (!friendRequest) {
@@ -149,10 +157,14 @@ export const acceptFriendRequest = async (req, res) => {
 
     console.log(`✅ Friend request accepted between ${friendRequest.senderId} and ${receiverId}`);
 
-    // ✅ Invalidate cache for both users
+    // ✅ Invalidate cache for both users (friends list + summary)
     await Promise.all([
       deleteCache(`friends:${friendRequest.senderId}`),
-      deleteCache(`friends:${receiverId}`)
+      deleteCache(`friends:${receiverId}`),
+      deleteCache(`friendship:summary:${friendRequest.senderId}`),
+      deleteCache(`friendship:summary:${receiverId}`),
+      deleteCache(`requests:pending:${receiverId}:page:1:limit:50`),
+      deleteCache(`requests:sent:${friendRequest.senderId}:page:1:limit:50`),
     ]);
 
     return res.status(200).json({
@@ -177,6 +189,14 @@ export const rejectFriendRequest = async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
     const { requestId } = req.params;
+
+    // ✅ Validate ObjectId format first
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request ID format',
+      });
+    }
 
     const friendRequest = await Friend.findById(requestId);
 
@@ -204,10 +224,14 @@ export const rejectFriendRequest = async (req, res) => {
 
     console.log(`✅ Friend request rejected/cancelled`);
 
-    // ✅ Invalidate cache in case they were friends (unlikely in rejection but safe for cancellation)
+    // ✅ Invalidate cache for both users (friends list + summary)
     await Promise.all([
       deleteCache(`friends:${friendRequest.senderId}`),
-      deleteCache(`friends:${friendRequest.receiverId}`)
+      deleteCache(`friends:${friendRequest.receiverId}`),
+      deleteCache(`friendship:summary:${friendRequest.senderId}`),
+      deleteCache(`friendship:summary:${friendRequest.receiverId}`),
+      deleteCache(`requests:pending:${friendRequest.receiverId}:page:1:limit:50`),
+      deleteCache(`requests:sent:${friendRequest.senderId}:page:1:limit:50`),
     ]);
 
     return res.status(200).json({

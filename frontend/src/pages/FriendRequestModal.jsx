@@ -109,8 +109,8 @@ export default function FriendRequestModal({
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.rejectFriendRequest(requestId);
-      setSentRequests(prev => prev.filter(r => r._id !== requestId));
       console.log('✅ Friend request cancelled');
+      await fetchAllData(); // ✅ Refetch to get fresh server state
     } catch (error) {
       console.error('❌ Error cancelling request:', error.message);
       alert('Failed to cancel request');
@@ -123,18 +123,11 @@ export default function FriendRequestModal({
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.acceptFriendRequest(requestId);
-
-      const acceptedRequest = pendingRequests.find(r => r._id === requestId);
-      setPendingRequests(prev => prev.filter(r => r._id !== requestId));
-      setFriendsList(prev => [...prev, {
-        _id: acceptedRequest.senderId._id,
-        name: acceptedRequest.senderId.name
-      }]);
-
       console.log('✅ Friend request accepted');
+      await fetchAllData(); // ✅ Refetch to get fresh server state
     } catch (error) {
       console.error('❌ Error accepting request:', error.message);
-      alert('Failed to accept request');
+      alert(error.response?.data?.message || 'Failed to accept request');
     } finally {
       setSendingRequest(prev => ({ ...prev, [requestId]: false }));
     }
@@ -144,11 +137,11 @@ export default function FriendRequestModal({
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.rejectFriendRequest(requestId);
-      setPendingRequests(prev => prev.filter(r => r._id !== requestId));
       console.log('✅ Friend request rejected');
+      await fetchAllData(); // ✅ Refetch to get fresh server state
     } catch (error) {
       console.error('❌ Error rejecting request:', error.message);
-      alert('Failed to reject request');
+      alert(error.response?.data?.message || 'Failed to reject request');
     } finally {
       setSendingRequest(prev => ({ ...prev, [requestId]: false }));
     }
