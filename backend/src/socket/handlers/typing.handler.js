@@ -7,12 +7,11 @@ export async function handleTyping(socket, io, data, userId, onlineUsers) {
 
     // Find receiver in online users
     const receiverUser = onlineUsers.get(toUserId);
-    
-    if (receiverUser) {
-        io.to(receiverUser.socketId).emit('typing', {
-            fromUserId: userId,
-            isTyping: isTyping,
-            userName: socket.user?.name || 'User'
-        });
-    }
+
+    // ✅ EMIT TO RECEIVER'S PERSONAL ROOM
+    io.to(toUserId.toString()).emit('typing', {
+        fromUserId: userId,
+        isTyping: isTyping,
+        userName: socket.user?.name || 'User'
+    });
 }

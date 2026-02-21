@@ -79,11 +79,18 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             delivered: false
         };
 
-        // If receiver is online: send real-time notification
-        if (receiverUser) {
-            io.to(receiverUser.socketId).emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
+        // ✅ EMIT TO RECEIVER'S PERSONAL ROOM (Targets all their sessions)
+        io.to(toUserId.toString()).emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
+            ...messagePayload,
+            delivered: !!receiverUser
+        });
+
+        // ✅ EMIT TO SENDER'S PERSONAL ROOM (Syncs all their other tabs)
+        if (userId.toString() !== toUserId.toString()) {
+            io.to(userId.toString()).emit(SOCKET_EVENTS.MESSAGE_SENT, {
                 ...messagePayload,
-                delivered: true
+                delivered: !!receiverUser,
+                saved: true
             });
         }
         else {

@@ -4,6 +4,8 @@ import { handleJoinGroup, handleLeaveGroup } from './handlers/group-room.handler
 import { handleGroupMessage } from './handlers/group-message.handler.js';
 import { handleUserConnect, handleUserDisconnect } from './handlers/user-status.handler.js';
 import { handleReadReceipt } from './handlers/read-receipt.handler.js';
+import { handleTyping } from './handlers/typing.handler.js';
+import { handleMessageDeleted } from './handlers/message-deleted.handler.js';
 
 /**
  * Register all socket events
@@ -21,7 +23,7 @@ export function registerSocketEvents(io, socket, onlineUsers) {
   socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, async (data, callback) => {
     try {
       const result = await handlePrivateMessage(socket, io, data, userId, name, onlineUsers);
-      
+
       if (callback && typeof callback === 'function') {
         callback(null, {
           success: true,
@@ -77,35 +79,14 @@ export function registerSocketEvents(io, socket, onlineUsers) {
   // ✅ TYPING
   // ═══════════════════════════════════════════════════════════════════
   socket.on(SOCKET_EVENTS.TYPING, (data) => {
-    try {
-      const receiverUser = onlineUsers.get(data.toUserId);
-      if (receiverUser) {
-        io.to(receiverUser.socketId).emit(SOCKET_EVENTS.TYPING, {
-          fromUserId: userId,
-          isTyping: data.isTyping
-        });
-      }
-    } catch (error) {
-      console.error("❌ [SOCKET] Error handling typing:", error.message);
-    }
+    handleTyping(socket, io, data, userId, onlineUsers);
   });
 
   // ═══════════════════════════════════════════════════════════════════
   // ✅ MESSAGE DELETED
   // ═══════════════════════════════════════════════════════════════════
   socket.on(SOCKET_EVENTS.MESSAGE_DELETED, (data) => {
-    try {
-      const receiverUser = onlineUsers.get(data.toUserId);
-      if (receiverUser) {
-        io.to(receiverUser.socketId).emit(SOCKET_EVENTS.MESSAGE_DELETED, {
-          messageId: data.messageId,
-          fromUserId: userId,
-          toUserId: data.toUserId
-        });
-      }
-    } catch (error) {
-      console.error("❌ [SOCKET] Error handling message deletion:", error.message);
-    }
+    handleMessageDeleted(socket, io, data, userId, onlineUsers);
   });
 
   // ═══════════════════════════════════════════════════════════════════

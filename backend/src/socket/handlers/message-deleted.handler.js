@@ -10,7 +10,7 @@ export async function handleMessageDeleted(socket, io, data, userId, onlineUsers
     try {
         // ✅ DELETE FROM DATABASE
         const deletedMessage = await Message.findByIdAndDelete(messageId);
-        
+
         if (!deletedMessage) {
             return;
         }
@@ -19,15 +19,19 @@ export async function handleMessageDeleted(socket, io, data, userId, onlineUsers
         // PRIVATE MESSAGE: Notify receiver
         // ═══════════════════════════════════════════════════════════════════════════════
         if (toUserId && !groupId) {
-            const receiverUser = onlineUsers.get(toUserId);
-            
-            if (receiverUser) {
-                io.to(receiverUser.socketId).emit('message_deleted', {
-                    messageId: messageId,
-                    fromUserId: userId,
-                    toUserId: toUserId
-                });
-            }
+            // ✅ EMIT TO RECEIVER'S PERSONAL ROOM
+            io.to(toUserId.toString()).emit('message_deleted', {
+                messageId: messageId,
+                fromUserId: userId,
+                toUserId: toUserId
+            });
+
+            // ✅ EMIT TO SENDER'S PERSONAL ROOM (Sync other tabs)
+            io.to(userId.toString()).emit('message_deleted', {
+                messageId: messageId,
+                fromUserId: userId,
+                toUserId: toUserId
+            });
         }
 
         // ═══════════════════════════════════════════════════════════════════════════════

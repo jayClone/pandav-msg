@@ -11,7 +11,12 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
         await User.findByIdAndUpdate(userId, {
             isOnline: true,
             lastSeen: Date.now()
-        }).catch(() => {});
+        }).catch(() => { });
+
+        // ✅ JOIN PERSONAL ROOM
+        // This allows io.to(userId) to reach all tabs/connections of this user
+        socket.join(userId.toString());
+        console.log(`🏠 [SOCKET] User ${name} joined personal room: ${userId}`);
 
         // Store user in online users map
         onlineUsers.set(userId, {
@@ -63,11 +68,11 @@ export async function handleUserDisconnect(socket, io, userId, name, onlineUsers
         onlineUsers.delete(userId);
 
         // Set user offline in DB
-        await User.findByIdAndUpdate(userId, { 
+        await User.findByIdAndUpdate(userId, {
             isOnline: false,
             lastSeen: Date.now()
-        }).catch(() => {});
-        
+        }).catch(() => { });
+
         // ✅ UPDATE ALL GROUPS - REMOVE FROM ONLINE MEMBERS
         const userGroups = await Group.find({
             onlineMembers: userId
