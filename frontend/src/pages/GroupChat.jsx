@@ -70,6 +70,13 @@ export default function GroupChat({
   const [lastMessages, setLastMessages] = useState({});
   const [groupOnlineMembers, setGroupOnlineMembers] = useState([]);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false); // ✅ ADD FOR MOBILE
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const scrollContainerRef = useRef(null);
+  const isInitialLoad = useRef(true);
+  const lastScrollHeightRef = useRef(0);
+
 
   const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -372,8 +379,11 @@ export default function GroupChat({
           pending: false,
           read: msg.read,
           readBy: msg.readBy || [],
+          createdAt: msg.createdAt,
         }));
         setMessages(formattedMessages);
+        setHasMore(response.data.hasMore);
+        setNextCursor(response.data.nextCursor);
 
         const initialReadStatus = {};
         formattedMessages.forEach((msg) => {
@@ -405,7 +415,9 @@ export default function GroupChat({
       setError("Failed to load messages");
     } finally {
       setLoading(false);
+      setTimeout(() => { isInitialLoad.current = false; }, 100);
     }
+
 
     const socket = getSocket();
     if (socket?.connected) {
@@ -419,6 +431,71 @@ export default function GroupChat({
     
     messageInputRef.current?.focus();
   }, [token, setSidebarOpen]);
+
+  // ✅ LOAD MORE GROUP MESSAGES
+  const loadMoreGroupMessages = useCallback(async () => {
+    if (!selectedGroup || loadingMore || !hasMore || !nextCursor) return;
+
+    setLoadingMore(true);
+    if (scrollContainerRef.current) {
+      lastScrollHeightRef.current = scrollContainerRef.current.scrollHeight;
+    }
+
+    try {
+      const response = await axios.get(
+        `/groups/${selectedGroup.id}/messages`,
+        {
+          baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
+          params: { before: nextCursor, limit: 50 },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.data.success) {
+        const olderMessages = (response.data.data || []).map((msg) => ({
+          _id: msg._id,
+          message: msg.message,
+          fromUserId: msg.fromUserId || msg.senderId,
+          fromUserName: msg.senderName,
+          time: msg.time || msg.createdAt,
+          pending: false,
+          read: msg.read,
+          readBy: msg.readBy || [],
+          createdAt: msg.createdAt,
+        }));
+
+        setMessages(prev => [...olderMessages, ...prev]);
+        setHasMore(response.data.hasMore);
+        setNextCursor(response.data.nextCursor);
+
+        // Adjust scroll position after prepending
+        requestAnimationFrame(() => {
+          if (scrollContainerRef.current) {
+            const newScrollHeight = scrollContainerRef.current.scrollHeight;
+            const heightDiff = newScrollHeight - lastScrollHeightRef.current;
+            scrollContainerRef.current.scrollTop = heightDiff;
+          }
+        });
+      }
+    } catch (err) {
+      console.error("❌ Failed to load more group messages:", err);
+      setError("Failed to load more history");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [token, selectedGroup, nextCursor, hasMore, loadingMore]);
+
+  // ✅ SCROLL LISTENER FOR GROUP INFINITE SCROLL
+  const handleScroll = useCallback((e) => {
+    const { scrollTop } = e.currentTarget;
+    if (scrollTop < 50 && hasMore && !loadingMore && !loading) {
+      loadMoreGroupMessages();
+    }
+  }, [hasMore, loadingMore, loading, loadMoreGroupMessages]);
+
 
   const handleSendMessage = useCallback(async () => {
     const socket = getSocket();
@@ -799,7 +876,21 @@ export default function GroupChat({
     return () => {
       if (socketInitInterval) clearInterval(socketInitInterval);
     };
-  }, [token])
+  }, [token]);
+
+  // Auto-scroll logic for groups
+  useEffect(() => {
+    if (messagesEndRef.current && (isInitialLoad.current || !loadingMore)) {
+      const isAtBottom = scrollContainerRef.current ? 
+        (scrollContainerRef.current.scrollHeight - scrollContainerRef.current.scrollTop - scrollContainerRef.current.clientHeight < 200) : true;
+      
+      if (isAtBottom || isInitialLoad.current) {
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: isInitialLoad.current ? "auto" : "smooth" });
+        });
+      }
+    }
+  }, [messages, loadingMore]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -1481,7 +1572,17 @@ useEffect(() => {
             )}
 
             {/* MESSAGES AREA - Mobile Optimized */}
-            <div className="flex-1 overflow-y-auto p-2 xs:p-2.5 sm:p-4 lg:p-6 space-y-1 xs:space-y-2 sm:space-y-4 custom-scrollbar min-h-0">
+            <div 
+              ref={scrollContainerRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-y-auto p-2 xs:p-2.5 sm:p-4 lg:p-6 space-y-1 xs:space-y-2 sm:space-y-4 custom-scrollbar min-h-0"
+            >
+              {loadingMore && (
+                <div className="flex justify-center py-2">
+                  <Loader className="w-5 h-5 text-green-500 animate-spin" />
+                </div>
+              )}
+
               {loading ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">

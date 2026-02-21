@@ -63,6 +63,13 @@ export default function Chat({
   const [pinnedChats, setPinnedChats] = useState([]);
   const [typingUsers, setTypingUsers] = useState({});
   const [selectedUserId, setSelectedUserIdState] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const scrollContainerRef = useRef(null);
+  const isInitialLoad = useRef(true);
+  const lastScrollHeightRef = useRef(0);
+
   
   // Wrapper to keep ref in sync
   const setSelectedUserId = useCallback((id) => {
@@ -433,6 +440,7 @@ export default function Chat({
 
     const fetchChatHistory = async () => {
       setLoading(true);
+      isInitialLoad.current = true;
       try {
         const data = await messageService.fetchChatHistory(selectedUserId);
         const messagesWithIds = data.messages.map((msg) => ({
@@ -441,10 +449,13 @@ export default function Chat({
           toUserId: msg.toUserId,
           fromUserName: msg.senderName || "Unknown",
           message: msg.message,
-          time: msg.createdAt,
+          time: msg.time,
           read: msg.read,
+          createdAt: msg.createdAt,
         }));
         setMessages(messagesWithIds);
+        setHasMore(data.hasMore);
+        setNextCursor(data.nextCursor);
 
         const unreadMessages = messagesWithIds.filter(
           (msg) => msg.fromUserId === selectedUserId && !msg.read
@@ -454,7 +465,6 @@ export default function Chat({
           const socket = getSocket();
           if (socket && socket.connected) {
             unreadMessages.forEach((msg) => {
-              console.log(`📤 [Frontend] Emitting READ_RECEIPT for ${msg._id}`);
               socket.emit(SOCKET_EVENTS.READ_RECEIPT, {
                 messageId: msg._id,
                 senderId: msg.fromUserId,
@@ -467,7 +477,6 @@ export default function Chat({
             await messageService.markMessagesAsRead(selectedUserId);
           } catch (apiErr) {
             console.error("❌ Failed to mark as read in DB:", apiErr);
-            setError("⚠️ Failed to mark messages as read");
           }
         }
         setError("");
@@ -477,6 +486,8 @@ export default function Chat({
         setMessages([]);
       } finally {
         setLoading(false);
+        // Reset initial load flag after a small delay to allow scroll to bottom
+        setTimeout(() => { isInitialLoad.current = false; }, 100);
       }
     };
 
@@ -488,16 +499,77 @@ export default function Chat({
     messageInputRef.current?.focus();
   }, [selectedUserId, currentUserId]);
 
+  // ✅ LOAD MORE MESSAGES (Infinite Scroll)
+  const loadMoreMessages = useCallback(async () => {
+    if (!selectedUserId || loadingMore || !hasMore || !nextCursor) return;
+
+    setLoadingMore(true);
+    // Capture current scroll height before adding messages
+    if (scrollContainerRef.current) {
+      lastScrollHeightRef.current = scrollContainerRef.current.scrollHeight;
+    }
+
+    try {
+      const data = await messageService.fetchChatHistory(selectedUserId, nextCursor);
+      const olderMessages = data.messages.map((msg) => ({
+        _id: msg._id,
+        fromUserId: msg.fromUserId,
+        toUserId: msg.toUserId,
+        fromUserName: msg.senderName || "Unknown",
+        message: msg.message,
+        time: msg.time,
+        read: msg.read,
+        createdAt: msg.createdAt,
+      }));
+
+      setMessages(prev => [...olderMessages, ...prev]);
+      setHasMore(data.hasMore);
+      setNextCursor(data.nextCursor);
+
+      // Adjust scroll after messages are added
+      requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          const newScrollHeight = scrollContainerRef.current.scrollHeight;
+          const heightDiff = newScrollHeight - lastScrollHeightRef.current;
+          scrollContainerRef.current.scrollTop = heightDiff;
+        }
+      });
+
+    } catch (err) {
+      console.error("❌ Failed to load more messages:", err);
+      setError("⚠️ Failed to load more history");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [selectedUserId, nextCursor, hasMore, loadingMore]);
+
+  // ✅ SCROLL LISTENER FOR INFINITE SCROLL
+  const handleScroll = useCallback((e) => {
+    const { scrollTop } = e.currentTarget;
+    // When user hits the top (or near it)
+    if (scrollTop < 50 && hasMore && !loadingMore && !loading) {
+      loadMoreMessages();
+    }
+  }, [hasMore, loadingMore, loading, loadMoreMessages]);
+
+
   // ✅ REMOVED inefficient 2-second history polling
 
   // Auto-scroll
   useEffect(() => {
-    if (messagesEndRef.current) {
-      requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-      });
+    // Only auto-scroll to bottom on initial load or if user is already near bottom
+    if (messagesEndRef.current && (isInitialLoad.current || !loadingMore)) {
+      const isAtBottom = scrollContainerRef.current ? 
+        (scrollContainerRef.current.scrollHeight - scrollContainerRef.current.scrollTop - scrollContainerRef.current.clientHeight < 200) : true;
+      
+      if (isAtBottom || isInitialLoad.current) {
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: isInitialLoad.current ? "auto" : "smooth" });
+        });
+      }
     }
-  }, [messages]);
+  }, [messages, loadingMore]);
+
 
   // ✅ HIDE MOBILE BOTTOM NAV WHEN CHAT IS OPEN
   useEffect(() => {
@@ -926,7 +998,17 @@ export default function Chat({
               </div>
 
               {/* Messages Area - Mobile Optimized */}
-              <div className="flex-1 overflow-y-auto px-2 xs:px-2.5 sm:px-3 md:px-4 lg:px-6 py-2 xs:py-2.5 sm:py-3 md:py-4 space-y-1 xs:space-y-2 sm:space-y-3 md:space-y-4 custom-scrollbar min-h-0">
+              <div 
+                ref={scrollContainerRef}
+                onScroll={handleScroll}
+                className="flex-1 overflow-y-auto px-2 xs:px-2.5 sm:px-3 md:px-4 lg:px-6 py-2 xs:py-2.5 sm:py-3 md:py-4 space-y-1 xs:space-y-2 sm:space-y-3 md:space-y-4 custom-scrollbar min-h-0"
+              >
+                {loadingMore && (
+                  <div className="flex justify-center py-2">
+                    <Loader className="w-5 h-5 text-green-500 animate-spin" />
+                  </div>
+                )}
+
                 {loading ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center">

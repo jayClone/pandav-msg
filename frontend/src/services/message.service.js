@@ -20,10 +20,10 @@ class MessageService {
   }
 
   // Fetch chat history with caching
-  async fetchChatHistory(userId) {
+  async fetchChatHistory(userId, before = null, limit = 50) {
     try {
-      // Check cache (10 second TTL)
-      if (this.chatCache.has(userId)) {
+      // Check cache (1 second TTL) - ONLY if fetching the latest messages (no cursor)
+      if (!before && this.chatCache.has(userId)) {
         const cached = this.chatCache.get(userId)
         if (Date.now() - cached.time < 1000) {
           const IS_DEV = import.meta.env.DEV;
@@ -32,7 +32,7 @@ class MessageService {
         }
       }
 
-      const response = await messageApi.getChatHistory(userId)
+      const response = await messageApi.getChatHistory(userId, before, limit)
       const { data } = response
 
       if (!data.success) {
@@ -43,10 +43,14 @@ class MessageService {
         messages: data.data || [],
         otherUser: data.otherUser,
         count: data.count,
+        hasMore: data.hasMore,
+        nextCursor: data.nextCursor
       }
 
-      // Cache the result
-      this.chatCache.set(userId, { data: result, time: Date.now() })
+      // Only cache the latest batch (no cursor)
+      if (!before) {
+        this.chatCache.set(userId, { data: result, time: Date.now() })
+      }
 
       return result
     } catch (error) {

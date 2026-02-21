@@ -421,9 +421,8 @@ export const getGroupMessages = async (req, res) => {
     try {
         const { groupId } = req.params;
         const userId = toObjectId(req.user.userId);
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 50;
-        const skip = (page - 1) * limit;
+        const { before, limit = 50 } = req.query;
+        const pageSize = parseInt(limit);
 
         // VALIDATE OBJECTID
         if (!isValidObjectId(groupId)) {
@@ -449,28 +448,40 @@ export const getGroupMessages = async (req, res) => {
             });
         }
 
-        // ✅ FETCH MESSAGES WITH readBy POPULATED
-        const messages = await Message.find({
+        // Build query
+        const query = {
             groupId: groupId,
             chatType: 'group',
-            deleted: { $ne: true }  // Exclude soft-deleted messages
-        })
+            deleted: { $ne: true }
+        };
+
+        // Cursor pagination
+        if (before) {
+            query.createdAt = { $lt: new Date(before) };
+        }
+
+        // Fetch messages with readBy populated, newest first
+        const messages = await Message.find(query)
             .populate('senderId', 'name email _id')
-            .populate('readBy.userId', 'name email _id')  // ✅ CRITICAL: Populate readBy
-            .sort({ createdAt: 1 })
-            .skip(skip)
-            .limit(limit)
+            .populate('readBy.userId', 'name email _id')
+            .sort({ createdAt: -1 })
+            .limit(pageSize + 1)
             .lean();
 
-        // Get total count
+        const hasMore = messages.length > pageSize;
+        const results = hasMore ? messages.slice(0, pageSize) : messages;
+
+        // Reverse for chronological order
+        results.reverse();
+
+        // Get total count (optional but helpful for some UIs)
         const totalCount = await Message.countDocuments({
             groupId: groupId,
             chatType: 'group',
             deleted: { $ne: true }
         });
 
-        // ✅ FORMAT RESPONSE WITH PROPER readBy DATA
-        const formattedMessages = messages.map(msg => ({
+        const formattedMessages = results.map(msg => ({
             _id: msg._id,
             fromUserId: msg.senderId._id,
             senderName: msg.senderId.name,
@@ -482,8 +493,8 @@ export const getGroupMessages = async (req, res) => {
                 userId: r.userId?._id || r.userId,
                 userName: r.userId?.name || 'Unknown',
                 readAt: r.readAt,
-            })) : [],  // ✅ RETURN readBy ARRAY
-            readCount: msg.readBy?.length || 0,  // ✅ ADD readCount
+            })) : [],
+            readCount: msg.readBy?.length || 0,
             chatType: msg.chatType,
             createdAt: msg.createdAt,
             delivered: msg.delivered,
@@ -492,10 +503,11 @@ export const getGroupMessages = async (req, res) => {
         return res.status(200).json({
             success: true,
             data: formattedMessages,
-            count: messages.length,
+            count: formattedMessages.length,
             totalCount: totalCount,
-            page: page,
-            totalPages: Math.ceil(totalCount / limit)
+            hasMore,
+            nextCursor: hasMore ? results[0].createdAt : null, // Oldest in batch
+            page: parseInt(req.query.page) || 1, // Keep for backward compat if any
         });
     } catch (error) {
         console.error('Get group messages error:', error.message);

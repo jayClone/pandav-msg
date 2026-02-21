@@ -1,10 +1,20 @@
 import API from "@api/axios.js"
 
 const messageApi = {
-  // Get all messages with a user
-  getChatHistory: (userId) => {
+  // Get all messages with a user (paginated)
+  getChatHistory: (userId, before = null, limit = 50) => {
     if (!userId) throw new Error("userId is required")
-    return API.get(`/messages/${userId}`)
+    const params = { limit };
+    if (before) params.before = before;
+    return API.get(`/messages/${userId}`, { params })
+  },
+
+  // Get group messages (paginated)
+  getGroupMessages: (groupId, before = null, limit = 50) => {
+    if (!groupId) throw new Error("groupId is required")
+    const params = { limit };
+    if (before) params.before = before;
+    return API.get(`/groups/${groupId}/messages`, { params })
   },
 
   // Get all conversations

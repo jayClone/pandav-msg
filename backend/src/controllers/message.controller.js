@@ -40,9 +40,10 @@ const toObjectId = (id) => {
  */
 export const getChatHistory = async (req, res) => {
   try {
-    // Get current user ID (could be _id or userId)
     const myId = req.user?.userId || req.user?._id;
     const otherUserId = req.params.userId;
+    const { before, limit = 50 } = req.query;
+    const pageSize = parseInt(limit);
 
     // validate
     if (!myId) {
@@ -52,45 +53,50 @@ export const getChatHistory = async (req, res) => {
       });
     }
 
-    //  Check if otherUserId is valid before DB query
-    if (!otherUserId || otherUserId === 'null' || otherUserId.length < 10) {
+    if (!isValidObjectId(otherUserId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid user ID format"
       });
     }
 
-    //  Validate ObjectId format (24 hex chars)
-    const isValidObjId = /^[0-9a-fA-F]{24}$/.test(otherUserId);
-    if (!isValidObjId) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid user ID format. Must be a valid MongoDB ID"
-      });
-    }
-
-    // check if there are any other users
     const otherUser = await User.findById(otherUserId);
     if (!otherUser) {
       return res.status(404).json({
         success: false,
-        message: "no current or other users found"
-      })
+        message: "User not found"
+      });
     }
 
-    //fetch both users messages
-    const messages = await Message.find({
+    // Build query
+    const query = {
       $or: [
         { senderId: myId, receiverId: otherUserId },
         { senderId: otherUserId, receiverId: myId }
-      ]
-    })
-      .populate('senderId', 'name email')  // Add this to get sender name
-      .sort({ createdAt: 1 }) // Oldest first
-      .limit(150)
-      .lean(); //lean() for better performance
+      ],
+      deleted: { $ne: true }
+    };
 
-    // ✅ BACKGROUND UPDATE: Mark as read (don't block chat loading)
+    // Cursor pagination: fetch messages older than a certain timestamp
+    if (before) {
+      query.createdAt = { $lt: new Date(before) };
+    }
+
+    // Fetch n + 1 messages to determine hasMore
+    const messages = await Message.find(query)
+      .populate('senderId', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(pageSize + 1)
+      .lean();
+
+    const hasMore = messages.length > pageSize;
+    const results = hasMore ? messages.slice(0, pageSize) : messages;
+
+    // IMPORTANT: Reverse so we return chronological order (oldest to newest)
+    // for the batch just loaded.
+    results.reverse();
+
+    // ✅ BACKGROUND UPDATE: Mark as read
     Message.updateMany(
       {
         senderId: otherUserId,
@@ -100,8 +106,7 @@ export const getChatHistory = async (req, res) => {
       { read: true }
     ).catch(err => console.error('background markAsRead error:', err.message));
 
-    //  Map backend fields to frontend field names
-    const formattedMessages = messages.map(msg => ({
+    const formattedMessages = results.map(msg => ({
       _id: msg._id,
       fromUserId: msg.senderId._id,
       senderName: msg.senderId.name,
@@ -112,12 +117,14 @@ export const getChatHistory = async (req, res) => {
       read: msg.read,
       chatType: msg.chatType,
       createdAt: msg.createdAt
-    }))
+    }));
 
     return res.status(200).json({
       success: true,
       data: formattedMessages,
       count: formattedMessages.length,
+      hasMore,
+      nextCursor: hasMore ? results[0].createdAt : null, // The oldest message in this batch
       otherUser: {
         _id: otherUser._id,
         name: otherUser.name,
@@ -127,19 +134,9 @@ export const getChatHistory = async (req, res) => {
 
   } catch (error) {
     console.error("getChatHistory error", error);
-
-    //  Handle CastError specifically
-    if (error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid user ID format",
-        error: error.message
-      });
-    }
-
     return res.status(500).json({
       success: false,
-      message: "server Error retriving chat history",
+      message: "Server Error retrieving chat history",
       error: error.message
     });
   }
