@@ -363,6 +363,27 @@ export default function Chat({
     const registerListeners = (socket) => {
       if (socket.connected) setSocketStatus('connected');
       
+      const onConnect = () => {
+        console.log('✅ Socket connected');
+        setSocketStatus('connected');
+        setSocketError('');
+      };
+
+      const onDisconnect = (reason) => {
+        console.log('❌ Socket disconnected:', reason);
+        setSocketStatus('disconnected');
+        setSocketError(`📴 Connection lost: ${reason}`);
+      };
+
+      const onConnectError = (error) => {
+        console.error('🔴 Socket error:', error.message);
+        setSocketStatus('error');
+        setSocketError(`🔴 Connection Error: ${error.message}`);
+      };
+
+      socket.on('connect', onConnect);
+      socket.on('disconnect', onDisconnect);
+      socket.on('connect_error', onConnectError);
       socket.on(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers);
       socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage);
       socket.on(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent);
@@ -372,6 +393,9 @@ export default function Chat({
       socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
 
       return () => {
+        socket.off('connect', onConnect);
+        socket.off('disconnect', onDisconnect);
+        socket.off('connect_error', onConnectError);
         socket.off(SOCKET_EVENTS.ONLINE_USERS, handleOnlineUsers);
         socket.off(SOCKET_EVENTS.PRIVATE_MESSAGE, handlePrivateMessage);
         socket.off(SOCKET_EVENTS.MESSAGE_SENT, handleMessageSent);
