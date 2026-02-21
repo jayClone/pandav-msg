@@ -1,54 +1,28 @@
-version: '3.8'
-
 services:
-  # ✅ MongoDB Database
-  mongodb:
-    image: mongo:7.0
-    container_name: pandav-mongo
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-password}
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-    networks:
-      - pandav-network
-    healthcheck:
-      test: mongosh --eval "db.adminCommand('ping')"
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ✅ Backend Service
+  # ✅ Backend Service - Uses Cloud MongoDB & Redis
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      args:
-        MONGO_URI: ${MONGO_URI}
-        JWT_SECRET: ${JWT_SECRET}
-        NODE_ENV: ${NODE_ENV:-production}
     container_name: pandav-backend
-    environment:
-      PORT: 5000
-      MONGO_URI: ${MONGO_URI}
-      JWT_SECRET: ${JWT_SECRET}
-      CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
-      NODE_ENV: ${NODE_ENV:-production}
+    env_file:
+      - backend/.env
     ports:
       - "5000:5000"
-    depends_on:
-      mongodb:
-        condition: service_healthy
     networks:
       - pandav-network
     healthcheck:
-      test: curl -f http://localhost:5000/api/v1/health || exit 1
+      test: ["CMD", "bun", "-e", "const res = await fetch('http://localhost:5000/api/v1/health'); process.exit(res.ok ? 0 : 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ✅ Frontend Service
   frontend:
@@ -56,19 +30,27 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: pandav-frontend
-    environment:
-      VITE_API_URL: ${VITE_API_URL:-http://backend:5000}
     ports:
-      - "3000:80"
+      - "5173:5173"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - pandav-network
+    environment:
+      VITE_API_URL: http://localhost:5000
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
-
-volumes:
-  mongo_data:
-    driver: local
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   pandav-network:
