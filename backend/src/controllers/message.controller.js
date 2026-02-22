@@ -1,6 +1,34 @@
 import mongoose from 'mongoose';
-import Message from '@models/Message.js'
-import User from '@models/User.js'
+import Message from '../models/Message.js'
+import User from '../models/User.js';
+import Group from '../models/Group.js';
+import { getCache, setCache } from '../config/redis.js';
+
+
+/**
+ * Validate MongoDB ObjectId format
+ * @param {string|ObjectId} id - ID to validate
+ * @returns {boolean}
+ */
+const isValidObjectId = (id) => {
+  if (!id) return false;
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
+/**
+ * Convert string to MongoDB ObjectId
+ * @param {string|ObjectId} id - ID to convert
+ * @returns {ObjectId|null}
+ */
+const toObjectId = (id) => {
+  if (!id) return null;
+  if (typeof id === 'object') return id;
+  return mongoose.Types.ObjectId.createFromHexString(id);
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GET CHAT HISTORY (Private Messages)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Get chat history between two users
@@ -8,235 +36,259 @@ import User from '@models/User.js'
  * @route GET /api/v1/messages/:userId
  * @param req.user.userId - Current user ID
  * @param req.params.userId - Other user ID
- * @returns Array of messages (last 50)
+ * @returns Array of messages (last 150)
  */
+export const getChatHistory = async (req, res) => {
+  try {
+    const myId = req.user?.userId || req.user?._id;
+    const otherUserId = req.params.userId;
+    const { before, limit = 50 } = req.query;
+    const pageSize = parseInt(limit);
 
-export const getChatHistory = async(req, res) =>{
-    try {
-        // Get current user ID (could be _id or userId)
-        const myId = req.user?.userId || req.user?._id;
-        const otherUserId = req.params.userId;
-
-        // validate
-        if(!myId){
-            return res.status(401).json({
-                success:false,
-                message: "User is not Authenticated"
-            });
-        }
-
-        //  Check if otherUserId is valid before DB query
-        if (!otherUserId || otherUserId === 'null' || otherUserId.length < 10) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid user ID format"
-            });
-        }
-
-        //  Validate ObjectId format (24 hex chars)
-        const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(otherUserId);
-        if (!isValidObjectId) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid user ID format. Must be a valid MongoDB ID"
-            });
-        }
-
-        // check if there are any other users
-        const otherUser = await User.findById(otherUserId);
-        if(!otherUser){
-            return res.status(404).json({
-                success: false,
-                message: "no current or other users found"
-            })
-        }
-
-        //fetch both users messages
-        const messages = await Message.find({
-            $or: [
-                {senderId: myId, receiverId: otherUserId},
-                {senderId: otherUserId, receiverId: myId}
-            ]
-        })
-            .populate('senderId', 'name')  // Add this to get sender name
-            .sort({createdAt: 1}) // Oldest first
-            .limit(150)
-            .lean(); //lean() for better performance
-
-        await Message.updateMany(
-            {
-                senderId: otherUserId,
-                receiverId: myId,
-                read: false,
-            },
-            {read: true}
-        );
-
-        //  Map backend fields to frontend field names
-        const formattedMessages = messages.map(msg => ({
-            _id: msg._id,
-            fromUserId: msg.senderId._id,  
-            senderName: msg.senderId.name,  
-            toUserId: msg.receiverId,
-            message: msg.message,
-            time: msg.createdAt,
-            read: msg.read,
-            createdAt: msg.createdAt
-        }))
-
-        return res.status(200).json({
-            success: true,
-            data: formattedMessages, 
-            count: formattedMessages.length,
-            otherUser: {
-                _id: otherUser._id,
-                name: otherUser.name,
-                email: otherUser.email
-            }
-        });
-
-    } catch (error) {
-        console.error("getChatHistory error", error);
-        
-        //  Handle CastError specifically
-        if (error.name === 'CastError') {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid user ID format",
-                error: error.message
-            });
-        }
-
-        return res.status(500).json({
-            success: false,
-            message: "server Error retriving chat history",
-            error: error.message
-        });
+    // validate
+    if (!myId) {
+      return res.status(401).json({
+        success: false,
+        message: "User is not Authenticated"
+      });
     }
-};  
+
+    if (!isValidObjectId(otherUserId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID format"
+      });
+    }
+
+    const otherUser = await User.findById(otherUserId);
+    if (!otherUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    // Build query
+    const query = {
+      $or: [
+        { senderId: myId, receiverId: otherUserId },
+        { senderId: otherUserId, receiverId: myId }
+      ],
+      deleted: { $ne: true }
+    };
+
+    // Cursor pagination: fetch messages older than a certain timestamp
+    if (before) {
+      query.createdAt = { $lt: new Date(before) };
+    }
+
+    // Fetch n + 1 messages to determine hasMore
+    const messages = await Message.find(query)
+      .populate('senderId', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(pageSize + 1)
+      .lean();
+
+    const hasMore = messages.length > pageSize;
+    const results = hasMore ? messages.slice(0, pageSize) : messages;
+
+    // IMPORTANT: Reverse so we return chronological order (oldest to newest)
+    // for the batch just loaded.
+    results.reverse();
+
+    // ✅ BACKGROUND UPDATE: Mark as read
+    Message.updateMany(
+      {
+        senderId: otherUserId,
+        receiverId: myId,
+        read: false,
+      },
+      { read: true }
+    ).catch(err => console.error('background markAsRead error:', err.message));
+
+    const formattedMessages = results.map(msg => ({
+      _id: msg._id,
+      fromUserId: msg.senderId._id,
+      senderName: msg.senderId.name,
+      senderEmail: msg.senderId.email,
+      toUserId: msg.receiverId,
+      message: msg.message,
+      time: msg.createdAt,
+      read: msg.read,
+      chatType: msg.chatType,
+      createdAt: msg.createdAt
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: formattedMessages,
+      count: formattedMessages.length,
+      hasMore,
+      nextCursor: hasMore ? results[0].createdAt : null, // The oldest message in this batch
+      otherUser: {
+        _id: otherUser._id,
+        name: otherUser.name,
+        email: otherUser.email
+      }
+    });
+
+  } catch (error) {
+    console.error("getChatHistory error", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server Error retrieving chat history",
+      error: error.message
+    });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GET ALL CONVERSATIONS
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Get all conversations (list of users with latest message)
  * 
- * @route GET /api/v1/messages/conversations
+ * @route GET /api/v1/messages/conversations/all
  * @returns Array of conversations
  */
-
 export const getConversations = async (req, res) => {
-    try {
-        const myId = req.user?._id || req.user?.userId;
+  try {
+    const myId = req.user?._id || req.user?.userId;
 
-        // Get unique conversations
-        const conversations = await Message.aggregate([
-            {
-                $match: {
-                    $or: [
-                        { senderId: myId },
-                        { receiverId: myId }
-                    ]
-                }
-            },
-            {
-                $sort: { createdAt: -1 }
-            },
-            {
-                $group: {
-                    _id: {
-                        $cond: [
-                            { $eq: ['$senderId', myId] },
-                            '$receiverId',
-                            '$senderId'
-                        ]
-                    },
-                    lastMessage: { $first: '$message' },
-                    lastMessageTime: { $first: '$createdAt' },
-                    unreadCount: {
-                        $sum: {
-                            $cond: [
-                                {
-                                    $and: [
-                                        { $eq: ['$receiverId', myId] },
-                                        { $eq: ['$read', false] }
-                                    ]
-                                },
-                                1,
-                                0
-                            ]
-                        }
-                    }
-                }
-            },
-            {
-                $lookup: {
-                    from: 'users',
-                    localField: '_id',
-                    foreignField: '_id',
-                    as: 'user'
-                }
-            },
-            {
-                $unwind: '$user'
-            },
-            {
-                $sort: { lastMessageTime: -1 }
-            }
-        ]);
+    // ✅ 1. Try Cache First
+    const cacheKey = `conversations:${myId}`;
+    const cachedData = await getCache(cacheKey);
 
-        return res.status(200).json({
-            success: true,
-            data: conversations,
-            count: conversations.length
-        });
-
-    } catch (error) {
-        console.error('getConversations error:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Server error fetching conversations'
-        });
+    if (cachedData) {
+      return res.status(200).json({
+        success: true,
+        message: 'Conversations fetched from cache',
+        data: cachedData,
+        count: cachedData.length
+      });
     }
+
+    // ✅ 2. Database Fetch (Aggregation)
+    const conversations = await Message.aggregate([
+      {
+        $match: {
+          $or: [
+            { senderId: myId },
+            { receiverId: myId }
+          ]
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      },
+      {
+        $group: {
+          _id: {
+            $cond: [
+              { $eq: ['$senderId', myId] },
+              '$receiverId',
+              '$senderId'
+            ]
+          },
+          lastMessage: { $first: '$message' },
+          lastMessageTime: { $first: '$createdAt' },
+          unreadCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$receiverId', myId] },
+                    { $eq: ['$read', false] }
+                  ]
+                },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'user'
+        }
+      },
+      {
+        $unwind: '$user'
+      },
+      {
+        $sort: { lastMessageTime: -1 }
+      }
+    ]);
+
+    // ✅ 3. Store in Cache (1 minute - conversations change frequently)
+    await setCache(cacheKey, conversations, 60);
+
+    return res.status(200).json({
+      success: true,
+      data: conversations,
+      count: conversations.length
+    });
+
+  } catch (error) {
+    console.error('getConversations error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error fetching conversations'
+    });
+  }
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// MARK PRIVATE MESSAGES AS READ
+// ═══════════════════════════════════════════════════════════════════════════════
+
 /**
- * Mark messages as read
+ * Mark private messages as read
  * 
  * @route PUT /api/v1/messages/read/:userId
  */
+export const markAsRead = async (req, res) => {
+  try {
+    const myId = req.user?._id || req.user?.userId;
+    const otherUserId = req.params.userId;
 
-export const markAsRead = async (req, res) =>{
-    try {
-        const myId = req.user?._id || req.user?.userId;
-        const otherUserId = req.params.userId;
-        
-        await Message.updateMany(
-            {
-                senderId: otherUserId,
-                receiverId: myId,
-                read: false
-            },
-            { read: true }
-        )
+    await Message.updateMany(
+      {
+        senderId: otherUserId,
+        receiverId: myId,
+        read: false
+      },
+      { read: true }
+    )
 
-        return res.status(200).json({
-            success: true,
-            message: "Messages marked as read"
-        });
+    return res.status(200).json({
+      success: true,
+      message: "Messages marked as read"
+    });
 
-    } catch (error) {
-        console.error('markAsRead error:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });        
-    }
+  } catch (error) {
+    console.error('markAsRead error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DELETE MESSAGE
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Delete a message
  * 
  * @route DELETE /api/v1/messages/:messageId
  */
-
 export const deleteMessage = async (req, res) => {
   try {
     const messageId = req.params.messageId;
@@ -250,14 +302,14 @@ export const deleteMessage = async (req, res) => {
       })
     }
 
-    if(!message){
+    if (!message) {
       return res.status(404).json({
         success: false,
         message: "Message not found"
       })
     }
 
-    if (message.senderId.toString() !== myId.toString()){
+    if (message.senderId.toString() !== myId.toString()) {
       return res.status(403).json({
         success: false,
         message: 'you can only delete your own message'
@@ -267,7 +319,7 @@ export const deleteMessage = async (req, res) => {
     await Message.findByIdAndDelete(messageId)
 
     return res.status(200).json({
-      success:true,
+      success: true,
       message: 'message deleted'
     })
   } catch (error) {
@@ -275,10 +327,19 @@ export const deleteMessage = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message
-    });        
+    });
   }
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SEND PRIVATE MESSAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Send private message
+ * 
+ * @route POST /api/v1/messages/private
+ */
 export const sendPrivateMessage = async (req, res) => {
   try {
     const { receiverId, message } = req.body;
@@ -321,6 +382,15 @@ export const sendPrivateMessage = async (req, res) => {
   }
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SEND GROUP MESSAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Send group message
+ * 
+ * @route POST /api/v1/messages/group
+ */
 export const sendGroupMessage = async (req, res) => {
   try {
     const { groupId, message } = req.body;
@@ -359,6 +429,133 @@ export const sendGroupMessage = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to send message'
+    });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MARK GROUP MESSAGES AS READ
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Mark all group messages as read
+ * 
+ * @route PUT /api/v1/messages/group/:groupId/read
+ * @param groupId - Group ID
+ * @access Private
+ * 
+ * Features:
+ * - Mark all unread messages in group as read
+ * - User must be group member
+ * - Only marks messages NOT sent by current user
+ */
+export const markGroupMessagesAsRead = async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const myId = req.user?.userId || req.user?._id;
+
+    // ✅ VALIDATE OBJECTID
+    if (!isValidObjectId(groupId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid group ID format'
+      });
+    }
+
+    // ✅ CHECK: Group exists
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found'
+      });
+    }
+
+    // ✅ CHECK: User is member
+    const myObjId = toObjectId(myId);
+    const isMember = group.participants.some(
+      p => p.toString() === myObjId.toString()
+    );
+
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not a member of this group'
+      });
+    }
+
+    // ✅ MARK UNREAD MESSAGES AS READ
+    // Only mark messages in this group that user didn't send
+    const result = await Message.updateMany(
+      {
+        groupId: groupId,
+        chatType: 'group',
+        senderId: { $ne: myObjId },  // Not sent by current user
+        'readBy.userId': { $ne: myObjId }
+      },
+      {
+        $push: {
+          readBy: {
+            userId: myObjId,
+            readAt: new Date()
+          }
+        },
+        $set: { read: true }  // Also set old read flag for compatibility
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Group messages marked as read',
+      markedCount: result.modifiedCount
+    });
+
+  } catch (error) {
+    console.error('Mark group messages as read error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to mark messages as read',
+      error: error.message
+    });
+  }
+};
+
+
+export const getMessageReadReceipts = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+
+    if (!isValidObjectId(messageId)) {
+      return res.status(400).json({
+        success: false,
+        message: "invalid message ID format"
+      })
+    }
+
+    const message = await Message.findById(messageId)
+      .populate('readBy.userId', 'name email');
+
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: 'message not found'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        messageId: message._id,
+        readBy: message.readBy || [],
+        readCount: (message.readBy || []).length
+      }
+    });
+
+  } catch (error) {
+    console.error('get read recipt error: ', error.message)
+    return res.status(500).json({
+      success: false,
+      message: "failed to fetch read recipts"
     });
   }
 };

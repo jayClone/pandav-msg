@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import process from 'process'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -29,11 +30,22 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        // ✅ Use environment variable with localhost fallback
+        target: process.env.VITE_API_URL || 'http://localhost:5000',
         changeOrigin: true,
-        secure: false,
-      },
-    },
+        rewrite: (path) => path,
+        configure: (proxy, options) => {
+          proxy.on('error', (err,) => {
+            console.log('❌ Proxy error:', err.message);
+            // Fallback to localhost if primary fails
+            if (process.env.VITE_API_URL && process.env.VITE_API_URL !== 'http://localhost:5000') {
+              console.log('🔄 Attempting fallback to localhost:5000');
+              options.target = 'http://localhost:5000';
+            }
+          });
+        }
+      }
+    }
   },
   test: {
     globals: true,

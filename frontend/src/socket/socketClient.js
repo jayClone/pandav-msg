@@ -1,35 +1,41 @@
 import io from 'socket.io-client';
 
+const IS_DEV = import.meta.env.DEV; // ✅ True only in dev mode
+
 let socket = null;
 
+export const isSocketConnected = () => {
+    return socket?.connected ?? false;
+};
+
 export const connectSocket = (token) => {
-    // ✅ Disconnect old socket if exists
-    if (socket) {
-        console.log('🔄 Disconnecting old socket...');
-        socket.disconnect();
-        socket = null;
+    if (socket) socket.disconnect();
+
+    let socketUrl = 'http://localhost:5000';
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        socketUrl = import.meta.env.VITE_API_URL;
     }
 
-    socket = io('http://localhost:5000', {
-        auth: {
-            token: token
-        },
+    socket = io(socketUrl, {
+        auth: { token },
+        transports: ['websocket'],
         reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        reconnectionAttempts: 5
+        reconnectionAttempts: 3,
+        reconnectionDelay: 2000,
+        timeout: 20000,
+        perMessageDeflate: {
+            threshold: 1024 // Only compress messages > 1KB
+        }
     });
 
     socket.on('connect', () => {
-        console.log('🟢 Socket connected:', socket.id);
     });
 
     socket.on('connect_error', (error) => {
-        console.error('🔴 Socket connection error:', error.message);
+        console.error('❌ Socket error:', error.message); // ✅ KEEP ERRORS
     });
 
-    socket.on('disconnect', () => {
-        console.log('🔌 Socket disconnected');
+    socket.on('disconnect', (reason) => {
     });
 
     return socket;
@@ -39,7 +45,6 @@ export const disconnectSocket = () => {
     if (socket) {
         socket.disconnect();
         socket = null;
-        console.log('✅ Socket disconnected');
     }
 };
 

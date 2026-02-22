@@ -1,11 +1,10 @@
-import User from '@models/User.js';
+import User from '../models/User.js';
+import OTP from '../models/OTP.js';
+import EmailService from '../services/email.service.js';
 import jwt from 'jsonwebtoken';
+import logger from '../config/logger.js';
 
-// ✅ Email validation regex (RFC 5322 standard)
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// ✅ Password validation regex
-// Requirements: Min 8 chars, 1 uppercase, 1 number, 1 special char
 const PASSWORD_REGEX = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])[A-Za-z0-9!@#$%^&*]{8,}$/;
 
 const generateToken = (user) => {
@@ -20,21 +19,12 @@ const generateToken = (user) => {
   );
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// EXPORT: register
-// ═══════════════════════════════════════════════════════════════════════════════
-// Validation checks:
-//   1. ✅ Name, email, password required
-//   2. ✅ Email format validation
-//   3. ✅ Password strength validation
-//   4. ✅ Duplicate email check
-//   5. ✅ Password hashing before save
-// ═══════════════════════════════════════════════════════════════════════════════
+// ✅ REGISTER WITH OTP VERIFICATION
 export const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, otp } = req.body;
 
-    // ✅ FIX 1: Validate all required fields present
+    // Validation
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
@@ -42,18 +32,49 @@ export const register = async (req, res) => {
       });
     }
 
-    // ✅ FIX 2: Trim and lowercase email
-    const trimmedEmail = email.trim().toLowerCase();
-
-    // ✅ FIX 3: Validate email format
-    if (!EMAIL_REGEX.test(trimmedEmail)) {
+    if (!otp) {
+      console.error('❌ OTP IS MISSING!');
       return res.status(400).json({
         success: false,
-        message: 'Invalid email format. Please enter a valid email address'
+        message: 'OTP is required. Please verify your email first.'
       });
     }
 
-    // ✅ FIX 4: Validate password strength
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Find OTP in database
+    const otpRecord = await OTP.findOne({
+      email: normalizedEmail,
+      otp: otp.toString(),
+      purpose: 'registration',
+      verified: true
+    });
+
+    if (!otpRecord) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP not verified. Please verify your email with correct OTP.'
+      });
+    }
+
+    // Check expiry
+    if (new Date() > otpRecord.expiresAt) {
+      await OTP.deleteOne({ _id: otpRecord._id });
+      return res.status(400).json({
+        success: false,
+        message: 'OTP expired. Please request a new OTP.'
+      });
+    }
+
+    // Validate email format
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+
+    // Validate password strength
     if (!PASSWORD_REGEX.test(password)) {
       return res.status(400).json({
         success: false,
@@ -61,23 +82,31 @@ export const register = async (req, res) => {
       });
     }
 
-    // ✅ FIX 5: Check for duplicate email (case-insensitive)
-    const userExist = await User.findOne({ email: trimmedEmail });
+    // Check for duplicate email
+    const userExist = await User.findOne({ email: normalizedEmail });
     if (userExist) {
       return res.status(409).json({
         success: false,
-        message: 'User with this email already exist'
+        message: 'User with this email already exists'
       });
     }
 
-    // ✅ FIX 6: Create user with trimmed/lowercase email
+    // Create user
     const user = await User.create({
       name: name.trim(),
-      email: trimmedEmail,
-      password  // Will be hashed by User model middleware
+      email: normalizedEmail,
+      password
     });
 
+    // Send welcome email
+    await EmailService.sendWelcomeEmail(normalizedEmail, name);
+
+    // ✅ NOW DELETE OTP after successful registration
+    await OTP.deleteOne({ _id: otpRecord._id });
+
     const token = generateToken(user);
+
+    logger.info(`✅ User registered: ${normalizedEmail}`);
 
     res.status(201).json({
       success: true,
@@ -91,23 +120,15 @@ export const register = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Registration error:', error.message);
+    logger.error(`❌ Registration error: ${error.message}`);
     res.status(500).json({
       success: false,
-      message: 'Registration failed: ' + error.message
+      message: error.message
     });
   }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// EXPORT: login
-// ═══════════════════════════════════════════════════════════════════════════════
-// Validation checks:
-//   1. ✅ Email and password required
-//   2. ✅ User exists check
-//   3. ✅ Password match verification
-//   4. ✅ JWT token generation
-// ═══════════════════════════════════════════════════════════════════════════════
+// ✅ LOGIN
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -121,9 +142,8 @@ export const login = async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // ✅ Find user with password field
     const user = await User.findOne({ email: normalizedEmail }).select('+password');
-    
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -131,9 +151,8 @@ export const login = async (req, res) => {
       });
     }
 
-    // ✅ Compare passwords - MUST use the model method
     const isMatch = await user.matchPassword(password);
-    
+
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -141,7 +160,15 @@ export const login = async (req, res) => {
       });
     }
 
+    // ✅ BACKGROUND UPDATE: lastSeen (don't block the response)
+    User.findByIdAndUpdate(user._id, { lastSeen: new Date() }).catch(err =>
+      logger.error(`❌ Background lastSeen update error: ${err.message}`)
+    );
+
+
     const token = generateToken(user);
+
+    logger.info(`✅ User logged in: ${normalizedEmail}`);
 
     res.status(200).json({
       success: true,
@@ -155,23 +182,16 @@ export const login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error.message);
+    logger.error(`❌ Login error: ${error.message}`);
     res.status(500).json({
       success: false,
-      message: 'Login failed: ' + error.message
+      message: error.message
     });
   }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// EXPORT: getCurrentUser
-// ═══════════════════════════════════════════════════════════════════════════════
-// Protected route - requires valid JWT token
-// Returns: Current authenticated user data
-// ═══════════════════════════════════════════════════════════════════════════════
 export const getCurrentUser = async (req, res) => {
   try {
-    // ✅ req.user set by protect middleware
     const user = await User.findById(req.user._id);
 
     if (!user) {
@@ -183,7 +203,6 @@ export const getCurrentUser = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'User data retrieved successfully',
       data: {
         _id: user._id,
         name: user.name,
@@ -191,12 +210,11 @@ export const getCurrentUser = async (req, res) => {
         createdAt: user.createdAt
       }
     });
-
   } catch (error) {
-    console.error('Get user error:', error.message);
+    logger.error(`❌ Get user error: ${error.message}`);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch user: ' + error.message
+      message: error.message
     });
   }
 };

@@ -1,30 +1,57 @@
-import { MESSAGES, SOCKET_EVENTS } from "@constants/response.messages.js";
-import Message from '@models/Message.js';
+import { MESSAGES, SOCKET_EVENTS } from "../../constant/response.messages.js";
+import Friend from "../../models/Friend";
+import Message from '../../models/Message.js';
+import { getCache, setCache } from '../../config/redis.js';
 
 /**
  * Handle private messages
  */
-export async function handlePrivateMessage(socket, io, data, userId, name, onlineUsers) {
-    const { toUserId, message } = data;
+export async function handlePrivateMessage(socket, io, payload, userId, name, onlineUsers) {
+    const { toUserId, message, uniqueId } = payload;
 
     try {
         // Validation Layer
         if (!toUserId || typeof toUserId !== "string") {
-            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-                message: MESSAGES.SOCKET.TO_USER_REQUIRED 
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+                message: MESSAGES.SOCKET.TO_USER_REQUIRED
             });
             return;
         }
-        
+
         if (!message || typeof message !== "string" || message.trim().length === 0) {
-            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-                message: MESSAGES.SOCKET.MESSAGE_EMPTY 
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+                message: MESSAGES.SOCKET.MESSAGE_EMPTY
             });
             return;
         }
 
         const trimmedMessage = message.trim();
         const receiverUser = onlineUsers.get(toUserId);
+
+        // ✅ FRIENDS VALIDATION (With short-term caching to prevent spamming DB)
+        const friendshipCacheKey = `friendship:${userId}:${toUserId}`;
+        let areFriends = await getCache(friendshipCacheKey);
+
+        if (areFriends === null) {
+            const friendship = await Friend.findOne({
+                $or: [
+                    { senderId: userId, receiverId: toUserId, status: 'accepted' },
+                    { senderId: toUserId, receiverId: userId, status: 'accepted' },
+                ]
+            });
+
+            areFriends = !!friendship;
+            // Cache result for 30 seconds (short but effective for active chats)
+            await setCache(friendshipCacheKey, areFriends, 30);
+        }
+
+        if (!areFriends) {
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+                message: MESSAGES.FRIEND.CANNOT_MESSAGE
+            });
+            return;
+        }
+
 
         // Save message to DB
         let savedMessage;
@@ -35,10 +62,8 @@ export async function handlePrivateMessage(socket, io, data, userId, name, onlin
                 message: trimmedMessage,
                 chatType: 'private'
             });
-            console.log(`[DB] Message saved: ${savedMessage._id}`);
         } catch (dbError) {
-            console.error('[DB ERROR] Failed to save message:', dbError.message);
-            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
                 message: 'Failed to save message'
             });
             return;
@@ -54,23 +79,26 @@ export async function handlePrivateMessage(socket, io, data, userId, name, onlin
             delivered: false
         };
 
-        // If receiver is online: send real-time notification
-        if (receiverUser) {
-            io.to(receiverUser.socketId).emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
+        // ✅ EMIT TO RECEIVER'S PERSONAL ROOM (Targets all their sessions)
+        io.to(toUserId.toString()).emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
+            ...messagePayload,
+            delivered: !!receiverUser
+        });
+
+        // ✅ EMIT TO SENDER'S PERSONAL ROOM (Syncs all their other tabs)
+        if (userId.toString() !== toUserId.toString()) {
+            io.to(userId.toString()).emit(SOCKET_EVENTS.MESSAGE_SENT, {
                 ...messagePayload,
-                delivered: true
+                delivered: !!receiverUser,
+                saved: true
             });
-            console.log(`[MSG-LIVE] ${name} → ${receiverUser.name}: ${trimmedMessage.substring(0, 30)}...`);
         }
         else {
             // If receiver is OFFLINE: Still saved in DB
-            console.log(`[MSG-QUEUED] ${name} → ${toUserId} (offline): ${trimmedMessage.substring(0, 30)}...`);
-            
             socket.emit('user_offline', {
                 toUserId: toUserId,
                 message: 'User is offline. Message queued for delivery.'
             });
-            console.log(`[OFFLINE] ${toUserId} is offline`);
         }
 
         // Send confirmation back to sender
@@ -85,12 +113,10 @@ export async function handlePrivateMessage(socket, io, data, userId, name, onlin
             saved: true
         });
 
-        console.log(`[CONFIRM] Sent confirmation to ${name}`);
-
     } catch (error) {
         console.error('[ERROR] Message sending failed:', error.message);
-        socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
-            message: MESSAGES.SOCKET.SOMETHING_WENT_WRONG 
+        socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+            message: MESSAGES.SOCKET.SOMETHING_WENT_WRONG
         });
     }
 }

@@ -1,8 +1,11 @@
 import express from 'express';
-import healthRoutes from '@v1/health.routes.js';
-import authRoutes from '@v1/auth.routes.js';
-import messageRoutes from '@v1/message.routes.js'
-import groupRoutes from '@v1/group.routes.js'
+import authRoutes from './auth.routes.js';
+import otpRoutes from './otp.routes.js';  // ✅ ADD THIS
+import userRoutes from './user.routes.js';
+import friendRoutes from './friend.routes.js';
+import messageRoutes from './message.routes.js';
+import groupRoutes from './group.routes.js';
+import healthRoutes from './health.routes.js'
 
 const router = express.Router();
 
@@ -22,6 +25,16 @@ router.use('/health', healthRoutes);
  * GET  /me - Current authenticated user details
  */
 router.use('/auth', authRoutes);
+
+/**
+ * User Routes
+ * @route /api/v1/users
+ * GET    / - Get all users
+ * GET    /:userId - Get user profile
+ * GET    /search - Search users
+ */
+router.use('/users', userRoutes);  // ✅ ADD THIS
+
 
 /**
  * Message Routes
@@ -51,5 +64,12 @@ router.use('/messages', messageRoutes);
  * @middleware Authorization checks on member operations
  */
 router.use('/groups', groupRoutes);
+
+
+//frinds routes
+router.use('/friends', friendRoutes);
+
+//otp routes
+router.use('/otp', otpRoutes)
 
 export default router;
