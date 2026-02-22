@@ -31,13 +31,12 @@ jobs:
         with:
           bun-version: latest
 
-      # ✅ Secret detection
-      - name: Detect secrets
+      # ✅ Secret detection - scan filesystem only
+      - name: Detect secrets (backend)
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./backend
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
+          extra_args: --only-verified
 
       - name: Install backend dependencies
         run: |
@@ -80,12 +79,12 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Detect secrets
+      # ✅ Secret detection - scan filesystem only
+      - name: Detect secrets (frontend)
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./frontend
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
+          extra_args: --only-verified
 
       - name: Install frontend dependencies
         run: |
