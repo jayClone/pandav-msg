@@ -98,7 +98,7 @@ A modern, real-time messaging application built with **React**, **Node.js/Bun**,
 | **JWT** | Authentication tokens |
 | **Bcrypt** | Password hashing |
 | **Arcjet** | Rate limiting & security |
-| **Nodemailer** | Email service |
+| **Nodemailer + Resend** | Email service |
 
 ### Frontend
 | Technology | Purpose |
