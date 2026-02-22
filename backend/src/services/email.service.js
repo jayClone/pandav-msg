@@ -154,8 +154,8 @@ export class EmailService {
           <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
           
           <p style="color: #999; font-size: 12px; text-align: center; margin: 0;">
-            © 2024 Pandav MSG. All rights reserved.<br>
-            <a href="https://pandav.jaychaudhari.me" style="color: #22c55e; text-decoration: none;">Visit our website</a>
+            © 2026 Pandav MSG. All rights reserved.<br>
+            <a href="https://pandav-msg.vercel.app/" style="color: #22c55e; text-decoration: none;">Visit our website</a>
           </p>
         </div>
       </body>
@@ -199,8 +199,8 @@ export class EmailService {
           <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
           
           <p style="color: #999; font-size: 12px; text-align: center; margin: 0;">
-            © 2024 Pandav MSG. All rights reserved.<br>
-            <a href="https://pandav.jaychaudhari.me" style="color: #22c55e; text-decoration: none;">Visit our website</a>
+            © 2026 Pandav MSG. All rights reserved.<br>
+            <a href="https://pandav-msg.vercel.app/" style="color: #22c55e; text-decoration: none;">Visit our website</a>
           </p>
         </div>
       </body>
