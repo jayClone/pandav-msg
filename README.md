@@ -33,7 +33,6 @@ A modern, real-time messaging application built with **React**, **Node.js/Bun**,
 ### 🔐 Authentication & Users
 - User registration with email validation
 - JWT-based authentication
-- OAuth2 ready (infrastructure in place)
 - OTP-based email verification
 - User profiles with online/offline status
 - User search functionality
@@ -671,8 +670,8 @@ This project is licensed under the **MIT License** - see [LICENSE](LICENSE) file
 ## 👨‍💻 Author
 
 **Your Name / Team**
-- GitHub: [@yourusername](https://github.com/yourusername)
-- Email: your-email@example.com
+- GitHub: [@jayClone](https://github.com/jayClone)
+- Email: contact@mail.jaychaudhari.me 
 
 ---
 
@@ -690,9 +689,8 @@ This project is licensed under the **MIT License** - see [LICENSE](LICENSE) file
 ## 📞 Support
 
 For issues and questions:
-- Open an [Issue](https://github.com/yourusername/pandav-msg/issues)
-- Check [Discussions](https://github.com/yourusername/pandav-msg/discussions)
-- Email: support@pandavmsg.com
+- Open an [Issue](https://github.com/jayClone/pandav-msg/issues)
+- Check [Discussions](https://github.com/jayClone/pandav-msg/discussions)
 
 ---
 
