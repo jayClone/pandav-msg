@@ -1,4 +1,4 @@
-# 🐼 PandaV Messaging App
+# Pandav Messaging App
 
 A modern, real-time messaging application built with **React**, **Node.js/Bun**, **Socket.io**, **MongoDB**, and **Redis**. Features include user authentication, friend requests, private messaging, group chats, and online status tracking.
 
