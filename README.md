@@ -117,7 +117,7 @@ A modern, real-time messaging application built with **React**, **Node.js/Bun**,
 |-----------|---------|
 | **GitHub Actions** | CI/CD pipeline |
 | **Docker** | Containerization |
-| **Railway** | Backend hosting |
+| **Render** | Backend hosting |
 | **Vercel** | Frontend hosting |
 
 ---
