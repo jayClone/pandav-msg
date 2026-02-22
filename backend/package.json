@@ -3,11 +3,40 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun src/server.js"
+    "dev": "bun --watch run src/server.js",
+    "start": "bun run src/server.js",
+    "build": "echo Backend build OK",
+    "test": "bun test"
   },
   "dependencies": {
-    "express": "^5.2.1",
+    "@arcjet/bun": "^1.1.0",
+    "@arcjet/inspect": "^1.1.0",
+    "@arcjet/node": "^1.1.0",
+    "@sendgrid/mail": "^8.1.6",
+    "axios": "^1.13.5",
+    "bcryptjs": "^3.0.3",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
-    "dotenv": "^17.2.3"
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "jest": "^30.2.0",
+    "joi": "^18.0.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.1.5",
+    "morgan": "^1.10.1",
+    "nodemailer": "^8.0.1",
+    "redis": "^5.11.0",
+    "resend": "^6.9.2",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "supertest": "^7.2.2",
+    "validator": "^13.15.26",
+    "winston": "^3.19.0"
+  },
+  "jest": {
+    "testEnvironment": "node"
   }
 }

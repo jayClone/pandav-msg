@@ -1,0 +1,57 @@
+services:
+  # ✅ Backend Service - Uses Cloud MongoDB & Redis
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pandav-backend
+    env_file:
+      - backend/.env
+    ports:
+      - "5000:5000"
+    networks:
+      - pandav-network
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const res = await fetch('http://localhost:5000/api/v1/health'); process.exit(res.ok ? 0 : 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ✅ Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pandav-frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - pandav-network
+    environment:
+      VITE_API_URL: http://localhost:5000
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  pandav-network:
+    driver: bridge

@@ -1,3 +1,11 @@
-export default function Login(){
-    return <h1>login page</h1>
+import { LoginForm } from "@/components/login-form.jsx"
+
+export default function Page() {
+  return (
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <LoginForm />
+      </div>
+    </div>
+  )
 }

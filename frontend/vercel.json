@@ -1,0 +1,15 @@
+{
+  "buildCommand": "bun run build",
+  "devCommand": "bun run dev",
+  "installCommand": "npm install -g bun && bun install",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://pandav-msg.onrender.com/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
