@@ -5,7 +5,6 @@ A modern, real-time messaging application built with **React**, **Node.js/Bun**,
 ![Status](https://img.shields.io/badge/Status-Development-blue)
 ![Node](https://img.shields.io/badge/Node-18+-green)
 ![React](https://img.shields.io/badge/React-18+-blue)
-![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ---
 
