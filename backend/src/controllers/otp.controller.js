@@ -3,7 +3,7 @@ import EmailService from '../services/email.service.js';
 import User from '../models/User.js';
 import logger from '../config/logger.js';
 
-// ✅ Generate random OTP
+//  Generate random OTP
 const generateOTP = () => {
   return Math.floor(Math.pow(10, 5) + Math.random() * 9 * Math.pow(10, 5))
     .toString()
@@ -11,7 +11,7 @@ const generateOTP = () => {
 };
 
 export class OTPController {
-  // ✅ SEND OTP
+  //  SEND OTP
   static async sendOTP(req, res) {
     try {
       const { email, name, purpose = 'registration' } = req.body;
@@ -25,7 +25,6 @@ export class OTPController {
 
       const normalizedEmail = email.trim().toLowerCase();
 
-      // Check if user exists (for login OTP)
       if (purpose === 'login') {
         const userExists = await User.findOne({ email: normalizedEmail });
         if (!userExists) {
@@ -36,7 +35,6 @@ export class OTPController {
         }
       }
 
-      // Check if user already exists (for registration OTP)
       if (purpose === 'registration') {
         const userExists = await User.findOne({ email: normalizedEmail });
         if (userExists) {
@@ -47,23 +45,20 @@ export class OTPController {
         }
       }
 
-      // Generate OTP
       const otp = generateOTP();
       const expiresAt = new Date(Date.now() + (process.env.OTP_EXPIRY_MINUTES || 10) * 60 * 1000);
 
-      // ✅ Delete OLD OTP for this email and purpose
       await OTP.deleteMany({ email: normalizedEmail, purpose });
 
-      // Create new OTP record
       const otpRecord = await OTP.create({
         email: normalizedEmail,
         otp,
         purpose,
-        verified: false,  // ✅ START AS UNVERIFIED
+        verified: false,  
         expiresAt
       });
 
-      // Send email
+      
       await EmailService.sendOTPEmail(normalizedEmail, otp, name, purpose);
 
       logger.info(`✅ OTP sent to ${normalizedEmail} for ${purpose}`);
@@ -85,7 +80,7 @@ export class OTPController {
     }
   }
 
-  // ✅ VERIFY OTP
+  //  VERIFY OTP
   static async verifyOTP(req, res) {
     try {
       const { email, otp, purpose = 'registration' } = req.body;
@@ -99,7 +94,6 @@ export class OTPController {
 
       const normalizedEmail = email.trim().toLowerCase();
 
-      // Find OTP record - ✅ DON'T require verified: false (can be unverified)
       const otpRecord = await OTP.findOne({
         email: normalizedEmail,
         otp: otp.toString(),
@@ -113,7 +107,7 @@ export class OTPController {
         });
       }
 
-      // Check expiry
+  
       if (new Date() > otpRecord.expiresAt) {
         await OTP.deleteOne({ _id: otpRecord._id });
         return res.status(400).json({
@@ -122,7 +116,7 @@ export class OTPController {
         });
       }
 
-      // Check attempts
+   
       if (otpRecord.attempts >= (process.env.OTP_MAX_ATTEMPTS || 5)) {
         await OTP.deleteOne({ _id: otpRecord._id });
         return res.status(400).json({
@@ -131,7 +125,7 @@ export class OTPController {
         });
       }
 
-      // Verify OTP
+
       if (otpRecord.otp !== otp.toString()) {
         otpRecord.attempts += 1;
         await otpRecord.save();
@@ -143,7 +137,7 @@ export class OTPController {
         });
       }
 
-      // ✅ OTP verified - MARK AS VERIFIED, DON'T DELETE
+     
       otpRecord.verified = true;
       await otpRecord.save();
 
@@ -167,7 +161,7 @@ export class OTPController {
     }
   }
 
-  // ✅ RESEND OTP
+  //  RESEND OTP
   static async resendOTP(req, res) {
     try {
       const { email, name, purpose = 'registration' } = req.body;
@@ -181,10 +175,10 @@ export class OTPController {
 
       const normalizedEmail = email.trim().toLowerCase();
 
-      // ✅ Delete OLD OTP (invalidate previous one)
+     
       await OTP.deleteMany({ email: normalizedEmail, purpose });
 
-      // Generate new OTP
+ 
       const otp = generateOTP();
       const expiresAt = new Date(Date.now() + (process.env.OTP_EXPIRY_MINUTES || 10) * 60 * 1000);
 
@@ -192,11 +186,10 @@ export class OTPController {
         email: normalizedEmail,
         otp,
         purpose,
-        verified: false,  // ✅ START AS UNVERIFIED
+        verified: false,  
         expiresAt
       });
 
-      // Send email
       await EmailService.sendOTPEmail(normalizedEmail, otp, name || 'User', purpose);
 
       logger.info(`✅ OTP resent to ${normalizedEmail}`);

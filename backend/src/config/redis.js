@@ -8,10 +8,9 @@ let redisClient = null;
  */
 export const initRedis = async () => {
   return new Promise((resolve) => {
-    // ✅ SET TIMEOUT: If Redis doesn't connect in 3 seconds, skip it
     const timeoutId = setTimeout(() => {
-      console.warn('⏱️  Redis connection timeout (3s) - skipping Redis');
-      resolve(null); // Don't throw, just continue
+      console.warn('Redis connection timeout (3s) - skipping Redis');
+      resolve(null);
     }, 3000);
 
     try {
@@ -19,31 +18,30 @@ export const initRedis = async () => {
       
       if (!redisUrl) {
         clearTimeout(timeoutId);
-        console.warn('⚠️  REDIS_URL not configured - skipping Redis');
+        console.warn('REDIS_URL not configured - skipping Redis');
         resolve(null);
         return;
       }
 
-      console.log('🔗 Connecting to Redis (timeout: 3s)...');
+      console.log(' Connecting to Redis (timeout: 3s)...');
 
       redisClient = redis.createClient({
         url: redisUrl,
         socket: {
           reconnectStrategy: (retries) => {
-            // ✅ FAIL FAST: Give up after 2 retries locally
             if (retries > 2) {
               console.warn('⚠️  Redis gave up reconnecting (retries exceeded)');
-              return false; // Stop reconnecting
+              return false; 
             }
-            return retries * 100; // 100ms, 200ms backoff
+            return retries * 100;
           },
-          connectTimeout: 2000,    // ✅ 2 second timeout
+          connectTimeout: 2000,
           keepAlive: 5000,
           noDelay: true
         }
       });
 
-      // ✅ Connection listeners
+      //  Connection listeners
       redisClient.on('connect', () => {
         clearTimeout(timeoutId);
         console.log('✅ Redis connected');
@@ -52,7 +50,6 @@ export const initRedis = async () => {
 
       redisClient.on('error', (err) => {
         console.warn(`⚠️  Redis error: ${err.message}`);
-        // Don't block - continue without Redis
       });
 
       redisClient.on('ready', () => {
@@ -61,12 +58,11 @@ export const initRedis = async () => {
         resolve(redisClient);
       });
 
-      // ✅ Connect with timeout
       redisClient.connect().catch((connectErr) => {
         clearTimeout(timeoutId);
         console.warn(`⚠️  Redis connection failed: ${connectErr.message}`);
         redisClient = null;
-        resolve(null); // Resolve without Redis
+        resolve(null); 
       });
 
     } catch (error) {

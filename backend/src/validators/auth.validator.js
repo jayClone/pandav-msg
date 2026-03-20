@@ -1,6 +1,5 @@
 import Joi from 'joi';
 
-// ✅ REGISTER SCHEMA - MUST INCLUDE OTP
 export const RegisterSchema = Joi.object({
   name: Joi.string()
     .trim()
@@ -32,7 +31,6 @@ export const RegisterSchema = Joi.object({
       'string.empty': 'Password is required'
     }),
 
-  // ✅ ADD OTP FIELD - THIS IS KEY!
   otp: Joi.string()
     .length(6)
     .pattern(/^\d+$/)
@@ -44,7 +42,6 @@ export const RegisterSchema = Joi.object({
     })
 });
 
-// ✅ LOGIN SCHEMA
 export const LoginSchema = Joi.object({
   email: Joi.string()
     .email()

@@ -1,6 +1,6 @@
 import io from 'socket.io-client';
 
-const IS_DEV = import.meta.env.DEV; // ✅ True only in dev mode
+const IS_DEV = import.meta.env.DEV; 
 
 let socket = null;
 
@@ -24,7 +24,7 @@ export const connectSocket = (token) => {
         reconnectionDelay: 2000,
         timeout: 20000,
         perMessageDeflate: {
-            threshold: 1024 // Only compress messages > 1KB
+            threshold: 1024 
         }
     });
 
@@ -32,10 +32,10 @@ export const connectSocket = (token) => {
     });
 
     socket.on('connect_error', (error) => {
-        console.error('❌ Socket error:', error.message); // ✅ KEEP ERRORS
+        console.error('❌ Socket error:', error.message); 
     });
 
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', () => {
     });
 
     return socket;

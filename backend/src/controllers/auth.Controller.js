@@ -19,12 +19,11 @@ const generateToken = (user) => {
   );
 };
 
-// ✅ REGISTER WITH OTP VERIFICATION
+//  REGISTER WITH OTP VERIFICATION
 export const register = async (req, res) => {
   try {
     const { name, email, password, otp } = req.body;
 
-    // Validation
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
@@ -42,7 +41,6 @@ export const register = async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Find OTP in database
     const otpRecord = await OTP.findOne({
       email: normalizedEmail,
       otp: otp.toString(),
@@ -57,7 +55,6 @@ export const register = async (req, res) => {
       });
     }
 
-    // Check expiry
     if (new Date() > otpRecord.expiresAt) {
       await OTP.deleteOne({ _id: otpRecord._id });
       return res.status(400).json({
@@ -66,7 +63,6 @@ export const register = async (req, res) => {
       });
     }
 
-    // Validate email format
     if (!EMAIL_REGEX.test(normalizedEmail)) {
       return res.status(400).json({
         success: false,
@@ -74,7 +70,6 @@ export const register = async (req, res) => {
       });
     }
 
-    // Validate password strength
     if (!PASSWORD_REGEX.test(password)) {
       return res.status(400).json({
         success: false,
@@ -82,7 +77,6 @@ export const register = async (req, res) => {
       });
     }
 
-    // Check for duplicate email
     const userExist = await User.findOne({ email: normalizedEmail });
     if (userExist) {
       return res.status(409).json({
@@ -91,17 +85,14 @@ export const register = async (req, res) => {
       });
     }
 
-    // Create user
     const user = await User.create({
       name: name.trim(),
       email: normalizedEmail,
       password
     });
 
-    // Send welcome email
     await EmailService.sendWelcomeEmail(normalizedEmail, name);
 
-    // ✅ NOW DELETE OTP after successful registration
     await OTP.deleteOne({ _id: otpRecord._id });
 
     const token = generateToken(user);
@@ -128,7 +119,7 @@ export const register = async (req, res) => {
   }
 };
 
-// ✅ LOGIN
+//  LOGIN
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -160,7 +151,6 @@ export const login = async (req, res) => {
       });
     }
 
-    // ✅ BACKGROUND UPDATE: lastSeen (don't block the response)
     User.findByIdAndUpdate(user._id, { lastSeen: new Date() }).catch(err =>
       logger.error(`❌ Background lastSeen update error: ${err.message}`)
     );

@@ -62,15 +62,15 @@ export default function Layoute({ initialTab = "chats" }) {
   // Mobile States
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileBottomSheetOpen, setMobileBottomSheetOpen] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false); // ✅ TRACK IF CHAT IS OPEN
+  const [isChatOpen, setIsChatOpen] = useState(false); //  TRACK IF CHAT IS OPEN
 
-  // ✅ APPLY THEME ON MOUNT
+  //  APPLY THEME ON MOUNT
   useEffect(() => {
     const savedTheme = localStorage.getItem("selectedTheme") || "dark";
     applyTheme(savedTheme);
   }, []);
   
-  // ✅ PHASE 5: CENTRALIZED SOCKET CONNECTION
+  //  PHASE 5: CENTRALIZED SOCKET CONNECTION
   useEffect(() => {
     if (token) {
       const socket = connectSocket(token);
@@ -113,7 +113,7 @@ export default function Layoute({ initialTab = "chats" }) {
     applyTheme(bgImage);
   }, [bgImage]);
 
-  // ✅ RESET SIDEBAR WHEN TAB CHANGES
+  //  RESET SIDEBAR WHEN TAB CHANGES
   useEffect(() => {
     // On desktop (md+), always show sidebar
     // On mobile (< md), keep current state but don't force close
@@ -128,7 +128,7 @@ export default function Layoute({ initialTab = "chats" }) {
     handleResize(); // Call once on mount
 
     return () => window.removeEventListener('resize', handleResize);
-  }, [activeTab]); // ✅ ADD activeTab as dependency
+  }, [activeTab]); //  ADD activeTab as dependency
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -170,7 +170,7 @@ export default function Layoute({ initialTab = "chats" }) {
                 key={item.id}
                 onClick={() => {
                   setActiveTab(item.id);
-                  setSidebarOpen(true); // ✅ ALWAYS SHOW SIDEBAR ON DESKTOP
+                  setSidebarOpen(true); //  ALWAYS SHOW SIDEBAR ON DESKTOP
                 }}
                 className={`p-3 lg:p-4 rounded-xl transition-all flex items-center justify-center ${
                   activeTab === item.id

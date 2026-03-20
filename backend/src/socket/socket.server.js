@@ -12,7 +12,7 @@ export function createSocketServer(httpServer) {
 
     if (process.env.NODE_ENV === 'production') {
       origins.push(process.env.CLIENT_URL);
-      origins.push('https://pandav.jaychaudhari.me');  // ✅ Use Cloudflare domain
+      origins.push('https://pandav.jaychaudhari.me'); 
       origins.push('https://www.pandav.jaychaudhari.me');
     }
 
@@ -27,7 +27,6 @@ export function createSocketServer(httpServer) {
     },
     transports: ['websocket'],
 
-    //  Enable compression
     perMessageDeflate: {
       zlibDeflateOptions: {
         chunkSize: 1024,
@@ -46,8 +45,6 @@ export function createSocketServer(httpServer) {
     maxHttpBufferSize: 1e6,
     pingInterval: 25000,
     pingTimeout: 90000,
-
-    // ✅ OPTIMIZATION 5: Reduce reconnection spam
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
@@ -62,11 +59,11 @@ export function createSocketServer(httpServer) {
   });
 
   io.on('connection', (socket) => {
-    console.log(`✅ Connected: ${socket.id}`);
+    console.log(` Connected: ${socket.id}`);
     registerSocketEvents(io, socket, onlineUsers);
 
     socket.on('disconnect', () => {
-      console.log(`❌ Disconnected: ${socket.id}`);
+      console.log(` Disconnected: ${socket.id}`);
       const { userId } = socket.user || {};
       if (userId) onlineUsers.delete(userId);
       io.emit('online_users', Array.from(onlineUsers.values()));

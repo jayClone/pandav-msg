@@ -10,7 +10,7 @@ export const VirtualizedMessageList = React.memo(({
   messages,
   renderMessage,
   containerHeight,
-  messageHeight = 80 // Adjust based on your message component height
+  messageHeight = 80
 }) => {
   if (!messages || messages.length === 0) {
     return null;
@@ -30,7 +30,7 @@ export const VirtualizedMessageList = React.memo(({
           itemCount={messages.length}
           itemSize={messageHeight}
           width={width}
-          overscanCount={5} // Render 5 messages outside viewport for smooth scrolling
+          overscanCount={5} 
         >
           {Row}
         </List>

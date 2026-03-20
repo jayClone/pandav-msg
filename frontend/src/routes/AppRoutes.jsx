@@ -2,12 +2,12 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { lazy , Suspense} from "react";
 import Index from "@/pages/Index";
 
-// ✅ LAZY LOAD HEAVY PAGES
+//  LAZY LOAD HEAVY PAGES
 const Register = lazy(() => import("@pages/Register"));
 const Login = lazy(() => import("@pages/Login"));
 const Layoute = lazy(() => import("@/pages/Layoute"));
 
-// ✅ FALLBACK LOADING COMPONENT
+//  FALLBACK LOADING COMPONENT
 function LoadingFallback() {
   return (
     <div className="flex items-center justify-center h-screen">
@@ -25,7 +25,7 @@ export default function AppRoutes() {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/" element={<Index />} />
-          {/* ✅ WRAPPED WITH SUSPENSE */}
+          {/*  WRAPPED WITH SUSPENSE */}
           <Route path="/register" element={<Register />} />
           <Route path="/login" element={<Login />} />
           <Route

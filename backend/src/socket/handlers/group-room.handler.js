@@ -2,9 +2,7 @@ import { SOCKET_EVENTS } from "../../constant/response.messages.js";
 import Group from "../../models/Group.js";
 import User from "../../models/User.js";
 
-// ✅ Track online users per group (in-memory)
-const groupOnlineUsers = new Map(); // groupId -> Set of userIds
-
+const groupOnlineUsers = new Map(); 
 /**
  * Handle group room join
  */
@@ -19,7 +17,6 @@ export async function handleJoinGroup(socket, io, payload, userId, name) {
             return;
         }
 
-        // Verify user is member
         const group = await Group.findById(groupId);
         if (!group) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { 
@@ -28,7 +25,6 @@ export async function handleJoinGroup(socket, io, payload, userId, name) {
             return;
         }
 
-        // Check that the requesting user is a member of the group
         const isMember = Array.isArray(group.participants) && group.participants.some((participant) => {
             const participantId = typeof participant === 'object' && participant !== null && typeof participant.toString === 'function'
                 ? participant.toString()
@@ -43,16 +39,13 @@ export async function handleJoinGroup(socket, io, payload, userId, name) {
             return;
         }
 
-        // ✅ FIX 1: Track this user as online in this group
         if (!groupOnlineUsers.has(groupId)) {
             groupOnlineUsers.set(groupId, new Set());
         }
         groupOnlineUsers.get(groupId).add(userId);
 
-        // Join socket room
         socket.join(groupId);
 
-        // ✅ FIX 2: Broadcast updated online members list to entire group
         const onlineUserIds = Array.from(groupOnlineUsers.get(groupId));
         const onlineMembers = await User.find({ _id: { $in: onlineUserIds } })
             .select('_id name email');
@@ -68,7 +61,6 @@ export async function handleJoinGroup(socket, io, payload, userId, name) {
             totalMembers: group.participants.length
         });
 
-        // ✅ FIX 3: Notify about the join
         io.to(groupId).emit('user_joined_group', {
             groupId: groupId,
             userId: userId,
@@ -95,13 +87,11 @@ export async function handleLeaveGroup(socket, io, payload, userId, name) {
             return;
         }
 
-        // ✅ FIX 4: Remove user from online tracking
         if (groupOnlineUsers.has(groupId)) {
             groupOnlineUsers.get(groupId).delete(userId);
             console.log(`[GROUP] ${name} left group ${groupId}`);
             console.log(`[ONLINE] Group ${groupId} now has ${groupOnlineUsers.get(groupId).size} online members`);
 
-            // ✅ FIX 5: Broadcast updated online members list
             const group = await Group.findById(groupId);
             if (group) {
                 const onlineUserIds = Array.from(groupOnlineUsers.get(groupId));
@@ -120,7 +110,6 @@ export async function handleLeaveGroup(socket, io, payload, userId, name) {
                 });
             }
 
-            // Clean up empty sets
             if (groupOnlineUsers.get(groupId).size === 0) {
                 groupOnlineUsers.delete(groupId);
             }

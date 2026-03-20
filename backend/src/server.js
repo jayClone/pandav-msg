@@ -14,7 +14,6 @@ const startServer = async () => {
   try {
     console.log("🚀 Starting PandaV Server (Bun)...\n");
 
-    // ✅ Connect to MongoDB
     console.log("📡 Connecting to MongoDB...");
     await connectDB();
     console.log("✅ MongoDB Connected\n");

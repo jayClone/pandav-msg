@@ -2,15 +2,15 @@ import Group from "../models/Group";
 import User from "../models/User"
 import Message from '../models/Message.js';
 import Friend from "../models/Friend";
-import mongoose from 'mongoose';  // ✅ ADD THIS
+import mongoose from 'mongoose';  
 
-// HELPER: Validate MongoDB ObjectId (handles both string and ObjectId)
+//  Validate MongoDB ObjectId (handles both string and ObjectId)
 const isValidObjectId = (id) => {
     if (!id) return false;
     return mongoose.Types.ObjectId.isValid(id);
 };
 
-// HELPER: Convert string to ObjectId if needed
+//  Convert string to ObjectId if needed
 const toObjectId = (id) => {
     if (!id) return null;
     if (typeof id === 'object') return id;  // Already ObjectId
@@ -23,7 +23,6 @@ export const createGroup = async (req, res) => {
         const { name, memberIds } = req.body;
         const userId = req.user.userId;  // This is a STRING from auth middleware
 
-        //  VALIDATE NAME
         if (!name || name.trim().length === 0) {
             return res.status(400).json({
                 success: false,
@@ -31,7 +30,6 @@ export const createGroup = async (req, res) => {
             });
         }
 
-        //  VALIDATE MEMBERS PROVIDED
         if (!Array.isArray(memberIds) || memberIds.length === 0) {
             return res.status(400).json({
                 success: false,
@@ -39,7 +37,6 @@ export const createGroup = async (req, res) => {
             });
         }
 
-        //  VALIDATE ALL IDs ARE VALID OBJECTIDS (as strings)
         const allIds = [...memberIds.map(String), String(userId)];
         for (const id of allIds) {
             if (!isValidObjectId(id)) {
@@ -50,16 +47,13 @@ export const createGroup = async (req, res) => {
             }
         }
 
-        //  REMOVE DUPLICATES (as strings for comparison)
         const uniqueMemberIds = [...new Set(memberIds.map(String))];
         const userIdStr = String(userId);
 
-        //  AUTO-ADD CREATOR IF NOT ALREADY INCLUDED
         if (!uniqueMemberIds.includes(userIdStr)) {
             uniqueMemberIds.push(userIdStr);
         }
 
-        //  VALIDATE ALL MEMBERS EXIST IN DB
         const members = await User.find({
             _id: { $in: uniqueMemberIds.map(toObjectId) }
         });
@@ -71,7 +65,6 @@ export const createGroup = async (req, res) => {
             });
         }
 
-        //  VERIFY GROUP HAS AT LEAST 2 PARTICIPANTS
         if (uniqueMemberIds.length < 2) {
             return res.status(400).json({
                 success: false,
@@ -79,7 +72,6 @@ export const createGroup = async (req, res) => {
             });
         }
 
-        // ✅ OPTIMIZED: Batch check if creator is friends with all members in ONE query
         const otherMemberIds = uniqueMemberIds.filter(id => id !== userIdStr);
 
         const friendships = await Friend.find({
@@ -89,14 +81,12 @@ export const createGroup = async (req, res) => {
             ]
         });
 
-        // Find which members are actually friends
         const friendIdsSet = new Set();
         friendships.forEach(f => {
             const friendId = f.senderId.toString() === userIdStr ? f.receiverId.toString() : f.senderId.toString();
             friendIdsSet.add(friendId);
         });
 
-        // Check if any provided member is NOT a friend
         for (const memberId of otherMemberIds) {
             if (!friendIdsSet.has(memberId)) {
                 const memberUser = members.find(m => m._id.toString() === memberId);
@@ -107,14 +97,12 @@ export const createGroup = async (req, res) => {
             }
         }
 
-        //  CREATE GROUP WITH VALIDATED DATA
         const group = await Group.create({
             name: name.trim(),
             participants: uniqueMemberIds.map(toObjectId),
             adminId: toObjectId(userIdStr)
         });
 
-        //  POPULATE RESPONSE
         await group.populate('participants', 'name email');
         await group.populate('adminId', 'name email');
 
@@ -139,22 +127,20 @@ export const getMyGroups = async (req, res) => {
     try {
         const userId = toObjectId(req.user.userId);
 
-        // Find groups where user is participant
         const groups = await Group.find({
             participants: { $in: [userId] }
         })
             .populate('participants', 'name email _id')
-            .populate('adminId', 'name email _id')  // ✅ CRITICAL: Populate admin
+            .populate('adminId', 'name email _id')  
             .sort({ createdAt: -1 });
 
-        // ✅ ENSURE adminId IS IN RESPONSE
         const formattedGroups = groups.map(group => ({
             _id: group._id,
             id: group._id,
             name: group.name,
             participants: group.participants,
-            adminId: group.adminId?._id || group.adminId,  // ✅ Include adminId
-            adminName: group.adminId?.name,  // ✅ Include admin name
+            adminId: group.adminId?._id || group.adminId,  
+            adminName: group.adminId?.name, 
             adminEmail: group.adminId?.email,
             createdAt: group.createdAt,
             updatedAt: group.updatedAt
@@ -181,7 +167,6 @@ export const getGroup = async (req, res) => {
         const { groupId } = req.params;
         const userId = toObjectId(req.user.userId);
 
-        // ✅ VALIDATE OBJECTID
         if (!isValidObjectId(groupId)) {
             return res.status(400).json({
                 success: false,
@@ -191,7 +176,7 @@ export const getGroup = async (req, res) => {
 
         const group = await Group.findById(groupId)
             .populate('participants', 'name email _id')
-            .populate('adminId', 'name email _id');  // ✅ CRITICAL: Populate admin
+            .populate('adminId', 'name email _id');  
 
         if (!group) {
             return res.status(404).json({
@@ -200,7 +185,6 @@ export const getGroup = async (req, res) => {
             });
         }
 
-        // Check if user is participant
         if (!group.participants.some(p => p._id.toString() === userId.toString())) {
             return res.status(403).json({
                 success: false,
@@ -208,15 +192,14 @@ export const getGroup = async (req, res) => {
             });
         }
 
-        // ✅ FORMAT RESPONSE WITH ADMIN INFO
         const formattedGroup = {
             _id: group._id,
             id: group._id,
             name: group.name,
             participants: group.participants,
-            members: group.participants,  // Alias for frontend
-            adminId: group.adminId?._id || group.adminId,  // ✅ Include adminId
-            adminName: group.adminId?.name,  // ✅ Include admin name
+            members: group.participants,  
+            adminId: group.adminId?._id || group.adminId, 
+            adminName: group.adminId?.name, 
             adminEmail: group.adminId?.email,
             createdAt: group.createdAt,
             updatedAt: group.updatedAt
@@ -240,10 +223,9 @@ export const getGroup = async (req, res) => {
 export const addMember = async (req, res) => {
     try {
         const { groupId } = req.params;
-        const { userId } = req.body;  // ✅ Receive 'userId' from frontend
+        const { userId } = req.body; 
         const myId = req.user.userId;
 
-        // VALIDATE OBJECTID
         if (!isValidObjectId(groupId)) {
             return res.status(400).json({
                 success: false,
@@ -267,7 +249,6 @@ export const addMember = async (req, res) => {
             });
         }
 
-        // Check if user is admin
         if (group.adminId.toString() !== toObjectId(myId).toString()) {
             return res.status(403).json({
                 success: false,
@@ -275,10 +256,8 @@ export const addMember = async (req, res) => {
             });
         }
 
-        // Convert to ObjectId for comparison
         const newMemberObjId = toObjectId(userId);
 
-        // Check if user already exists
         const alreadyMember = group.participants.some(
             p => p.toString() === newMemberObjId.toString()
         );
@@ -290,7 +269,6 @@ export const addMember = async (req, res) => {
             });
         }
 
-        // Check if user exists in DB
         const userExists = await User.findById(userId);
         if (!userExists) {
             return res.status(404).json({
@@ -299,7 +277,6 @@ export const addMember = async (req, res) => {
             });
         }
 
-        // ✅ NEW: CHECK IF ADMIN IS FRIENDS WITH NEW MEMBER
         const friendship = await Friend.findOne({
             $or: [
                 { senderId: myId, receiverId: userId, status: 'accepted' },
@@ -315,7 +292,6 @@ export const addMember = async (req, res) => {
         }
 
 
-        // Add member
         group.participants.push(newMemberObjId);
         await group.save();
         await group.populate('participants', 'name email');
@@ -341,10 +317,9 @@ export const addMember = async (req, res) => {
 export const removeMember = async (req, res) => {
     try {
         const { groupId } = req.params;
-        const { memberId } = req.body;  // ✅ CONSISTENT: Use singular 'memberId'
+        const { memberId } = req.body;  
         const myId = toObjectId(req.user.userId);
 
-        //  VALIDATE OBJECTID
         if (!isValidObjectId(groupId)) {
             return res.status(400).json({
                 success: false,
@@ -368,7 +343,6 @@ export const removeMember = async (req, res) => {
             });
         }
 
-        // Check if user is admin
         if (group.adminId.toString() !== myId.toString()) {
             return res.status(403).json({
                 success: false,
@@ -376,10 +350,8 @@ export const removeMember = async (req, res) => {
             });
         }
 
-        // ✅ FIX: Convert to ObjectId for comparison
         const memberObjIdToRemove = toObjectId(memberId);
 
-        // ✅ FIX: Check if member actually exists in group
         const memberExists = group.participants.some(
             p => p.toString() === memberObjIdToRemove.toString()
         );
@@ -391,7 +363,6 @@ export const removeMember = async (req, res) => {
             });
         }
 
-        // ✅ FIX: Remove member using correct variable name
         group.participants = group.participants.filter(
             p => p.toString() !== memberObjIdToRemove.toString()
         );
@@ -424,7 +395,6 @@ export const getGroupMessages = async (req, res) => {
         const { before, limit = 50 } = req.query;
         const pageSize = parseInt(limit);
 
-        // VALIDATE OBJECTID
         if (!isValidObjectId(groupId)) {
             return res.status(400).json({
                 success: false,
@@ -432,7 +402,6 @@ export const getGroupMessages = async (req, res) => {
             });
         }
 
-        // Check if user is member
         const group = await Group.findById(groupId);
         if (!group) {
             return res.status(404).json({
@@ -448,19 +417,16 @@ export const getGroupMessages = async (req, res) => {
             });
         }
 
-        // Build query
         const query = {
             groupId: groupId,
             chatType: 'group',
             deleted: { $ne: true }
         };
 
-        // Cursor pagination
         if (before) {
             query.createdAt = { $lt: new Date(before) };
         }
 
-        // Fetch messages with readBy populated, newest first
         const messages = await Message.find(query)
             .populate('senderId', 'name email _id')
             .populate('readBy.userId', 'name email _id')
@@ -471,10 +437,8 @@ export const getGroupMessages = async (req, res) => {
         const hasMore = messages.length > pageSize;
         const results = hasMore ? messages.slice(0, pageSize) : messages;
 
-        // Reverse for chronological order
         results.reverse();
 
-        // Get total count (optional but helpful for some UIs)
         const totalCount = await Message.countDocuments({
             groupId: groupId,
             chatType: 'group',
@@ -537,7 +501,6 @@ export const leaveGroup = async (req, res) => {
         const { groupId } = req.params;
         const userId = toObjectId(req.user.userId);
 
-        // ✅ VALIDATE OBJECTID
         if (!isValidObjectId(groupId)) {
             return res.status(400).json({
                 success: false,
@@ -554,7 +517,6 @@ export const leaveGroup = async (req, res) => {
             });
         }
 
-        // ✅ CHECK: User is member
         const isMember = group.participants.some(
             p => p.toString() === userId.toString()
         );
@@ -566,7 +528,6 @@ export const leaveGroup = async (req, res) => {
             });
         }
 
-        // ✅ CHECK: Admin cannot leave if only admin (prevent orphaned groups)
         const isAdmin = group.adminId.toString() === userId.toString();
         const otherMembers = group.participants.filter(
             p => p.toString() !== userId.toString()
@@ -579,12 +540,10 @@ export const leaveGroup = async (req, res) => {
             });
         }
 
-        // ✅ REMOVE USER FROM GROUP
         group.participants = group.participants.filter(
             p => p.toString() !== userId.toString()
         );
 
-        // ✅ IF ADMIN LEFT, REASSIGN ADMIN TO FIRST REMAINING MEMBER
         if (isAdmin && group.participants.length > 0) {
             group.adminId = group.participants[0];
         }
@@ -627,7 +586,6 @@ export const deleteGroup = async (req, res) => {
         const { groupId } = req.params;
         const userId = toObjectId(req.user.userId);
 
-        // ✅ VALIDATE OBJECTID
         if (!isValidObjectId(groupId)) {
             return res.status(400).json({
                 success: false,
@@ -644,7 +602,6 @@ export const deleteGroup = async (req, res) => {
             });
         }
 
-        // ✅ CHECK: User is admin
         if (group.adminId.toString() !== userId.toString()) {
             return res.status(403).json({
                 success: false,
@@ -652,13 +609,11 @@ export const deleteGroup = async (req, res) => {
             });
         }
 
-        // ✅ DELETE ALL MESSAGES IN THIS GROUP
         const deleteMessagesResult = await Message.deleteMany({
             groupId: groupId,
             chatType: 'group'
         });
 
-        // ✅ DELETE THE GROUP
         const deletedGroup = await Group.findByIdAndDelete(groupId);
 
         return res.status(200).json({

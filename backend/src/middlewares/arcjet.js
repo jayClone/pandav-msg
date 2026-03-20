@@ -8,7 +8,6 @@ const aj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
 
-  // ✅ Fixed: Proper characteristics
   characteristics: [
     "http.request.headers['user-agent']",
   ],
@@ -41,7 +40,6 @@ const aj = arcjet({
  * ✅ Skips /health endpoint
  */
 export const globalArcjet = async (req, res, next) => {
-  // ✅ SKIP ARCJET FOR HEALTH CHECK
   if (req.path === "/health" || req.path === "/api/v1/health") {
     return next();
   }
@@ -79,7 +77,6 @@ export const globalArcjet = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("❌ Arcjet error:", error.message);
-    // ✅ Continue without Arcjet if it fails
     next();
   }
 };
@@ -106,7 +103,6 @@ export const authArcjet = async (req, res, next) => {
   try {
     const decision = await authAj.protect(req, { requested: 1 });
 
-    // ✅ SAFE ACCESS: Check if limits exists
     const remaining = decision.limits?.[0]?.remaining ?? 5;
     const resetTime = decision.limits?.[0]?.resetTime ?? (Date.now() + 900000);
 
@@ -127,7 +123,6 @@ export const authArcjet = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("❌ Auth Arcjet error:", error.message);
-    // ✅ Continue WITHOUT rate limiting if Arcjet fails
     next();
   }
 };
@@ -154,7 +149,6 @@ export const otpArcjet = async (req, res, next) => {
   try {
     const decision = await otpAj.protect(req, { requested: 1 });
 
-    // ✅ SAFE ACCESS
     const remaining = decision.limits?.[0]?.remaining ?? 3;
     const resetTime = decision.limits?.[0]?.resetTime ?? (Date.now() + 3600000);
 
@@ -201,7 +195,6 @@ export const messageArcjet = async (req, res, next) => {
   try {
     const decision = await msgAj.protect(req, { requested: 1 });
 
-    // ✅ SAFE ACCESS
     const remaining = decision.limits?.[0]?.remaining ?? 50;
     const resetTime = decision.limits?.[0]?.resetTime ?? (Date.now() + 60000);
 

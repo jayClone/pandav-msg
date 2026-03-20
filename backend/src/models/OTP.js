@@ -30,7 +30,7 @@ const otpSchema = new mongoose.Schema({
   verified: {
     type: Boolean,
     default: false,
-    index: true  // ✅ ADD: For faster unverified OTP lookups
+    index: true 
   },
   
   expiresAt: {
@@ -45,13 +45,10 @@ const otpSchema = new mongoose.Schema({
   }
 });
 
-// ✅ Compound index for email + purpose
 otpSchema.index({ email: 1, purpose: 1 });
 
-// ✅ Compound index for faster unverified OTP lookups
 otpSchema.index({ email: 1, verified: 1 });
 
-// ✅ TTL index - auto-delete after expiry (separate from expiresAt field)
 otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default mongoose.model('OTP', otpSchema);

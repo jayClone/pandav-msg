@@ -13,22 +13,19 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
       return;
     }
 
-    // ✅ Save to database
     const savedMessage = await Message.create({
       senderId: userId,
       groupId: groupId,
       message: message.trim(),
       chatType: 'group',
       delivered: true,
-      readBy: [],  // ✅ Start with EMPTY readBy array
+      readBy: [],  
     });
 
-    // ✅ POPULATE to get proper structure
     const populatedMessage = await Message.findById(savedMessage._id)
       .populate('senderId', 'name email _id')
       .populate('readBy.userId', 'name email _id');
 
-    // ✅ BROADCAST WITH EMPTY readBy (only receiver marks as read)
     io.to(groupId.toString()).emit(SOCKET_EVENTS.GROUP_MESSAGE, {
       _id: populatedMessage._id,
       groupId: groupId,
@@ -38,12 +35,12 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
       createdAt: populatedMessage.createdAt,
       delivered: true,
       read: false,
-      readBy: [],  // ✅ START EMPTY - Let receivers mark as read
+      readBy: [],  
       senderId: userId,
       senderName: name,
     });
 
   } catch (error) {
-    console.error('❌ Error in handleGroupMessage:', error.message);
+    console.error(' Error in handleGroupMessage:', error.message);
   }
 }

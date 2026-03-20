@@ -24,7 +24,7 @@ export default function FriendRequestModal({
     }
   }, [isOpen, token]);
 
-  // ✅ AUTO-CLEAR ERRORS
+  //  AUTO-CLEAR ERRORS
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => setError(null), 5000);
@@ -32,7 +32,7 @@ export default function FriendRequestModal({
     }
   }, [error]);
 
-  // ✅ Close modal on escape key
+  //  Close modal on escape key
   useEffect(() => {
     if (isOpen) {
       const handleEscape = (e) => {
@@ -47,9 +47,9 @@ export default function FriendRequestModal({
     try {
       setLoadingUsers(true);
       
-      // ✅ PHASE 4: Single Aggregated Call (Much faster)
+      //  PHASE 4: Single Aggregated Call (Much faster)
       const res = await friendAPI.getFriendshipSummary();
-      const { users, friends, pending, sent } = res.data.data;
+      const { users, friends, pending } = res.data.data;
 
       setAllUsers(users.map(user => ({
         _id: user._id,
@@ -78,7 +78,7 @@ export default function FriendRequestModal({
       setSendingRequest(prev => ({ ...prev, [userId]: true }));
       await friendAPI.sendFriendRequest(userId);
       
-      // ✅ BEST: Refetch sent requests to get exact backend format
+      //  BEST: Refetch sent requests to get exact backend format
       const sentRes = await friendAPI.getSentRequests();
       setSentRequests(sentRes.data.data?.map(req => ({
         _id: req._id,
@@ -104,7 +104,7 @@ export default function FriendRequestModal({
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.rejectFriendRequest(requestId);
-      await fetchAllData(); // ✅ Refetch to get fresh server state
+      await fetchAllData(); //  Refetch to get fresh server state
     } catch (err) {
       setError(err.message || 'Failed to cancel request');
     } finally {
@@ -116,7 +116,7 @@ export default function FriendRequestModal({
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.acceptFriendRequest(requestId);
-      await fetchAllData(); // ✅ Refetch to get fresh server state
+      await fetchAllData(); //  Refetch to get fresh server state
     } catch (err) {
       setError(err.message || 'Failed to accept request');
     } finally {
@@ -128,7 +128,7 @@ export default function FriendRequestModal({
     try {
       setSendingRequest(prev => ({ ...prev, [requestId]: true }));
       await friendAPI.rejectFriendRequest(requestId);
-      await fetchAllData(); // ✅ Refetch to get fresh server state
+      await fetchAllData(); //  Refetch to get fresh server state
     } catch (err) {
       setError(err.message || 'Failed to reject request');
     } finally {
@@ -193,10 +193,10 @@ export default function FriendRequestModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
-      {/* ✅ RESPONSIVE MODAL */}
+      {/*  RESPONSIVE MODAL */}
       <div className="bg-[rgb(var(--bg-secondary))] rounded-xl w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col border border-[rgb(var(--border-secondary))] shadow-2xl">
         
-        {/* ✅ RESPONSIVE HEADER */}
+        {/*  RESPONSIVE HEADER */}
         <div className="flex items-center justify-between p-3 sm:p-6 border-b border-[rgb(var(--border-secondary))] flex-shrink-0">
           <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2 truncate">
             <UserPlus className="w-5 h-5 sm:w-6 sm:h-6 text-green-400 flex-shrink-0" />
@@ -218,7 +218,7 @@ export default function FriendRequestModal({
           </div>
         )}
 
-        {/* ✅ RESPONSIVE TABS - Scrollable on small screens */}
+        {/*  RESPONSIVE TABS - Scrollable on small screens */}
         <div className="flex gap-1 p-2 sm:p-4 border-b border-[rgb(var(--border-secondary))] bg-[rgb(var(--bg-primary))] overflow-x-auto scrollbar-hide flex-shrink-0">
           <button
             onClick={() => {
@@ -277,7 +277,7 @@ export default function FriendRequestModal({
           </button>
         </div>
 
-        {/* ✅ RESPONSIVE SEARCH BAR */}
+        {/*  RESPONSIVE SEARCH BAR */}
         <div className="p-2 sm:p-4 border-b border-[rgb(var(--border-secondary))] flex-shrink-0">
           <input
             type="text"
@@ -288,7 +288,7 @@ export default function FriendRequestModal({
           />
         </div>
 
-        {/* ✅ RESPONSIVE CONTENT */}
+        {/*  RESPONSIVE CONTENT */}
         <div className="flex-1 overflow-y-auto">
           {loadingUsers ? (
             <div className="flex items-center justify-center h-40">
@@ -306,7 +306,7 @@ export default function FriendRequestModal({
           ) : (
             <div className="space-y-2 p-2 sm:p-4">
               {activeTab === 'pending-received' ? (
-                // ✅ RESPONSIVE RECEIVED REQUESTS
+                //  RESPONSIVE RECEIVED REQUESTS
                 pendingRequests.map((request) => (
                   <div
                     key={request._id}
@@ -346,7 +346,7 @@ export default function FriendRequestModal({
                   </div>
                 ))
               ) : activeTab === 'pending-sent' ? (
-                // ✅ RESPONSIVE SENT REQUESTS
+                //  RESPONSIVE SENT REQUESTS
                 sentRequests.map((request) => (
                   <div
                     key={request._id}
@@ -376,7 +376,7 @@ export default function FriendRequestModal({
                   </div>
                 ))
               ) : (
-                // ✅ RESPONSIVE ALL CONTACTS OR FRIENDS
+                //  RESPONSIVE ALL CONTACTS OR FRIENDS
                 filteredUsers.map((user) => (
                   <div
                     key={user._id}
@@ -389,7 +389,7 @@ export default function FriendRequestModal({
                       <p className="text-white font-medium text-sm sm:text-base truncate">{user.name}</p>
                     </div>
 
-                    {/* ✅ RESPONSIVE ACTION BUTTON */}
+                    {/*  RESPONSIVE ACTION BUTTON */}
                     {activeTab === 'contacts' && (
                       <button
                         onClick={() => handleSendRequest(user._id)}

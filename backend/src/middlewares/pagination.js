@@ -8,14 +8,12 @@ export const pagination = (req, res, next) => {
     let page = parseInt(req.query.page) || 1;
     let limit = parseInt(req.query.limit) || 50;
 
-    // Validate
     page = page < 1 ? 1 : page;
     limit = limit < 1 ? 50 : limit;
-    limit = limit > 500 ? 500 : limit;  // Max 500 per page
+    limit = limit > 500 ? 500 : limit;  
 
     const skip = (page - 1) * limit;
 
-    // Attach to request
     req.pagination = {
       page,
       limit,

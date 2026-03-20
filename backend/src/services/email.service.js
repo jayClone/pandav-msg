@@ -2,10 +2,10 @@ import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import logger from '../config/logger.js';
 
-// ✅ RESEND CLIENT
+//  RESEND CLIENT
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ✅ GMAIL TRANSPORTER (Backup)
+//  GMAIL TRANSPORTER (Backup)
 const gmailTransporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -20,15 +20,14 @@ export class EmailService {
    */
   static async sendOTPEmail(email, otp, name, purpose = 'registration') {
     try {
-      console.log('📧 Sending OTP via Resend to:', email);
+      console.log(' Sending OTP via Resend to:', email);
 
-      // ✅ Try Resend first
       if (process.env.RESEND_API_KEY) {
         try {
           const response = await resend.emails.send({
             from: `${process.env.RESEND_FROM_NAME} <${process.env.RESEND_FROM_EMAIL}>`,
             to: email,
-            subject: '🔐 Your Pandav MSG Verification Code',
+            subject: ' Your Pandav MSG Verification Code',
             html: this.getOTPTemplate(otp, name, purpose)
           });
 
@@ -36,37 +35,35 @@ export class EmailService {
             throw new Error(response.error.message);
           }
 
-          logger.info(`✅ OTP email sent via Resend to ${email}`);
+          logger.info(` OTP email sent via Resend to ${email}`);
           return { 
             success: true, 
             messageId: response.data.id,
             provider: 'resend'
           };
         } catch (resendError) {
-          logger.warn(`⚠️ Resend failed: ${resendError.message}, falling back to Gmail`);
-          // Fall through to Gmail backup
+          logger.warn(` Resend failed: ${resendError.message}, falling back to Gmail`);
         }
       }
 
-      // ✅ Fallback to Gmail
-      console.log('📧 Falling back to Gmail...');
+      console.log(' Falling back to Gmail...');
       const mailOptions = {
         from: `Pandav MSG <${process.env.GMAIL_USER}>`,
         to: email,
-        subject: '🔐 Your Pandav MSG Verification Code',
+        subject: ' Your Pandav MSG Verification Code',
         html: this.getOTPTemplate(otp, name, purpose)
       };
 
       const response = await gmailTransporter.sendMail(mailOptions);
 
-      logger.info(`✅ OTP email sent via Gmail to ${email}`);
+      logger.info(` OTP email sent via Gmail to ${email}`);
       return { 
         success: true, 
         messageId: response.messageId,
         provider: 'gmail'
       };
     } catch (error) {
-      logger.error(`❌ Failed to send OTP: ${error.message}`);
+      logger.error(` Failed to send OTP: ${error.message}`);
       return {
         success: false,
         message: `Email error: ${error.message}`
@@ -79,15 +76,14 @@ export class EmailService {
    */
   static async sendWelcomeEmail(email, name) {
     try {
-      console.log('👋 Sending welcome email to:', email);
+      console.log(' Sending welcome email to:', email);
 
-      // ✅ Try Resend first
       if (process.env.RESEND_API_KEY) {
         try {
           const response = await resend.emails.send({
             from: `${process.env.RESEND_FROM_NAME} <${process.env.RESEND_FROM_EMAIL}>`,
             to: email,
-            subject: '👋 Welcome to Pandav MSG!',
+            subject: ' Welcome to Pandav MSG!',
             html: this.getWelcomeTemplate(name)
           });
 
@@ -95,28 +91,26 @@ export class EmailService {
             throw new Error(response.error.message);
           }
 
-          logger.info(`✅ Welcome email sent via Resend to ${email}`);
+          logger.info(` Welcome email sent via Resend to ${email}`);
           return { success: true, provider: 'resend' };
         } catch (resendError) {
-          logger.warn(`⚠️ Resend failed: ${resendError.message}, falling back to Gmail`);
-          // Fall through to Gmail backup
+          logger.warn(` Resend failed: ${resendError.message}, falling back to Gmail`);
         }
       }
 
-      // ✅ Fallback to Gmail
       const mailOptions = {
         from: `Pandav MSG <${process.env.GMAIL_USER}>`,
         to: email,
-        subject: '👋 Welcome to Pandav MSG!',
+        subject: ' Welcome to Pandav MSG!',
         html: this.getWelcomeTemplate(name)
       };
 
       const response = await gmailTransporter.sendMail(mailOptions);
 
-      logger.info(`✅ Welcome email sent via Gmail to ${email}`);
+      logger.info(` Welcome email sent via Gmail to ${email}`);
       return { success: true, provider: 'gmail' };
     } catch (error) {
-      logger.error(`⚠️ Welcome email failed: ${error.message}`);
+      logger.error(` Welcome email failed: ${error.message}`);
       return { success: false, error: error.message };
     }
   }

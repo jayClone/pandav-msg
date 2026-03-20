@@ -12,7 +12,6 @@ import User from '../models/User.js';
  */
 export const protect = async (req, res, next) => {
   try {
-    //  Check Authorization header exists
     const authHeader = req.headers.authorization;
     
     if (!authHeader) {
@@ -22,7 +21,6 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    //  Verify "Bearer" format
     if (!authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         success: false,
@@ -30,8 +28,7 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    // Extract token from "Bearer <token>"
-    const token = authHeader.substring(7);  // Remove "Bearer " prefix
+    const token = authHeader.substring(7);  
 
     if (!token) {
       return res.status(401).json({
@@ -40,7 +37,6 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    // Verify token signature and expiration
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -57,7 +53,6 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    // Verify user still exists in database
     const user = await User.findById(decoded.userId);
     
     if (!user) {
@@ -67,7 +62,6 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    // Attach user data with userId property (string)
     req.user = {
       userId: user._id.toString(),  
       _id: user._id,               

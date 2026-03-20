@@ -45,7 +45,6 @@ export const getChatHistory = async (req, res) => {
     const { before, limit = 50 } = req.query;
     const pageSize = parseInt(limit);
 
-    // validate
     if (!myId) {
       return res.status(401).json({
         success: false,
@@ -68,7 +67,6 @@ export const getChatHistory = async (req, res) => {
       });
     }
 
-    // Build query
     const query = {
       $or: [
         { senderId: myId, receiverId: otherUserId },
@@ -77,12 +75,10 @@ export const getChatHistory = async (req, res) => {
       deleted: { $ne: true }
     };
 
-    // Cursor pagination: fetch messages older than a certain timestamp
     if (before) {
       query.createdAt = { $lt: new Date(before) };
     }
 
-    // Fetch n + 1 messages to determine hasMore
     const messages = await Message.find(query)
       .populate('senderId', 'name email')
       .sort({ createdAt: -1 })
@@ -92,11 +88,8 @@ export const getChatHistory = async (req, res) => {
     const hasMore = messages.length > pageSize;
     const results = hasMore ? messages.slice(0, pageSize) : messages;
 
-    // IMPORTANT: Reverse so we return chronological order (oldest to newest)
-    // for the batch just loaded.
     results.reverse();
 
-    // ✅ BACKGROUND UPDATE: Mark as read
     Message.updateMany(
       {
         senderId: otherUserId,
@@ -156,7 +149,6 @@ export const getConversations = async (req, res) => {
   try {
     const myId = req.user?._id || req.user?.userId;
 
-    // ✅ 1. Try Cache First
     const cacheKey = `conversations:${myId}`;
     const cachedData = await getCache(cacheKey);
 
@@ -169,7 +161,6 @@ export const getConversations = async (req, res) => {
       });
     }
 
-    // ✅ 2. Database Fetch (Aggregation)
     const conversations = await Message.aggregate([
       {
         $match: {
@@ -225,7 +216,6 @@ export const getConversations = async (req, res) => {
       }
     ]);
 
-    // ✅ 3. Store in Cache (1 minute - conversations change frequently)
     await setCache(cacheKey, conversations, 60);
 
     return res.status(200).json({
@@ -345,7 +335,6 @@ export const sendPrivateMessage = async (req, res) => {
     const { receiverId, message } = req.body;
     const senderId = req.user.userId;
 
-    // VALIDATION IN CONTROLLER (cleaner, reusable, testable)
     if (!receiverId) {
       return res.status(400).json({
         success: false,
@@ -360,7 +349,6 @@ export const sendPrivateMessage = async (req, res) => {
       });
     }
 
-    // Save to DB (schema only checks required fields)
     const savedMsg = await Message.create({
       senderId,
       receiverId,
@@ -396,7 +384,6 @@ export const sendGroupMessage = async (req, res) => {
     const { groupId, message } = req.body;
     const senderId = req.user.userId;
 
-    // VALIDATION IN CONTROLLER
     if (!groupId) {
       return res.status(400).json({
         success: false,
@@ -411,7 +398,6 @@ export const sendGroupMessage = async (req, res) => {
       });
     }
 
-    // Save to DB
     const savedMsg = await Message.create({
       senderId,
       groupId,
@@ -454,7 +440,6 @@ export const markGroupMessagesAsRead = async (req, res) => {
     const { groupId } = req.params;
     const myId = req.user?.userId || req.user?._id;
 
-    // ✅ VALIDATE OBJECTID
     if (!isValidObjectId(groupId)) {
       return res.status(400).json({
         success: false,
@@ -462,7 +447,6 @@ export const markGroupMessagesAsRead = async (req, res) => {
       });
     }
 
-    // ✅ CHECK: Group exists
     const group = await Group.findById(groupId);
     if (!group) {
       return res.status(404).json({
@@ -471,7 +455,6 @@ export const markGroupMessagesAsRead = async (req, res) => {
       });
     }
 
-    // ✅ CHECK: User is member
     const myObjId = toObjectId(myId);
     const isMember = group.participants.some(
       p => p.toString() === myObjId.toString()
@@ -484,13 +467,11 @@ export const markGroupMessagesAsRead = async (req, res) => {
       });
     }
 
-    // ✅ MARK UNREAD MESSAGES AS READ
-    // Only mark messages in this group that user didn't send
     const result = await Message.updateMany(
       {
         groupId: groupId,
         chatType: 'group',
-        senderId: { $ne: myObjId },  // Not sent by current user
+        senderId: { $ne: myObjId },  
         'readBy.userId': { $ne: myObjId }
       },
       {
@@ -500,7 +481,7 @@ export const markGroupMessagesAsRead = async (req, res) => {
             readAt: new Date()
           }
         },
-        $set: { read: true }  // Also set old read flag for compatibility
+        $set: { read: true } 
       }
     );
 

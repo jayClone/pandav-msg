@@ -11,7 +11,6 @@ import friendAPI from '@api/friend.api.js';
 import { SOCKET_EVENTS } from "@constants/socketEvents.js";
 import { applyTheme, saveTheme } from "@utils/themeUtils.js";
 import {
-  connectSocket,
   getSocket,
   isSocketConnected,
 } from "@socket/socketClient.js";
@@ -79,19 +78,19 @@ export default function Chat({
   const [searchQuery, setSearchQuery] = useState("");
   const [showThemeChanger, setShowThemeChanger] = useState(false);
   
-  // ✅ ADD THIS: Debounce the search query
+  //  ADD THIS: Debounce the search query
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   
-  // ✅ NEW: Socket connection status
+  //  NEW: Socket connection status
   const [socketStatus, setSocketStatus] = useState('connecting');
   const [socketError, setSocketError] = useState('');
 
   const typingTimeoutRef = useRef(null);
   const lastTypingTimeRef = useRef(0);
   const errorTimeoutRef = useRef(null);
-  const selectedUserIdRef = useRef(null); // ✅ TRACK CURRENT SELECTION WITHOUT RE-RENDERS
+  const selectedUserIdRef = useRef(null); //  TRACK CURRENT SELECTION WITHOUT RE-RENDERS
 
-  // ✅ AUTO-CLEAR ERRORS AFTER 5 SECONDS
+  //  AUTO-CLEAR ERRORS AFTER 5 SECONDS
   useEffect(() => {
     if (error) {
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
@@ -101,7 +100,7 @@ export default function Chat({
     }
   }, [error]);
 
-  // ✅ AUTO-CLEAR SOCKET ERRORS AFTER 5 SECONDS
+  //  AUTO-CLEAR SOCKET ERRORS AFTER 5 SECONDS
   useEffect(() => {
     if (socketError) {
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
@@ -111,13 +110,13 @@ export default function Chat({
     }
   }, [socketError]);
 
-  // ✅ APPLY SAVED THEME ON MOUNT
+  //  APPLY SAVED THEME ON MOUNT
   useEffect(() => {
     const savedTheme = localStorage.getItem('selectedTheme') || 'dark';
     applyTheme(savedTheme);
   }, []);
 
-  // ✅ COMPREHENSIVE PROTECTION: NO BACK, NO CLOSE, NO SWIPE-BACK
+  //  COMPREHENSIVE PROTECTION: NO BACK, NO CLOSE, NO SWIPE-BACK
   useEffect(() => {
     // 1️⃣ PREVENT BACK BUTTON - Replace history so browser back doesn't work
     window.history.replaceState(null, "", window.location.href);
@@ -187,7 +186,7 @@ export default function Chat({
     };
   }, []);
 
-  // ✅ FETCH ONLY FRIENDS (not all users)
+  //  FETCH ONLY FRIENDS (not all users)
   const fetchFriends = useCallback(async () => {
     try {
       setLoadingFriends(true);
@@ -218,13 +217,13 @@ export default function Chat({
     }
   }, [setAllUsers]);
 
-  // ✅ FETCH FRIENDS ON MOUNT
+  //  FETCH FRIENDS ON MOUNT
   useEffect(() => {
     if (!token) return;
     fetchFriends();
   }, [token, fetchFriends]);
 
-  // ✅ HANDLE FRIEND REMOVAL - REFETCH FRIENDS
+  //  HANDLE FRIEND REMOVAL - REFETCH FRIENDS
   const handleFriendRemoved = useCallback((removedUserId) => {
     setAllUsers(prevUsers => {
       return prevUsers.filter(user => user.userId !== removedUserId);
@@ -249,11 +248,11 @@ export default function Chat({
   }, [selectedUserId, fetchFriends, setAllUsers]);
 
   useEffect(() => {
-    // ✅ PHASE 6: CLEAN SOCKET INITIALIZATION
+    //  PHASE 6: CLEAN SOCKET INITIALIZATION
     let socketInitInterval;
     let cleanup;
 
-    // ✅ ONLINE USERS HANDLER
+    //  ONLINE USERS HANDLER
     const handleOnlineUsers = (users) => {
       if (users && users.length > 0) {
         setAllUsers((prevUsers) => {
@@ -267,7 +266,7 @@ export default function Chat({
       }
     };
 
-    // ✅ INCOMING MESSAGE HANDLER
+    //  INCOMING MESSAGE HANDLER
     const handlePrivateMessage = (data) => {
       const isInCurrentChat = String(data.fromUserId) === String(selectedUserIdRef.current);
 
@@ -304,7 +303,7 @@ export default function Chat({
       }
     };
 
-    // ✅ MESSAGE SENT CONFIRMATION
+    //  MESSAGE SENT CONFIRMATION
     const handleMessageSent = (data) => {
       setMessages((prev) => {
         if (prev.some((m) => String(m._id) === String(data._id))) return prev;
@@ -324,7 +323,7 @@ export default function Chat({
       });
     };
 
-    // ✅ MESSAGE READ HANDLER
+    //  MESSAGE READ HANDLER
     const handleMessageRead = (data) => {
       setMessages((prev) => {
         const index = prev.findIndex((m) => String(m._id) === String(data.messageId));
@@ -337,19 +336,19 @@ export default function Chat({
       });
     };
 
-    // ✅ USER OFFLINE HANDLER
+    //  USER OFFLINE HANDLER
     const handleUserOffline = ({ userId: offlineUserId }) => {
       setAllUsers((prev) => prev.map(u => 
         String(u.userId) === String(offlineUserId) ? { ...u, online: false } : u
       ));
     };
 
-    // ✅ TYPING HANDLER
+    //  TYPING HANDLER
     const handleTyping = ({ fromUserId, isTyping }) => {
       setTypingUsers((prev) => ({ ...prev, [fromUserId]: isTyping }));
     };
 
-    // ✅ MESSAGE DELETED HANDLER
+    //  MESSAGE DELETED HANDLER
     const handleMessageDeleted = (data) => {
       setMessages((prev) => prev.filter((m) => String(m._id) !== String(data.messageId)));
     };
@@ -419,7 +418,7 @@ export default function Chat({
     };
   }, [token, navigate, currentUserId, currentUserName, setAllUsers]);
 
-  // ✅ FETCH CHAT HISTORY
+  //  FETCH CHAT HISTORY
   useEffect(() => {
     if (!selectedUserId) return;
 
@@ -483,7 +482,7 @@ export default function Chat({
     messageInputRef.current?.focus();
   }, [selectedUserId, currentUserId]);
 
-  // ✅ LOAD MORE MESSAGES (Infinite Scroll)
+  //  LOAD MORE MESSAGES (Infinite Scroll)
   const loadMoreMessages = useCallback(async () => {
     if (!selectedUserId || loadingMore || !hasMore || !nextCursor) return;
 
@@ -526,7 +525,7 @@ export default function Chat({
     }
   }, [selectedUserId, nextCursor, hasMore, loadingMore]);
 
-  // ✅ SCROLL LISTENER FOR INFINITE SCROLL
+  //  SCROLL LISTENER FOR INFINITE SCROLL
   const handleScroll = useCallback((e) => {
     const { scrollTop } = e.currentTarget;
     // When user hits the top (or near it)
@@ -536,7 +535,7 @@ export default function Chat({
   }, [hasMore, loadingMore, loading, loadMoreMessages]);
 
 
-  // ✅ REMOVED inefficient 2-second history polling
+  //  REMOVED inefficient 2-second history polling
 
   // Auto-scroll
   useEffect(() => {
@@ -554,7 +553,7 @@ export default function Chat({
   }, [messages, loadingMore]);
 
 
-  // ✅ HIDE MOBILE BOTTOM NAV WHEN CHAT IS OPEN
+  //  HIDE MOBILE BOTTOM NAV WHEN CHAT IS OPEN
   useEffect(() => {
     if (onChatOpen) {
       onChatOpen(!!selectedUserId);
@@ -583,7 +582,7 @@ export default function Chat({
         const bUnread = unreadCounts[b.userId] || 0;
         return bUnread - aUnread;
       });
-    // ✅ CHANGE DEPENDENCY: Use debouncedSearchQuery
+    //  CHANGE DEPENDENCY: Use debouncedSearchQuery
   }, [allUsers, currentUserId, debouncedSearchQuery, pinnedChats, unreadCounts]);
 
   // Current chat messages
@@ -679,7 +678,7 @@ export default function Chat({
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
-  // ✅ DELETE MESSAGE HANDLER
+  //  DELETE MESSAGE HANDLER
   const handleDeleteMessage = useCallback(
     async (messageId) => {
       const confirmed = window.confirm("Are you sure you want to delete this message?");
@@ -696,7 +695,7 @@ export default function Chat({
 
         setMessages((prev) => {
           const updated = prev.filter((m) => m._id !== messageId);
-          console.log(`✅ [DELETE] Message removed from UI:`, messageId);
+          console.log(` [DELETE] Message removed from UI:`, messageId);
           return updated;
         });
 
@@ -727,7 +726,7 @@ export default function Chat({
     [selectedUserId]
   );
 
-  // ✅ EXPORT HANDLER FOR PARENT COMPONENT
+  //  EXPORT HANDLER FOR PARENT COMPONENT
   useEffect(() => {
     window.chatHandleFriendRemoved = handleFriendRemoved;
     return () => {
@@ -748,7 +747,7 @@ export default function Chat({
         }}
       />
 
-      {/* ✅ SOCKET STATUS BAR */}
+      {/*  SOCKET STATUS BAR */}
       {socketStatus !== 'connected' && (
         <div className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium flex items-center gap-2 ${
           socketStatus === 'error' 
@@ -937,7 +936,7 @@ export default function Chat({
                     onClick={() => {
                       setSelectedUserId(null);
                       if (window.innerWidth < 768) {
-                        setSidebarOpen(true); // ✅ OPEN SIDEBAR ON MOBILE
+                        setSidebarOpen(true); //  OPEN SIDEBAR ON MOBILE
                       }
                     }}
                     className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
@@ -1098,7 +1097,7 @@ export default function Chat({
 
               {/* Input Area - Mobile Optimized */}
               <div className="px-2 xs:px-2.5 sm:px-3 md:px-4 py-2 xs:py-2.5 sm:py-3 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))] flex-shrink-0">
-                {/* ✅ ACTION ERRORS */}
+                {/*  ACTION ERRORS */}
                 {error && (
                   <div className="mb-1.5 sm:mb-2 p-2 sm:p-2.5 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-xs flex items-center gap-1.5 animate-in fade-in slide-in-from-top duration-200">
                     <AlertCircle className="w-3.5 sm:w-4 h-3.5 sm:h-4 flex-shrink-0" />

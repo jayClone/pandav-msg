@@ -17,7 +17,7 @@ export function ProtectedRoute({ children }) {
           return;
         }
         
-        // ✅ FIXED: Use /auth/me instead of /auth/current
+        //  FIXED: Use /auth/me instead of /auth/current
         const response = await authService.getCurrentUser();
         
         if (response.success) {

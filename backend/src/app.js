@@ -13,12 +13,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 // ============================================
-// ✅ TRUST PROXY (RENDER PASSES REAL IP HERE)
+//  TRUST PROXY (RENDER PASSES REAL IP HERE)
 // ============================================
 app.set('trust proxy', 1);
 
 // ============================================
-// ✅ ENSURE LOGS DIRECTORY EXISTS
+//  ENSURE LOGS DIRECTORY EXISTS
 // ============================================
 const logsDir = path.join(__dirname, '..', 'logs');
 if (!fs.existsSync(logsDir)) {
@@ -35,14 +35,12 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 //  ADD COMPRESSION MIDDLEWARE (AFTER body parser, BEFORE routes)
 app.use(compression({
-  level: 6,  // Balance between compression ratio and speed
-  threshold: 10 * 1024,  // Only compress responses larger than 10KB
+  level: 6, 
+  threshold: 10 * 1024,  
   filter: (req, res) => {
-    // Don't compress if client doesn't want it
     if (req.headers['x-no-compression']) {
       return false;
     }
-    // Use the default filter
     return compression.filter(req, res);
   }
 }));
@@ -62,9 +60,9 @@ const allowedOrigins = [
   'http://localhost:3001',
   process.env.CLIENT_URL,
   process.env.FRONTEND_URL,
-  'https://pandav-msg.vercel.app',  // ✅ Explicit backup
+  'https://pandav-msg.vercel.app',  
   'https://pandav-msg-frontend.vercel.app'
-].filter(Boolean); // Remove undefined/null values
+].filter(Boolean); 
 
 console.log('🔐 [CORS] Allowed origins:', allowedOrigins);
 
@@ -96,7 +94,6 @@ app.use(cors({
 // ============================================
 
 if (process.env.NODE_ENV === 'development') {
-  // ✅ KEEP detailed logging only in dev
   app.use((req, res, next) => {
     if (req.path.includes('/auth/register') || req.path.includes('/otp')) {
       console.log(`\n🔍 [DETAILED-LOG] ${req.method} ${req.path}`);
@@ -114,9 +111,7 @@ if (process.env.NODE_ENV === 'development') {
     next();
   });
 } else {
-  // ✅ MINIMAL logging in production
   app.use((req, res, next) => {
-    // Only log errors or important endpoints
     if (req.path.includes('/auth') || req.path.includes('/error')) {
       console.log(`📨 [${req.method}] ${req.path}`);
     }

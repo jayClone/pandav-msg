@@ -10,7 +10,6 @@ export const getAllUsers = async (req, res) => {
     const currentUserId = req.user._id;
     const { skip, limit, page } = req.pagination;
 
-    // ✅ 1. Try Cache First
     const cacheKey = `users:all:page:${page}:limit:${limit}:exclude:${currentUserId}`;
     const cachedData = await getCache(cacheKey);
 
@@ -22,7 +21,6 @@ export const getAllUsers = async (req, res) => {
       });
     }
 
-    // ✅ 2. Database Fetch
     const [users, total] = await Promise.all([
       User.find({ _id: { $ne: currentUserId } })
         .select('_id name email isOnline lastSeen createdAt')
@@ -33,7 +31,6 @@ export const getAllUsers = async (req, res) => {
       User.countDocuments({ _id: { $ne: currentUserId } })
     ]);
 
-    // Format response
     const formattedUsers = users.map(user => ({
       _id: user._id,
       userId: user._id,
@@ -54,7 +51,6 @@ export const getAllUsers = async (req, res) => {
       pages: Math.ceil(total / limit)
     };
 
-    // ✅ 3. Store in Cache for 5 minutes
     await setCache(cacheKey, responseData, 300);
 
     return res.status(200).json({
@@ -84,7 +80,6 @@ export const getUserProfile = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    // Validate ObjectId format
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(400).json({
         success: false,
@@ -103,7 +98,6 @@ export const getUserProfile = async (req, res) => {
       });
     }
 
-    // Format response
     const formattedUser = {
       _id: user._id,
       userId: user._id,
@@ -142,7 +136,7 @@ export const searchUsers = async (req, res) => {
   try {
     const { q } = req.query;
     const currentUserId = req.user._id;
-    const { skip, limit } = req.pagination;  // ✅ USE pagination middleware
+    const { skip, limit } = req.pagination; 
 
     if (!q || q.trim().length === 0) {
       return res.status(400).json({
@@ -153,7 +147,6 @@ export const searchUsers = async (req, res) => {
 
     const searchTerm = q.trim();
 
-    // ✅ COUNT TOTAL for pagination info
     const total = await User.countDocuments({
       _id: { $ne: currentUserId },
       $or: [
@@ -171,8 +164,8 @@ export const searchUsers = async (req, res) => {
     })
       .select('_id name email isOnline lastSeen')
       .lean()
-      .skip(skip)        // ✅ ADD
-      .limit(limit)      // ✅ ADD
+      .skip(skip)       
+      .limit(limit)      
       .sort({ name: 1 });
 
     return res.status(200).json({
@@ -184,7 +177,7 @@ export const searchUsers = async (req, res) => {
         status: user.isOnline ? 'online' : 'offline'
       })),
       count: users.length,
-      total,             // ✅ ADD
+      total,            
       page: req.pagination.page,
       limit: req.pagination.limit,
       pages: Math.ceil(total / limit)

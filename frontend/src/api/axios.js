@@ -2,7 +2,6 @@ import axios from "axios";
 
 const API_VERSION = 'v1';
 
-// ✅ USE RELATIVE PATH - Vercel rewrites /api/* to Railway
 const API_BASE_URL = `/api/${API_VERSION}`;
 
 const API = axios.create({
@@ -13,7 +12,6 @@ const API = axios.create({
     }
 });
 
-// Add token to every request
 API.interceptors.request.use((config) => {
     const token = localStorage.getItem("token");
     if (token) {
@@ -28,20 +26,16 @@ API.interceptors.request.use((config) => {
  */
 const extractErrorMessage = (error) => {
     if (error.response) {
-        // Server responded with a status code other than 2xx
         return error.response.data?.message ||
             error.response.data?.error ||
             `Error ${error.response.status}: ${error.response.statusText}`;
     } else if (error.request) {
-        // Request was made but no response received
         return "No response from server. Please check your internet connection.";
     } else {
-        // Something happened in setting up the request
         return error.message || "An unexpected error occurred.";
     }
 };
 
-// ✅ FIXED: Handle errors WITHOUT auto-redirect on login page
 API.interceptors.response.use(
     (response) => response,
     (error) => {

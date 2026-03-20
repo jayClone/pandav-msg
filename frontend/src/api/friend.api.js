@@ -9,7 +9,7 @@ const friendAPI = {
   getPendingRequests: () =>
     axios.get('/friends/pending'),
 
-  // ✅ GET SENT REQUESTS (sent by user) - ADD THIS
+  //  GET SENT REQUESTS (sent by user) - ADD THIS
   getSentRequests: () =>
     axios.get('/friends/sent'),
 
@@ -37,7 +37,7 @@ const friendAPI = {
   getAllUsers: () =>
     axios.get('/users'),
 
-  // ✅ GET SUMMARY (Phase 4 optimization)
+  //  GET SUMMARY (Phase 4 optimization)
   getFriendshipSummary: () =>
     axios.get('/friends/summary'),
 };

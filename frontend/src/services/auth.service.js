@@ -1,32 +1,28 @@
-import API from '@api/axios.js';  // ✅ CHANGED: Use single axios
+import API from '@api/axios.js';  //  CHANGED: Use single axios
 
 const authService = {
   /**
    * Register new user with OTP
    */
   register: async (userData) => {
-    try {
-      if (!userData.otp) {
-        throw new Error('OTP is missing. Please verify your email first.');
-      }
-
-      const payload = {
-        name: userData.name.trim(),
-        email: userData.email.trim().toLowerCase(),
-        password: userData.password,
-        otp: userData.otp.toString().trim()
-      };
-
-      const response = await API.post('/auth/register', payload);
-
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
-      }
-
-      return response.data;
-    } catch (error) {
-      throw error; // Axios interceptor already standardized this
+    if (!userData.otp) {
+      throw new Error('OTP is missing. Please verify your email first.');
     }
+
+    const payload = {
+      name: userData.name.trim(),
+      email: userData.email.trim().toLowerCase(),
+      password: userData.password,
+      otp: userData.otp.toString().trim()
+    };
+
+    const response = await API.post('/auth/register', payload);
+
+    if (response.data.token) {
+      localStorage.setItem('token', response.data.token);
+    }
+
+    return response.data;
   },
 
   login: async (credentials) => {
@@ -54,12 +50,8 @@ const authService = {
    * Get current user
    */
   getCurrentUser: async () => {
-    try {
-      const response = await API.get('/auth/current');
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
+    const response = await API.get('/auth/current');
+    return response.data;
   },
 
   /**

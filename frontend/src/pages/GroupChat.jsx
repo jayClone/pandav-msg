@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useEffect, useState, useRef } from 'react'
 import axios from 'axios'
 import groupService from '@services/group.service.js'
 import { SOCKET_EVENTS } from '@constants/socketEvents.js'
-import { connectSocket, getSocket } from '@socket/socketClient.js'
+import { getSocket } from '@socket/socketClient.js'
 import {
   Plus,
   Search,
@@ -47,7 +47,7 @@ export default function GroupChat({
   const [availableUsers, setAvailableUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   
-  // ✅ ADD THIS LINE: Debounce the search query
+  //  ADD THIS LINE: Debounce the search query
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   const [pinnedGroups, setPinnedGroups] = useState([]);
@@ -69,7 +69,7 @@ export default function GroupChat({
   const [onlineCount, setOnlineCount] = useState(0);
   const [lastMessages, setLastMessages] = useState({});
   const [groupOnlineMembers, setGroupOnlineMembers] = useState([]);
-  const [showOptionsMenu, setShowOptionsMenu] = useState(false); // ✅ ADD FOR MOBILE
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false); //  ADD FOR MOBILE
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -81,7 +81,7 @@ export default function GroupChat({
   const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // ✅ ADD NEW STATE FOR ADMIN INFO
+  //  ADD NEW STATE FOR ADMIN INFO
   const [adminInfo, setAdminInfo] = useState(null);
 
   // ═══════════════════════════════════════════════════════════════════
@@ -241,7 +241,7 @@ export default function GroupChat({
     };
   }, [selectedGroup]);
 
-  // ✅ FIXED: Now uses debouncedSearchQuery (which is defined above)
+  //  FIXED: Now uses debouncedSearchQuery (which is defined above)
   const filteredGroups = useMemo(() => {
     const safeGroups = Array.isArray(groups) ? groups : [];
     
@@ -252,7 +252,7 @@ export default function GroupChat({
         }
         return true;
       })
-      // ✅ USE DEBOUNCED QUERY HERE
+      //  USE DEBOUNCED QUERY HERE
       .filter((group) =>
         group.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
       )
@@ -263,7 +263,7 @@ export default function GroupChat({
         if (!aIsPinned && bIsPinned) return 1;
         return 0;
       });
-  }, [groups, debouncedSearchQuery, pinnedGroups]); // ✅ CORRECT DEPENDENCY
+  }, [groups, debouncedSearchQuery, pinnedGroups]); //  CORRECT DEPENDENCY
 
   // ═══════════════════════════════════════════════════════════════════
   // CALLBACK FUNCTIONS (THIRD - BEFORE useEffect)
@@ -317,7 +317,7 @@ export default function GroupChat({
     setMembers([]); 
     setMessageReadStatus({});
     
-    // ✅ ONLY CLOSE SIDEBAR ON MOBILE, NOT ON DESKTOP
+    //  ONLY CLOSE SIDEBAR ON MOBILE, NOT ON DESKTOP
     if (window.innerWidth < 768) {
       setSidebarOpen(false);
     }
@@ -330,14 +330,14 @@ export default function GroupChat({
       setMembers(groupMembers);
       setOnlineCount(groupMembers.length);
       
-      // ✅ SET ADMIN INFO
+      //  SET ADMIN INFO
       setAdminInfo({
         adminId: groupDetails.adminId,
         adminName: groupDetails.adminName,
         adminEmail: groupDetails.adminEmail
       });
       
-      // ✅ ADD THIS: Update selectedGroup with adminId
+      //  ADD THIS: Update selectedGroup with adminId
       setSelectedGroup(prev => ({
         ...prev,
         adminId: groupDetails.adminId,
@@ -421,7 +421,7 @@ export default function GroupChat({
     messageInputRef.current?.focus();
   }, [token, setSidebarOpen]);
 
-  // ✅ LOAD MORE GROUP MESSAGES
+  //  LOAD MORE GROUP MESSAGES
   const loadMoreGroupMessages = useCallback(async () => {
     if (!selectedGroup || loadingMore || !hasMore || !nextCursor) return;
 
@@ -477,7 +477,7 @@ export default function GroupChat({
     }
   }, [token, selectedGroup, nextCursor, hasMore, loadingMore]);
 
-  // ✅ SCROLL LISTENER FOR GROUP INFINITE SCROLL
+  //  SCROLL LISTENER FOR GROUP INFINITE SCROLL
   const handleScroll = useCallback((e) => {
     const { scrollTop } = e.currentTarget;
     if (scrollTop < 50 && hasMore && !loadingMore && !loading) {
@@ -565,7 +565,7 @@ export default function GroupChat({
       setSelectedMembers([]);
       setSearchUsers("");
       setShowCreateGroupModal(false);
-      // alert("✅ Group created successfully!");
+      // alert(" Group created successfully!");
     } catch (err) {
       const errorMsg = err.message || "Failed to create group";
       setError(errorMsg);
@@ -587,7 +587,7 @@ export default function GroupChat({
       setAddMemberLoading(true);
       setError(null);
 
-      // ✅ FIX: Fetch FRIENDS list instead of all users
+      //  FIX: Fetch FRIENDS list instead of all users
       const response = await friendAPI.getFriends();
 
       if (response.data?.success) {
@@ -630,24 +630,24 @@ export default function GroupChat({
     try {
       const groupId = selectedGroup._id || selectedGroup.id;
       
-      // ✅ Call remove member API
+      //  Call remove member API
       const updatedGroupResponse = await groupService.removeMember(groupId, memberId);
 
-      // ✅ Get updated members list
+      //  Get updated members list
       const updatedMembers = updatedGroupResponse.members || updatedGroupResponse.participants || [];
       
-      // ✅ UPDATE STATE IMMEDIATELY
+      //  UPDATE STATE IMMEDIATELY
       setMembers(updatedMembers);
       setOnlineCount(updatedMembers.length);
       
-      // ✅ Update selected group
+      //  Update selected group
       setSelectedGroup(prev => ({
         ...prev,
         members: updatedMembers,
         participants: updatedMembers
       }));
       
-      // ✅ Update groups list
+      //  Update groups list
       setGroups((prev) =>
         prev.map((g) =>
           (g._id || g.id) === groupId
@@ -656,7 +656,6 @@ export default function GroupChat({
         )
       );
 
-      setMsg('✅ Member removed from group');
       
     } catch (err) {
       const errorMessage = err.message || 'Failed to remove member';
@@ -680,7 +679,7 @@ export default function GroupChat({
 
       await groupService.deleteGroup(groupId);
 
-      // ✅ UPDATE STATE IMMEDIATELY
+      //  UPDATE STATE IMMEDIATELY
       setGroups(prev => {
         const filtered = prev.filter(g => {
           const gId = g._id || g.id || g.groupId;
@@ -689,7 +688,7 @@ export default function GroupChat({
         return filtered;
       });
 
-      // ✅ Clear selected group
+      //  Clear selected group
       setSelectedGroup(null);
       setMessages([]);
       setMembers([]);
@@ -697,7 +696,7 @@ export default function GroupChat({
       setAdminInfo(null);
       setShowOptionsMenu(false);
       
-      alert('✅ Group deleted successfully');
+      alert(' Group deleted successfully');
       
     } catch (err) {
       console.error('Delete group error:', err);
@@ -740,7 +739,7 @@ export default function GroupChat({
     }
   }, [showCreateGroupModal, token]);
 
-  // ✅ COMPREHENSIVE PROTECTION: NO BACK, NO CLOSE, NO SWIPE-BACK
+  //  COMPREHENSIVE PROTECTION: NO BACK, NO CLOSE, NO SWIPE-BACK
   useEffect(() => {
     // 1️⃣ PREVENT BACK BUTTON - Replace history so browser back doesn't work
     window.history.replaceState(null, "", window.location.href);
@@ -821,7 +820,7 @@ export default function GroupChat({
       if (!socket) return false;
 
       socket.on('connect', () => {
-        console.log('✅ Socket connected successfully');
+        console.log(' Socket connected successfully');
       });
 
       socket.on('disconnect', () => {
@@ -1015,13 +1014,13 @@ export default function GroupChat({
 
       if (response.success) {
 
-        // ✅ UPDATE STATE IMMEDIATELY
+        //  UPDATE STATE IMMEDIATELY
         setGroups((prevGroups) => {
           const filtered = prevGroups.filter((g) => (g._id || g.id) !== groupId);
           return filtered;
         });
 
-        // ✅ Clear selected group and data
+        //  Clear selected group and data
         setSelectedGroup(null);
         setMessages([]);
         setMembers([]);
@@ -1075,7 +1074,7 @@ useEffect(() => {
 }, [showOptionsMenu]);
 
 
-  // ✅ HIDE MOBILE BOTTOM NAV WHEN GROUP CHAT IS OPEN
+  //  HIDE MOBILE BOTTOM NAV WHEN GROUP CHAT IS OPEN
   useEffect(() => {
     if (onChatOpen) {
       onChatOpen(!!selectedGroup);
@@ -1084,9 +1083,9 @@ useEffect(() => {
 
   return (
     <>
-      {/* ✅ MAIN CONTENT WRAPPER - Flex row for desktop layout (like Chat page) */}
+      {/*  MAIN CONTENT WRAPPER - Flex row for desktop layout (like Chat page) */}
       <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
-        {/* ✅ RESPONSIVE GROUPS SIDEBAR */}
+        {/*  RESPONSIVE GROUPS SIDEBAR */}
         <div
           className={`${sidebarOpen ? "w-full sm:w-72 md:w-80" : "w-0"} bg-[rgb(var(--bg-secondary))] sm:glass-effect border-r border-[rgb(var(--border-secondary))] flex flex-col transition-all duration-300 overflow-hidden absolute sm:relative sm:z-0 z-40 h-full min-h-0`}
         >
@@ -1361,7 +1360,7 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* ✅ RESPONSIVE MEMBERS PREVIEW */}
+            {/*  RESPONSIVE MEMBERS PREVIEW */}
             {showMembersPreview && (
               <div className="p-3 sm:p-6 bg-linear-to-r from-[rgb(var(--bg-secondary))] to-[rgb(var(--bg-tertiary))]/30 border-b-2 border-green-500/20 max-h-72 overflow-y-auto custom-scrollbar flex-shrink-0">
                 {/* Header */}
@@ -1409,7 +1408,7 @@ useEffect(() => {
                         u => (u.userId === memberId || u.userId === member._id || u.userId === member.userId)
                       );
                       
-                      // ✅ CHECK IF THIS MEMBER IS ADMIN
+                      //  CHECK IF THIS MEMBER IS ADMIN
                       const isAdmin = adminInfo?.adminId === memberId || 
                                adminInfo?.adminId?._id === memberId ||
                                selectedGroup?.adminId === memberId;
@@ -1600,10 +1599,10 @@ useEffect(() => {
           </div>
         )}
       </div>
-      {/* ✅ CLOSE MAIN CONTENT WRAPPER */}
+      {/*  CLOSE MAIN CONTENT WRAPPER */}
       </div>
 
-      {/* ✅ CREATE GROUP MODAL - RESPONSIVE */}
+      {/*  CREATE GROUP MODAL - RESPONSIVE */}
       {showCreateGroupModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-[rgb(var(--border-secondary))]">
@@ -1766,7 +1765,7 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ✅ DELETE CONFIRM - RESPONSIVE */}
+      {/*  DELETE CONFIRM - RESPONSIVE */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 rounded-lg border border-red-600 p-6 max-w-md w-full">
@@ -1794,7 +1793,7 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ✅ ADD MEMBER MODAL - RESPONSIVE */}
+      {/*  ADD MEMBER MODAL - RESPONSIVE */}
       {showAddMemberModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-[rgb(var(--bg-secondary))] rounded-lg border border-blue-600 p-6 max-w-md w-full max-h-96 overflow-y-auto">
@@ -1889,22 +1888,22 @@ useEffect(() => {
                     setAddMemberLoading(true);
                     const groupId = selectedGroup._id || selectedGroup.id;
 
-                    // ✅ Add each selected user
+                    //  Add each selected user
                     for (const userId of selectedUsersToAdd) {
                       console.log(`➕ Adding user ${userId} to group ${groupId}`);
                       await groupService.addMember(groupId, userId);
                     }
 
-                    // ✅ IMMEDIATELY REFRESH GROUP DATA
+                    //  IMMEDIATELY REFRESH GROUP DATA
                     console.log('🔄 Refreshing group data...');
                     const updatedGroupResponse = await groupService.getGroup(groupId);
                     
-                    console.log('✅ Updated group:', updatedGroupResponse);
+                    console.log(' Updated group:', updatedGroupResponse);
                     
-                    // ✅ Updated members list
+                    //  Updated members list
                     const updatedMembers = updatedGroupResponse.members || updatedGroupResponse.participants || [];
                     
-                    // ✅ Update state immediately
+                    //  Update state immediately
                     setMembers(updatedMembers);
                     setSelectedGroup(prev => ({
                       ...prev,
@@ -1912,7 +1911,7 @@ useEffect(() => {
                       participants: updatedMembers
                     }));
                     
-                    // ✅ Update groups list count
+                    //  Update groups list count
                     setGroups(prevGroups =>
                       prevGroups.map(g =>
                         (g._id || g.id) === groupId

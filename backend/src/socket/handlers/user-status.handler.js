@@ -7,18 +7,14 @@ import Group from '../../models/Group.js';
  */
 export async function handleUserConnect(socket, io, userId, email, name, onlineUsers) {
     try {
-        // Set user online in db
         await User.findByIdAndUpdate(userId, {
             isOnline: true,
             lastSeen: Date.now()
         }).catch(() => { });
 
-        // ✅ JOIN PERSONAL ROOM
-        // This allows io.to(userId) to reach all tabs/connections of this user
         socket.join(userId.toString());
         console.log(`🏠 [SOCKET] User ${name} joined personal room: ${userId}`);
 
-        // Store user in online users map
         onlineUsers.set(userId, {
             socketId: socket.id,
             name: name,
@@ -26,19 +22,16 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
             userId: userId
         });
 
-        // ✅ UPDATE ALL GROUPS - ADD TO ONLINE MEMBERS
         const userGroups = await Group.find({
             participants: userId
         });
 
         for (const group of userGroups) {
-            // Add to online members if not already there
             if (!group.onlineMembers.includes(userId)) {
                 group.onlineMembers.push(userId);
                 await group.save();
             }
 
-            // Notify group that user came online
             io.to(group._id.toString()).emit('user_came_online', {
                 groupId: group._id,
                 userId: userId,
@@ -47,7 +40,6 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
             });
         }
 
-        // Broadcast online users to all connected clients
         io.emit('online_users', Array.from(onlineUsers.values()).map(u => ({
             userId: u.userId,
             name: u.name,
@@ -56,7 +48,6 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
         })));
 
     } catch (error) {
-        // Silently handle connection errors
     }
 }
 
@@ -67,13 +58,11 @@ export async function handleUserDisconnect(socket, io, userId, name, onlineUsers
     try {
         onlineUsers.delete(userId);
 
-        // Set user offline in DB
         await User.findByIdAndUpdate(userId, {
             isOnline: false,
             lastSeen: Date.now()
         }).catch(() => { });
 
-        // ✅ UPDATE ALL GROUPS - REMOVE FROM ONLINE MEMBERS
         const userGroups = await Group.find({
             onlineMembers: userId
         });
@@ -84,7 +73,6 @@ export async function handleUserDisconnect(socket, io, userId, name, onlineUsers
             );
             await group.save();
 
-            // Notify group that user went offline
             io.to(group._id.toString()).emit('user_went_offline', {
                 groupId: group._id,
                 userId: userId,
@@ -93,19 +81,15 @@ export async function handleUserDisconnect(socket, io, userId, name, onlineUsers
             });
         }
 
-        // Broadcast updated online users
         io.emit('online_users', Array.from(onlineUsers.values()).map(u => ({
             userId: u.userId,
             name: u.name,
             email: u.email,
             online: true
         })));
-
-        // Emit user offline event
         io.emit('user_offline', { userId, name });
 
     } catch (error) {
-        // Silently handle disconnection errors
     }
 }
 

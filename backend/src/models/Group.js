@@ -8,7 +8,7 @@ const groupSchema = new mongoose.Schema(
       trim: true,
       minlength: [3, "Group name must be at least 3 characters"],
       maxlength: [50, "Group name cannot exceed 50 characters"],
-      index: true, // ✅ ADD: For name searches
+      index: true,
     },
 
     participants: {
@@ -21,25 +21,22 @@ const groupSchema = new mongoose.Schema(
         },
         message: "Group must have at least 1 participant",
       },
-      index: true, // ✅ KEEP: For finding groups by participant
+      index: true, 
     },
 
     adminId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Admin is required"],
-      index: true, // ✅ ADD: For admin-based queries
+      index: true, 
     },
 
-    // ✅ NEW: Track online members in real-time
     onlineMembers: {
       type: [mongoose.Schema.Types.ObjectId],
       ref: "User",
       default: [],
-      // Don't index - changes too frequently
     },
 
-    // ✅ NEW: Track read receipts per message
     messageReadReceipts: [
       {
         messageId: mongoose.Schema.Types.ObjectId,
@@ -55,7 +52,7 @@ const groupSchema = new mongoose.Schema(
     createdAt: {
       type: Date,
       default: Date.now,
-      index: true, // ✅ ADD: For sorting by creation time
+      index: true,
     },
   },
   {
@@ -63,18 +60,13 @@ const groupSchema = new mongoose.Schema(
   }
 );
 
-// ✅ COMPOUND INDEXES for common queries
 
-// 1️⃣ Find groups by participant + creation time
 groupSchema.index({ participants: 1, createdAt: -1 });
 
-// 2️⃣ Find groups by admin
 groupSchema.index({ adminId: 1, createdAt: -1 });
 
-// 3️⃣ Find groups by admin + participant (for membership checks)
 groupSchema.index({ adminId: 1, participants: 1 });
 
-// 4️⃣ Message read receipts
 groupSchema.index({ "messageReadReceipts.messageId": 1 });
 
 export default mongoose.model("Group", groupSchema);

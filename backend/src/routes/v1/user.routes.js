@@ -25,7 +25,6 @@ router.get('/', protect,pagination, asyncHandler(getAllUsers));
  * @access Private
  * Query: q=searchTerm
  */
-// ✅ ADD pagination to search
 router.get('/search', protect, pagination, asyncHandler(searchUsers));
 
 /**

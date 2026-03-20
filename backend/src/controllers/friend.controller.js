@@ -18,7 +18,6 @@ export const sendFriendRequest = async (req, res) => {
       });
     }
 
-    // validate objectId format First
     if (!mongoose.Types.ObjectId.isValid(receiverId)) {
       return res.status(400).json({
         success: false,
@@ -26,7 +25,6 @@ export const sendFriendRequest = async (req, res) => {
       });
     }
 
-    // ✅ Cannot send request to yourself
     if (senderId.toString() === receiverId.toString()) {
       return res.status(400).json({
         success: false,
@@ -34,7 +32,6 @@ export const sendFriendRequest = async (req, res) => {
       });
     }
 
-    // ✅ Check if receiver exists
     const receiver = await User.findById(receiverId);
     if (!receiver) {
       return res.status(404).json({
@@ -43,7 +40,6 @@ export const sendFriendRequest = async (req, res) => {
       });
     }
 
-    // ✅ Check if already friends
     const existingFriend = await Friend.findOne({
       $or: [
         { senderId, receiverId, status: 'accepted' },
@@ -58,8 +54,6 @@ export const sendFriendRequest = async (req, res) => {
       });
     }
 
-    // ✅ Check if request already pending FROM THIS SENDER
-    // (Allow reverse requests if the other direction is pending)
     const pendingRequest = await Friend.findOne({
       senderId,
       receiverId,
@@ -73,7 +67,6 @@ export const sendFriendRequest = async (req, res) => {
       });
     }
 
-    // ✅ If reverse request exists (B→A when A→B pending), delete old one first
     const reverseRequest = await Friend.findOne({
       senderId: receiverId,
       receiverId: senderId,
@@ -81,11 +74,9 @@ export const sendFriendRequest = async (req, res) => {
     });
 
     if (reverseRequest) {
-      // Delete old reverse request, allow new one from sender
       await Friend.findByIdAndDelete(reverseRequest._id);
     }
 
-    // ✅ Create friend request
     const friendRequest = await Friend.create({
       senderId,
       receiverId,
@@ -115,7 +106,6 @@ export const acceptFriendRequest = async (req, res) => {
     const receiverId = req.user?.id || req.user?._id;
     const { requestId } = req.params;
 
-    // ✅ Validate ObjectId format first
     if (!mongoose.Types.ObjectId.isValid(requestId)) {
       return res.status(400).json({
         success: false,
@@ -132,7 +122,6 @@ export const acceptFriendRequest = async (req, res) => {
       });
     }
 
-    // ✅ Check if request is for this user
     if (friendRequest.receiverId.toString() !== receiverId.toString()) {
       return res.status(403).json({
         success: false,
@@ -140,7 +129,6 @@ export const acceptFriendRequest = async (req, res) => {
       });
     }
 
-    // ✅ Check if already accepted
     if (friendRequest.status === 'accepted') {
       return res.status(400).json({
         success: false,
@@ -148,12 +136,10 @@ export const acceptFriendRequest = async (req, res) => {
       });
     }
 
-    // ✅ Update status
     friendRequest.status = 'accepted';
     friendRequest.acceptedAt = new Date();
     await friendRequest.save();
 
-    // ✅ Invalidate cache for both users (friends list + summary)
     await Promise.all([
       deleteCache(`friends:${friendRequest.senderId}`),
       deleteCache(`friends:${receiverId}`),
@@ -186,7 +172,6 @@ export const rejectFriendRequest = async (req, res) => {
     const userId = req.user?.id || req.user?._id;
     const { requestId } = req.params;
 
-    // ✅ Validate ObjectId format first
     if (!mongoose.Types.ObjectId.isValid(requestId)) {
       return res.status(400).json({
         success: false,
@@ -203,7 +188,6 @@ export const rejectFriendRequest = async (req, res) => {
       });
     }
 
-    // ✅ Check if user is involved in this request
     const isInvolved =
       friendRequest.senderId.toString() === userId.toString() ||
       friendRequest.receiverId.toString() === userId.toString();
@@ -215,10 +199,8 @@ export const rejectFriendRequest = async (req, res) => {
       });
     }
 
-    // ✅ Delete request
     await Friend.findByIdAndDelete(requestId);
 
-    // ✅ Invalidate cache for both users (friends list + summary)
     await Promise.all([
       deleteCache(`friends:${friendRequest.senderId}`),
       deleteCache(`friends:${friendRequest.receiverId}`),
@@ -250,7 +232,6 @@ export const getSentRequests = async (req, res) => {
     const userId = req.user?.id || req.user?._id;
     const { skip, limit, page } = req.pagination || { skip: 0, limit: 50, page: 1 };
 
-    // ✅ 1. Try Cache First
     const cacheKey = `requests:sent:${userId}:page:${page}:limit:${limit}`;
     const cachedData = await getCache(cacheKey);
     if (cachedData) {
@@ -261,7 +242,6 @@ export const getSentRequests = async (req, res) => {
       });
     }
 
-    // ✅ 2. Database Fetch
     const [requests, total] = await Promise.all([
       Friend.find({
         senderId: userId,
@@ -285,7 +265,6 @@ export const getSentRequests = async (req, res) => {
       pages: Math.ceil(total / limit)
     };
 
-    // ✅ 3. Store in Cache (30 seconds - requests change frequently)
     await setCache(cacheKey, responseData, 30);
 
     return res.status(200).json({
@@ -311,7 +290,6 @@ export const getPendingRequests = async (req, res) => {
     const userId = req.user?.id || req.user?._id;
     const { skip, limit, page } = req.pagination || { skip: 0, limit: 50, page: 1 };
 
-    // ✅ 1. Try Cache First
     const cacheKey = `requests:pending:${userId}:page:${page}:limit:${limit}`;
     const cachedData = await getCache(cacheKey);
     if (cachedData) {
@@ -322,7 +300,6 @@ export const getPendingRequests = async (req, res) => {
       });
     }
 
-    // ✅ 2. Database Fetch
     const [requests, total] = await Promise.all([
       Friend.find({
         receiverId: userId,
@@ -346,7 +323,6 @@ export const getPendingRequests = async (req, res) => {
       pages: Math.ceil(total / limit)
     };
 
-    // ✅ 3. Store in Cache (30 seconds)
     await setCache(cacheKey, responseData, 30);
 
     return res.status(200).json({
@@ -368,7 +344,6 @@ export const getFriends = async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
 
-    // ✅ 1. Try Cache First
     const cacheKey = `friends:${userId}`;
     const cachedData = await getCache(cacheKey);
 
@@ -380,7 +355,6 @@ export const getFriends = async (req, res) => {
       });
     }
 
-    // ✅ 2. Database Fetch
     const { skip, limit, page } = req.pagination || { skip: 0, limit: 50, page: 1 };
 
     const [friends, total] = await Promise.all([
@@ -404,7 +378,6 @@ export const getFriends = async (req, res) => {
       })
     ]);
 
-    // ✅ Flatten friends list
     const friendsList = friends.map((friend) => {
       const friendUser =
         friend.senderId._id.toString() === userId.toString()
@@ -428,7 +401,6 @@ export const getFriends = async (req, res) => {
       pages: Math.ceil(total / limit)
     };
 
-    // ✅ 3. Store in Cache (1 hour)
     await setCache(cacheKey, responseData, 3600);
 
     return res.status(200).json({
@@ -454,7 +426,6 @@ export const checkFriendStatus = async (req, res) => {
     const userId = req.user?.id || req.user?._id;
     const { otherUserId } = req.params;
 
-    // Validate ObjectId format
     if (!mongoose.Types.ObjectId.isValid(otherUserId)) {
       return res.status(400).json({
         success: false,
@@ -501,7 +472,6 @@ export const removeFriend = async (req, res) => {
     const userId = req.user?.id || req.user?._id;
     const { friendId } = req.params;
 
-    // ✅ Validate ObjectId format
     if (!mongoose.Types.ObjectId.isValid(friendId)) {
       return res.status(400).json({
         success: false,
@@ -525,7 +495,6 @@ export const removeFriend = async (req, res) => {
 
     await Friend.findByIdAndDelete(friend._id);
 
-    // ✅ Invalidate cache for both users
     await Promise.all([
       deleteCache(`friends:${userId}`),
       deleteCache(`friends:${friendId}`)
@@ -552,7 +521,6 @@ export const getFriendshipSummary = async (req, res) => {
   try {
     const userId = req.user?._id || req.user?.id;
 
-    // ✅ 1. Try Cache First
     const cacheKey = `friendship:summary:${userId}`;
     const cachedData = await getCache(cacheKey);
     if (cachedData) {
@@ -563,16 +531,13 @@ export const getFriendshipSummary = async (req, res) => {
       });
     }
 
-    // ✅ 2. Database Fetch (Parallel)
     const [allUsers, friends, pending, sent] = await Promise.all([
-      // 1. All Users (exclude self, limit to 50 for performance)
       User.find({ _id: { $ne: userId } })
         .select('_id name email isOnline lastSeen')
         .sort({ name: 1 })
         .limit(50)
         .lean(),
 
-      // 2. Accepted Friends
       Friend.find({
         $or: [
           { senderId: userId, status: 'accepted' },
@@ -584,7 +549,6 @@ export const getFriendshipSummary = async (req, res) => {
         .sort({ acceptedAt: -1 })
         .lean(),
 
-      // 3. Pending Received Requests
       Friend.find({
         receiverId: userId,
         status: 'pending',
@@ -594,7 +558,6 @@ export const getFriendshipSummary = async (req, res) => {
         .sort({ createdAt: -1 })
         .lean(),
 
-      // 4. Sent Requests
       Friend.find({
         senderId: userId,
         status: 'pending',
@@ -605,7 +568,6 @@ export const getFriendshipSummary = async (req, res) => {
         .lean()
     ]);
 
-    // ✅ Flatten friends list (match frontend expectations)
     const friendsList = friends.map((f) => {
       const friendUser = f.senderId._id.toString() === userId.toString() ? f.receiverId : f.senderId;
       return { _id: friendUser._id, name: friendUser.name, email: friendUser.email };
@@ -618,7 +580,6 @@ export const getFriendshipSummary = async (req, res) => {
       sent: sent
     };
 
-    // ✅ 3. Store in Cache (30 seconds)
     await setCache(cacheKey, summaryData, 30);
 
     return res.status(200).json({

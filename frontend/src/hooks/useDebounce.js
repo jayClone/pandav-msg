@@ -8,12 +8,10 @@ export function useDebounce(value, delay = 300) {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
   useEffect(() => {
-    // Set up timeout
     const handler = setTimeout(() => {
       setDebouncedValue(value);
     }, delay);
 
-    // Cleanup on value change
     return () => clearTimeout(handler);
   }, [value, delay]);
 

@@ -5,7 +5,7 @@ import { otpArcjet } from '../../middlewares/arcjet.js';
 
 const router = express.Router();
 
-// ✅ Correct endpoints (remove the 'otp/' prefix since it's already in the route)
+//  Correct endpoints 
 router.post('/send-otp', otpArcjet, asyncHandler(OTPController.sendOTP));
 router.post('/verify-otp', otpArcjet, asyncHandler(OTPController.verifyOTP));
 router.post('/resend-otp', otpArcjet, asyncHandler(OTPController.resendOTP));

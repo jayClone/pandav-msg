@@ -8,19 +8,16 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
       return;
     }
 
-    // ✅ FETCH MESSAGE
     const message = await Message.findById(messageId);
 
     if (!message) {
       return;
     }
 
-    // ✅ CRITICAL FIX: Verify the user reading is the RECEIVER, not sender
     if (message.senderId.toString() === userId.toString()) {
-      return;  // ✅ FIX: Sender should NOT mark as read
+      return;  
     }
 
-    // ✅ CHECK: Already marked as read by this user
     const userAlreadyRead = message.readBy?.some(
       (r) => r.userId?.toString() === userId.toString()
     );
@@ -29,7 +26,6 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
       return;
     }
 
-    // ✅ UPDATE MESSAGE IN DB
     const updatedMessage = await Message.findByIdAndUpdate(
       messageId,
       {
@@ -45,7 +41,6 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
       { new: true }
     ).populate('readBy.userId', 'name email _id');
 
-    // ✅ FORMAT RESPONSE DATA
     const readReceiptData = {
       messageId: messageId,
       userId: userId,
@@ -59,7 +54,6 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
       readCount: updatedMessage.readBy.length,
     };
 
-    // ✅ BROADCAST TO ALL CONNECTIONS
     if (groupId) {
       console.log(`📢 [READ_RECEIPT] Group broadcast: ${groupId}`);
       readReceiptData.groupId = groupId;
@@ -70,14 +64,11 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
 
       console.log(`📢 [READ_RECEIPT] Private broadcast -> Sender: ${senderRoom}, Receiver: ${receiverRoom}`);
 
-      // ✅ Notify SENDER (so they see blue tick)
       io.to(senderRoom).emit('message_read', readReceiptData);
 
-      // ✅ Notify RECEIVER (so their other tabs sync)
       io.to(receiverRoom).emit('message_read', readReceiptData);
     }
 
   } catch (error) {
-    // Silently handle read receipt errors
   }
 }

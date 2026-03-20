@@ -10,7 +10,6 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
     const { toUserId, message, uniqueId } = payload;
 
     try {
-        // Validation Layer
         if (!toUserId || typeof toUserId !== "string") {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
                 message: MESSAGES.SOCKET.TO_USER_REQUIRED
@@ -28,7 +27,6 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
         const trimmedMessage = message.trim();
         const receiverUser = onlineUsers.get(toUserId);
 
-        // ✅ FRIENDS VALIDATION (With short-term caching to prevent spamming DB)
         const friendshipCacheKey = `friendship:${userId}:${toUserId}`;
         let areFriends = await getCache(friendshipCacheKey);
 
@@ -41,7 +39,6 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             });
 
             areFriends = !!friendship;
-            // Cache result for 30 seconds (short but effective for active chats)
             await setCache(friendshipCacheKey, areFriends, 30);
         }
 
@@ -52,8 +49,6 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             return;
         }
 
-
-        // Save message to DB
         let savedMessage;
         try {
             savedMessage = await Message.create({
@@ -79,13 +74,11 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             delivered: false
         };
 
-        // ✅ EMIT TO RECEIVER'S PERSONAL ROOM (Targets all their sessions)
         io.to(toUserId.toString()).emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
             ...messagePayload,
             delivered: !!receiverUser
         });
 
-        // ✅ EMIT TO SENDER'S PERSONAL ROOM (Syncs all their other tabs)
         if (userId.toString() !== toUserId.toString()) {
             io.to(userId.toString()).emit(SOCKET_EVENTS.MESSAGE_SENT, {
                 ...messagePayload,
@@ -94,14 +87,12 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             });
         }
         else {
-            // If receiver is OFFLINE: Still saved in DB
             socket.emit('user_offline', {
                 toUserId: toUserId,
                 message: 'User is offline. Message queued for delivery.'
             });
         }
 
-        // Send confirmation back to sender
         socket.emit(SOCKET_EVENTS.MESSAGE_SENT, {
             _id: savedMessage._id,
             fromUserId: userId,

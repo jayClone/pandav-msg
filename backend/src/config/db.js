@@ -14,7 +14,7 @@ export const connectDB = async () => {
 
         return mongoose.connection;
     } catch (error) {
-        console.error('❌ MongoDB Connection Error:', error.message);
+        console.error(' MongoDB Connection Error:', error.message);
         process.exit(1);
     }
 };
@@ -22,7 +22,7 @@ export const connectDB = async () => {
 export const disconnectDB = async () => {
     try {
         await mongoose.disconnect();
-        console.log('✅ MongoDB Disconnected');
+        console.log(' MongoDB Disconnected');
     } catch (error) {
         console.error('❌ Disconnection Error:', error.message);
     }

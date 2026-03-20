@@ -12,9 +12,8 @@ import { handleMessageDeleted } from './handlers/message-deleted.handler.js';
  * ✅ onlineUsers passed from socket.server.js
  */
 export function registerSocketEvents(io, socket, onlineUsers) {
-  const { userId, email, name } = socket.user;  // ✅ Get from socket.user
+  const { userId, email, name } = socket.user; 
 
-  // ✅ Pass onlineUsers to handlers
   handleUserConnect(socket, io, userId, email, name, onlineUsers);
 
   // ═══════════════════════════════════════════════════════════════════
@@ -34,7 +33,7 @@ export function registerSocketEvents(io, socket, onlineUsers) {
         });
       }
     } catch (error) {
-      console.error("❌ [SOCKET] Error handling private message:", error.message);
+      console.error(" [SOCKET] Error handling private message:", error.message);
       if (callback && typeof callback === 'function') {
         callback(error.message);
       }
@@ -42,80 +41,80 @@ export function registerSocketEvents(io, socket, onlineUsers) {
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  // ✅ JOIN GROUP - Using SOCKET_EVENTS.JOIN_GROUP
+  //  JOIN GROUP - Using SOCKET_EVENTS.JOIN_GROUP
   // ═══════════════════════════════════════════════════════════════════
   socket.on(SOCKET_EVENTS.JOIN_GROUP, async (payload) => {
     try {
       handleJoinGroup(socket, io, payload, userId, name);
     } catch (error) {
-      console.error("❌ Error joining group:", error.message);
+      console.error(" Error joining group:", error.message);
     }
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  // ✅ LEAVE GROUP - Using SOCKET_EVENTS.LEAVE_GROUP
+  //  LEAVE GROUP - Using SOCKET_EVENTS.LEAVE_GROUP
   // ═══════════════════════════════════════════════════════════════════
   socket.on(SOCKET_EVENTS.LEAVE_GROUP, async (payload) => {
     try {
       handleLeaveGroup(socket, io, payload, userId, name);
     } catch (error) {
-      console.error("❌ Error leaving group:", error.message);
+      console.error(" Error leaving group:", error.message);
     }
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  // ✅ GROUP MESSAGE - ⚠️ THIS WAS MISSING THE HANDLER CALL!
+  //  GROUP MESSAGE -  THIS WAS MISSING THE HANDLER CALL!
   // ═══════════════════════════════════════════════════════════════════
   socket.on(SOCKET_EVENTS.GROUP_MESSAGE, async (payload) => {
     try {
       await handleGroupMessage(socket, io, payload, userId, name);
     } catch (error) {
-      console.error("❌ [SOCKET] Error handling group message:", error.message);
+      console.error(" [SOCKET] Error handling group message:", error.message);
       socket.emit('error', { message: 'Failed to send group message' });
     }
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  // ✅ TYPING
+  //  TYPING
   // ═══════════════════════════════════════════════════════════════════
   socket.on(SOCKET_EVENTS.TYPING, (data) => {
     handleTyping(socket, io, data, userId, onlineUsers);
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  // ✅ MESSAGE DELETED
+  //  MESSAGE DELETED
   // ═══════════════════════════════════════════════════════════════════
   socket.on(SOCKET_EVENTS.MESSAGE_DELETED, (data) => {
     handleMessageDeleted(socket, io, data, userId, onlineUsers);
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  // ✅ READ RECEIPT
+  //  READ RECEIPT
   // ═══════════════════════════════════════════════════════════════════
   socket.on(SOCKET_EVENTS.READ_RECEIPT, async (payload) => {
     try {
       await handleReadReceipt(socket, io, payload, userId, name);
     } catch (error) {
-      console.error('❌ [SOCKET] Error in read receipt handler:', error.message);
+      console.error(' [SOCKET] Error in read receipt handler:', error.message);
       socket.emit('error', { message: 'Failed to process read receipt' });
     }
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  // ✅ DISCONNECT
+  //  DISCONNECT
   // ═══════════════════════════════════════════════════════════════════
   socket.on("disconnect", async () => {
     try {
       handleUserDisconnect(socket, io, userId, name, onlineUsers);
     } catch (error) {
-      console.error("❌ Error handling disconnect:", error.message);
+      console.error(" Error handling disconnect:", error.message);
     }
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  // ✅ ERROR HANDLING
+  //  ERROR HANDLING
   // ═══════════════════════════════════════════════════════════════════
   socket.on("error", (error) => {
-    console.error(`❌ [SOCKET] Error from ${name}:`, error);
+    console.error(` [SOCKET] Error from ${name}:`, error);
   });
 }
