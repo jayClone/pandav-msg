@@ -9,6 +9,7 @@ import {
   connectSocket,
   disconnectSocket,
 } from "@socket/socketClient.js";
+import authService from "@services/auth.service";
 import { applyTheme } from "@utils/themeUtils.js";
 import ThemeChanger from "@components/ThemeChanger";
 import Chat from "./Chat";
@@ -73,7 +74,7 @@ export default function Layoute({ initialTab = "chats" }) {
   //  PHASE 5: CENTRALIZED SOCKET CONNECTION
   useEffect(() => {
     if (token) {
-      const socket = connectSocket(token);
+      connectSocket(token);
       
       return () => {
         // Socket should stay alive throughout the app session
@@ -130,8 +131,8 @@ export default function Layoute({ initialTab = "chats" }) {
     return () => window.removeEventListener('resize', handleResize);
   }, [activeTab]); //  ADD activeTab as dependency
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
+  const handleLogout = async () => {
+    await authService.logout();
     disconnectSocket();
     navigate("/login");
   };

@@ -1,25 +1,147 @@
+import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import OTP from '../models/OTP.js';
 import EmailService from '../services/email.service.js';
-import jwt from 'jsonwebtoken';
 import logger from '../config/logger.js';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_REGEX = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])[A-Za-z0-9!@#$%^&*]{8,}$/;
+const ACCESS_TOKEN_EXPIRE = process.env.JWT_EXPIRE || '15m';
+const REFRESH_TOKEN_EXPIRE = process.env.JWT_REFRESH_EXPIRE || '30d';
+const REFRESH_COOKIE_NAME = 'refreshToken';
 
-const generateToken = (user) => {
+const parseDurationToMs = (value) => {
+  if (!value || typeof value !== 'string') {
+    return 30 * 24 * 60 * 60 * 1000;
+  }
+
+  const match = value.match(/^(\d+)([smhd])$/i);
+
+  if (!match) {
+    return 30 * 24 * 60 * 60 * 1000;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+
+  const unitMap = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000
+  };
+
+  return amount * unitMap[unit];
+};
+
+const hashToken = (token) => {
+  return crypto.createHash('sha256').update(token).digest('hex');
+};
+
+const generateAccessToken = (user) => {
   return jwt.sign(
     {
       userId: user._id.toString(),
       email: user.email,
-      name: user.name
+      name: user.name,
+      type: 'access'
     },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE || '7d' }
+    { expiresIn: ACCESS_TOKEN_EXPIRE }
   );
 };
 
-//  REGISTER WITH OTP VERIFICATION
+const generateRefreshToken = (user) => {
+  return jwt.sign(
+    {
+      userId: user._id.toString(),
+      type: 'refresh'
+    },
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+    { expiresIn: REFRESH_TOKEN_EXPIRE }
+  );
+};
+
+const getCookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  path: '/',
+  maxAge: parseDurationToMs(REFRESH_TOKEN_EXPIRE)
+});
+
+const clearRefreshCookie = (res) => {
+  res.clearCookie(REFRESH_COOKIE_NAME, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/'
+  });
+};
+
+const setRefreshCookie = (res, token) => {
+  res.cookie(REFRESH_COOKIE_NAME, token, getCookieOptions());
+};
+
+const parseCookies = (cookieHeader = '') => {
+  return cookieHeader
+    .split(';')
+    .map((cookie) => cookie.trim())
+    .filter(Boolean)
+    .reduce((acc, cookie) => {
+      const separatorIndex = cookie.indexOf('=');
+
+      if (separatorIndex === -1) {
+        return acc;
+      }
+
+      const key = cookie.slice(0, separatorIndex);
+      const value = cookie.slice(separatorIndex + 1);
+      acc[key] = decodeURIComponent(value);
+      return acc;
+    }, {});
+};
+
+const extractRefreshToken = (req) => {
+  const cookies = parseCookies(req.headers.cookie);
+  return cookies[REFRESH_COOKIE_NAME];
+};
+
+const buildAuthResponse = (user, accessToken) => ({
+  success: true,
+  token: accessToken,
+  data: {
+    _id: user._id,
+    name: user.name,
+    email: user.email
+  }
+});
+
+const issueSession = async (res, user) => {
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken(user);
+
+  await User.findByIdAndUpdate(user._id, {
+    refreshToken: hashToken(refreshToken),
+    lastSeen: new Date()
+  });
+
+  setRefreshCookie(res, refreshToken);
+
+  return accessToken;
+};
+
+const revokeStoredRefreshToken = async (userId) => {
+  if (!userId) {
+    return;
+  }
+
+  await User.findByIdAndUpdate(userId, { refreshToken: null }).catch((error) => {
+    logger.error(`Failed to revoke refresh token: ${error.message}`);
+  });
+};
+
 export const register = async (req, res) => {
   try {
     const { name, email, password, otp } = req.body;
@@ -32,7 +154,6 @@ export const register = async (req, res) => {
     }
 
     if (!otp) {
-      console.error('❌ OTP IS MISSING!');
       return res.status(400).json({
         success: false,
         message: 'OTP is required. Please verify your email first.'
@@ -92,26 +213,18 @@ export const register = async (req, res) => {
     });
 
     await EmailService.sendWelcomeEmail(normalizedEmail, name);
-
     await OTP.deleteOne({ _id: otpRecord._id });
 
-    const token = generateToken(user);
+    const accessToken = await issueSession(res, user);
 
-    logger.info(`✅ User registered: ${normalizedEmail}`);
+    logger.info(`User registered: ${normalizedEmail}`);
 
     res.status(201).json({
-      success: true,
-      message: 'User registered successfully',
-      token,
-      data: {
-        _id: user._id,
-        name: user.name,
-        email: user.email
-      }
+      ...buildAuthResponse(user, accessToken),
+      message: 'User registered successfully'
     });
-
   } catch (error) {
-    logger.error(`❌ Registration error: ${error.message}`);
+    logger.error(`Registration error: ${error.message}`);
     res.status(500).json({
       success: false,
       message: error.message
@@ -119,7 +232,6 @@ export const register = async (req, res) => {
   }
 };
 
-//  LOGIN
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -151,28 +263,116 @@ export const login = async (req, res) => {
       });
     }
 
-    User.findByIdAndUpdate(user._id, { lastSeen: new Date() }).catch(err =>
-      logger.error(`❌ Background lastSeen update error: ${err.message}`)
-    );
+    const accessToken = await issueSession(res, user);
 
+    logger.info(`User logged in: ${normalizedEmail}`);
 
-    const token = generateToken(user);
+    res.status(200).json({
+      ...buildAuthResponse(user, accessToken),
+      message: 'Login successful'
+    });
+  } catch (error) {
+    logger.error(`Login error: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
 
-    logger.info(`✅ User logged in: ${normalizedEmail}`);
+export const refreshSession = async (req, res) => {
+  try {
+    const refreshToken = extractRefreshToken(req);
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token is missing'
+      });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(
+        refreshToken,
+        process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
+      );
+    } catch {
+      clearRefreshCookie(res);
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token is invalid or expired'
+      });
+    }
+
+    if (decoded.type !== 'refresh') {
+      clearRefreshCookie(res);
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token is invalid or expired'
+      });
+    }
+
+    const user = await User.findById(decoded.userId).select('+refreshToken');
+
+    if (!user || !user.refreshToken) {
+      clearRefreshCookie(res);
+      return res.status(401).json({
+        success: false,
+        message: 'Session not found'
+      });
+    }
+
+    if (user.refreshToken !== hashToken(refreshToken)) {
+      await revokeStoredRefreshToken(user._id);
+      clearRefreshCookie(res);
+      return res.status(401).json({
+        success: false,
+        message: 'Session mismatch detected'
+      });
+    }
+
+    const accessToken = await issueSession(res, user);
+
+    res.status(200).json({
+      ...buildAuthResponse(user, accessToken),
+      message: 'Session refreshed'
+    });
+  } catch (error) {
+    logger.error(`Refresh error: ${error.message}`);
+    clearRefreshCookie(res);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+export const logout = async (req, res) => {
+  try {
+    const refreshToken = extractRefreshToken(req);
+
+    if (refreshToken) {
+      try {
+        const decoded = jwt.verify(
+          refreshToken,
+          process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
+        );
+        await revokeStoredRefreshToken(decoded.userId);
+      } catch {
+        clearRefreshCookie(res);
+      }
+    }
+
+    clearRefreshCookie(res);
 
     res.status(200).json({
       success: true,
-      message: 'Login successful',
-      token,
-      data: {
-        _id: user._id,
-        name: user.name,
-        email: user.email
-      }
+      message: 'Logged out successfully'
     });
-
   } catch (error) {
-    logger.error(`❌ Login error: ${error.message}`);
+    logger.error(`Logout error: ${error.message}`);
+    clearRefreshCookie(res);
     res.status(500).json({
       success: false,
       message: error.message
@@ -201,7 +401,7 @@ export const getCurrentUser = async (req, res) => {
       }
     });
   } catch (error) {
-    logger.error(`❌ Get user error: ${error.message}`);
+    logger.error(`Get user error: ${error.message}`);
     res.status(500).json({
       success: false,
       message: error.message

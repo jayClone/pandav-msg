@@ -25,6 +25,11 @@ const userSchema = new mongoose.Schema({
     minlength: 8,
     select: false  
   },
+  refreshToken: {
+    type: String,
+    default: null,
+    select: false
+  },
 
   isOnline: {
     type: Boolean,

@@ -1,12 +1,15 @@
-import API from '@api/axios.js';  //  CHANGED: Use single axios
+import API from "@api/axios.js";
+import {
+  clearStoredToken,
+  getAuthUser,
+  getStoredToken,
+  setStoredToken
+} from "@/utils/authStorage.js";
 
 const authService = {
-  /**
-   * Register new user with OTP
-   */
   register: async (userData) => {
     if (!userData.otp) {
-      throw new Error('OTP is missing. Please verify your email first.');
+      throw new Error("OTP is missing. Please verify your email first.");
     }
 
     const payload = {
@@ -16,10 +19,10 @@ const authService = {
       otp: userData.otp.toString().trim()
     };
 
-    const response = await API.post('/auth/register', payload);
+    const response = await API.post("/auth/register", payload);
 
     if (response.data.token) {
-      localStorage.setItem('token', response.data.token);
+      setStoredToken(response.data.token);
     }
 
     return response.data;
@@ -33,48 +36,51 @@ const authService = {
         ...(credentials.otp && { otp: credentials.otp.toString() })
       };
 
-      const response = await API.post('/auth/login', payload);
+      const response = await API.post("/auth/login", payload);
 
       if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
+        setStoredToken(response.data.token);
       }
 
       return response.data;
     } catch (error) {
-      localStorage.removeItem('token');
+      clearStoredToken();
       throw error;
     }
   },
 
-  /**
-   * Get current user
-   */
-  getCurrentUser: async () => {
-    const response = await API.get('/auth/current');
+  refreshSession: async () => {
+    const response = await API.post("/auth/refresh");
+
+    if (response.data.token) {
+      setStoredToken(response.data.token);
+    }
+
     return response.data;
   },
 
-  /**
-   * Logout user
-   */
+  getCurrentUser: async () => {
+    const response = await API.get("/auth/current");
+    return response.data;
+  },
+
   logout: () => {
-    localStorage.removeItem('token');
-    return Promise.resolve();
+    return API.post("/auth/logout")
+      .catch(() => Promise.resolve())
+      .finally(() => {
+        clearStoredToken();
+      });
   },
 
-  /**
-   * Check if user is authenticated
-   */
   isAuthenticated: () => {
-    return !!localStorage.getItem('token');
+    return !!getAuthUser();
   },
 
-  /**
-   * Get stored token
-   */
   getToken: () => {
-    return localStorage.getItem('token');
-  }
+    return getStoredToken();
+  },
+
+  getAuthUser
 };
 
 export default authService;

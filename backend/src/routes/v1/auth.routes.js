@@ -1,5 +1,5 @@
 import express from 'express';
-import { register, login, getCurrentUser } from '../../controllers/auth.Controller.js';
+import { register, login, logout, refreshSession, getCurrentUser } from '../../controllers/auth.Controller.js';
 import { protect } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { validate } from '../../middlewares/validate.js';
@@ -29,6 +29,10 @@ router.post(
   validate(LoginSchema, 'body'),  authArcjet,
   asyncHandler(login)
 );
+
+router.post('/refresh', asyncHandler(refreshSession));
+
+router.post('/logout', asyncHandler(logout));
 
 /**
  * @route GET /api/v1/auth/current

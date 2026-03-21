@@ -1,58 +1,27 @@
 import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { jwtDecode } from "jwt-decode";
 import authService from "@services/auth.service";
-
-const hasUsableToken = () => {
-  const token = authService.getToken();
-
-  if (!token) {
-    return false;
-  }
-
-  try {
-    const decoded = jwtDecode(token);
-    const expiresAt = decoded?.exp ? decoded.exp * 1000 : null;
-
-    if (expiresAt && expiresAt <= Date.now()) {
-      localStorage.removeItem("token");
-      return false;
-    }
-
-    return true;
-  } catch {
-    localStorage.removeItem("token");
-    return false;
-  }
-};
 
 export function ProtectedRoute({ children }) {
   const location = useLocation();
-  const [isAuthenticated, setIsAuthenticated] = useState(() => hasUsableToken());
-  const [loading, setLoading] = useState(() => hasUsableToken());
+  const [isAuthenticated, setIsAuthenticated] = useState(() => authService.isAuthenticated());
+  const [loading, setLoading] = useState(() => !authService.isAuthenticated());
 
   useEffect(() => {
-    const token = authService.getToken();
-
-    if (!token) {
-      setIsAuthenticated(false);
-      setLoading(false);
-      return;
-    }
-
     let isMounted = true;
 
-    const checkAuth = async () => {
+    const verifySession = async () => {
       try {
+        if (!authService.isAuthenticated()) {
+          await authService.refreshSession();
+        }
+
         const response = await authService.getCurrentUser();
 
         if (isMounted) {
           setIsAuthenticated(Boolean(response.success));
         }
-      } catch (error) {
-        console.error("Auth check failed:", error.message);
-        localStorage.removeItem("token");
-
+      } catch {
         if (isMounted) {
           setIsAuthenticated(false);
         }
@@ -63,7 +32,7 @@ export function ProtectedRoute({ children }) {
       }
     };
 
-    checkAuth();
+    verifySession();
 
     return () => {
       isMounted = false;
