@@ -1,21 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import authService from "@/services/auth.service";
 import { subscribeToAuthChange } from "@/utils/authStorage";
 
-const getInitials = (name = "") => {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "U";
+const getInitial = (name = "") => {
+  return name.trim().charAt(0).toUpperCase() || "U";
 };
 
 export default function Navbar() {
-  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [authUser, setAuthUser] = useState(() => authService.getAuthUser());
 
@@ -54,47 +47,21 @@ export default function Navbar() {
     setIsOpen(!isOpen);
   };
 
-  const handleLogout = async () => {
-    await authService.logout();
+  const openChatDashboard = () => {
     setIsOpen(false);
-    navigate("/login");
+    window.location.href = "/chat";
   };
 
-  const renderAuthenticatedActions = (mobile = false) => (
-    <div className={mobile ? "flex flex-col space-y-2" : "flex items-center space-x-3"}>
-      <Link to="/chat" onClick={() => setIsOpen(false)}>
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white w-full">
-          <LayoutDashboard className="w-4 h-4 mr-2" />
-          Dashboard
-        </Button>
-      </Link>
-
-      <div className={mobile ? "flex items-center justify-between rounded-xl border px-3 py-2" : "flex items-center gap-3 rounded-full border border-blue-100 bg-white/80 px-3 py-2 shadow-sm"}>
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-sm font-bold text-white">
-            {getInitials(authUser?.name)}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">
-              {authUser?.name || "Your account"}
-            </p>
-            <p className="text-xs text-gray-500 truncate">
-              {authUser?.email || "Signed in"}
-            </p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 transition"
-          title="Logout"
-        >
-          <LogOut className="w-4 h-4" />
-          {!mobile && "Logout"}
-        </button>
-      </div>
-    </div>
+  const renderAuthenticatedAvatar = () => (
+    <button
+      type="button"
+      onClick={openChatDashboard}
+      className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-base font-bold text-white shadow-md transition hover:scale-105 hover:shadow-lg"
+      title="Open chat dashboard"
+      aria-label="Open chat dashboard"
+    >
+      {getInitial(authUser?.name)}
+    </button>
   );
 
   return (
@@ -124,7 +91,7 @@ export default function Navbar() {
 
           <div className="hidden md:flex items-center space-x-4">
             {authUser ? (
-              renderAuthenticatedActions()
+              renderAuthenticatedAvatar()
             ) : (
               <>
                 <Link to="/login">
@@ -186,7 +153,13 @@ export default function Navbar() {
             </a>
             <div className="flex flex-col space-y-2 px-4 pt-2 border-t">
               {authUser ? (
-                renderAuthenticatedActions(true)
+                <button
+                  type="button"
+                  onClick={openChatDashboard}
+                  className="flex items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 px-4 py-3 text-base font-bold text-white shadow-md"
+                >
+                  {getInitial(authUser?.name)}
+                </button>
               ) : (
                 <>
                   <Link to="/login" onClick={() => setIsOpen(false)}>
