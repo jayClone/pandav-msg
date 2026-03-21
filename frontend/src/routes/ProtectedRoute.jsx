@@ -1,39 +1,78 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
+import { jwtDecode } from "jwt-decode";
 import authService from "@services/auth.service";
 
+const hasUsableToken = () => {
+  const token = authService.getToken();
+
+  if (!token) {
+    return false;
+  }
+
+  try {
+    const decoded = jwtDecode(token);
+    const expiresAt = decoded?.exp ? decoded.exp * 1000 : null;
+
+    if (expiresAt && expiresAt <= Date.now()) {
+      localStorage.removeItem("token");
+      return false;
+    }
+
+    return true;
+  } catch {
+    localStorage.removeItem("token");
+    return false;
+  }
+};
+
 export function ProtectedRoute({ children }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  const [isAuthenticated, setIsAuthenticated] = useState(() => hasUsableToken());
+  const [loading, setLoading] = useState(() => hasUsableToken());
 
   useEffect(() => {
+    const token = authService.getToken();
+
+    if (!token) {
+      setIsAuthenticated(false);
+      setLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+
     const checkAuth = async () => {
       try {
-        const token = localStorage.getItem("token");
-        
-        if (!token) {
-          setIsAuthenticated(false);
-          setLoading(false);
-          return;
-        }
-        
-        //  FIXED: Use /auth/me instead of /auth/current
         const response = await authService.getCurrentUser();
-        
-        if (response.success) {
-          setIsAuthenticated(true);
+
+        if (isMounted) {
+          setIsAuthenticated(Boolean(response.success));
         }
       } catch (error) {
-        console.error("❌ Auth check failed:", error.message);
+        console.error("Auth check failed:", error.message);
         localStorage.removeItem("token");
-        setIsAuthenticated(false);
+
+        if (isMounted) {
+          setIsAuthenticated(false);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     checkAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
+
+  if (loading && isAuthenticated) {
+    return children;
+  }
 
   if (loading) {
     return (
@@ -46,5 +85,9 @@ export function ProtectedRoute({ children }) {
     );
   }
 
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+  return isAuthenticated ? (
+    children
+  ) : (
+    <Navigate to="/login" replace state={{ from: location }} />
+  );
 }
