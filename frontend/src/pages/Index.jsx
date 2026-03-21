@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 
-// Animated Background Orbs
+// Animated Background Orbss
 function AnimatedBackground() {
   return (
     <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
