@@ -1,8 +1,10 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import Friend from '../models/Friend.js';
 import OTP from '../models/OTP.js';
 import EmailService from '../services/email.service.js';
+import { deleteCache } from '../config/redis.js';
 import logger from '../config/logger.js';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -131,6 +133,40 @@ const issueSession = async (res, user) => {
   setRefreshCookie(res, refreshToken);
 
   return accessToken;
+};
+
+const invalidateUserPublicKeyCaches = async (userId) => {
+  if (!userId) {
+    return;
+  }
+
+  const userIdStr = userId.toString();
+  const friendships = await Friend.find({
+    status: 'accepted',
+    $or: [
+      { senderId: userId },
+      { receiverId: userId }
+    ]
+  })
+    .select('senderId receiverId')
+    .lean();
+
+  const affectedUserIds = new Set([userIdStr]);
+
+  friendships.forEach((friendship) => {
+    const senderId = friendship.senderId?.toString();
+    const receiverId = friendship.receiverId?.toString();
+
+    if (senderId) affectedUserIds.add(senderId);
+    if (receiverId) affectedUserIds.add(receiverId);
+  });
+
+  await Promise.all(
+    Array.from(affectedUserIds).flatMap((id) => ([
+      deleteCache(`friends:v2:${id}`),
+      deleteCache(`friendship:summary:v2:${id}`)
+    ]))
+  );
 };
 
 const revokeStoredRefreshToken = async (userId) => {
@@ -268,6 +304,7 @@ export const login = async (req, res) => {
     if (publicKey && publicKey !== user.publicKey) {
       user.publicKey = publicKey;
       await user.save();
+      await invalidateUserPublicKeyCaches(user._id);
     }
 
     const accessToken = await issueSession(res, user);

@@ -141,10 +141,10 @@ export const acceptFriendRequest = async (req, res) => {
     await friendRequest.save();
 
     await Promise.all([
-      deleteCache(`friends:${friendRequest.senderId}`),
-      deleteCache(`friends:${receiverId}`),
-      deleteCache(`friendship:summary:${friendRequest.senderId}`),
-      deleteCache(`friendship:summary:${receiverId}`),
+      deleteCache(`friends:v2:${friendRequest.senderId}`),
+      deleteCache(`friends:v2:${receiverId}`),
+      deleteCache(`friendship:summary:v2:${friendRequest.senderId}`),
+      deleteCache(`friendship:summary:v2:${receiverId}`),
       deleteCache(`requests:pending:${receiverId}:page:1:limit:50`),
       deleteCache(`requests:sent:${friendRequest.senderId}:page:1:limit:50`),
     ]);
@@ -202,10 +202,10 @@ export const rejectFriendRequest = async (req, res) => {
     await Friend.findByIdAndDelete(requestId);
 
     await Promise.all([
-      deleteCache(`friends:${friendRequest.senderId}`),
-      deleteCache(`friends:${friendRequest.receiverId}`),
-      deleteCache(`friendship:summary:${friendRequest.senderId}`),
-      deleteCache(`friendship:summary:${friendRequest.receiverId}`),
+      deleteCache(`friends:v2:${friendRequest.senderId}`),
+      deleteCache(`friends:v2:${friendRequest.receiverId}`),
+      deleteCache(`friendship:summary:v2:${friendRequest.senderId}`),
+      deleteCache(`friendship:summary:v2:${friendRequest.receiverId}`),
       deleteCache(`requests:pending:${friendRequest.receiverId}:page:1:limit:50`),
       deleteCache(`requests:sent:${friendRequest.senderId}:page:1:limit:50`),
     ]);
@@ -499,8 +499,10 @@ export const removeFriend = async (req, res) => {
     await Friend.findByIdAndDelete(friend._id);
 
     await Promise.all([
-      deleteCache(`friends:${userId}`),
-      deleteCache(`friends:${friendId}`)
+      deleteCache(`friends:v2:${userId}`),
+      deleteCache(`friends:v2:${friendId}`),
+      deleteCache(`friendship:summary:v2:${userId}`),
+      deleteCache(`friendship:summary:v2:${friendId}`)
     ]);
 
     return res.status(200).json({
