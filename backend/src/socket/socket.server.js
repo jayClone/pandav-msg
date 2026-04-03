@@ -61,13 +61,6 @@ export function createSocketServer(httpServer) {
   io.on('connection', (socket) => {
     console.log(` Connected: ${socket.id}`);
     registerSocketEvents(io, socket, onlineUsers);
-
-    socket.on('disconnect', () => {
-      console.log(` Disconnected: ${socket.id}`);
-      const { userId } = socket.user || {};
-      if (userId) onlineUsers.delete(userId);
-      io.emit('online_users', Array.from(onlineUsers.values()));
-    });
   });
 
   return io;

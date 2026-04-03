@@ -7,7 +7,6 @@ import process from 'process'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -30,14 +29,12 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        // ✅ Use environment variable with localhost fallback
         target: process.env.VITE_API_URL || 'http://localhost:5000',
         changeOrigin: true,
         rewrite: (path) => path,
         configure: (proxy, options) => {
-          proxy.on('error', (err,) => {
+          proxy.on('error', (err) => {
             console.log('❌ Proxy error:', err.message);
-            // Fallback to localhost if primary fails
             if (process.env.VITE_API_URL && process.env.VITE_API_URL !== 'http://localhost:5000') {
               console.log('🔄 Attempting fallback to localhost:5000');
               options.target = 'http://localhost:5000';

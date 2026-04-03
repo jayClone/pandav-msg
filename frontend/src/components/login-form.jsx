@@ -1,7 +1,10 @@
 import { useState } from "react"
 import { useNavigate, Link, useLocation } from "react-router-dom"
 import authService from "@/services/auth.service"
+import cryptoService from "@/services/crypto.service"
+import { getAuthUser } from "@/utils/authStorage"
 import { cn } from "@/lib/utils"
+import { encodeBase64 } from "tweetnacl-util"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -75,16 +78,62 @@ export function LoginForm({ className, ...props }) {
     setAttemptCount((prev) => prev + 1)
 
     try {
+      let derivedKeypair = null
+
+      try {
+        derivedKeypair = await cryptoService.deriveKeypairFromPassword(
+          form.email.trim().toLowerCase(),
+          form.password
+        )
+      } catch (cryptoError) {
+        console.error("❌ Failed to derive encryption keypair before login:", cryptoError.message)
+      }
+
       const response = await authService.login({
         email: form.email.trim().toLowerCase(),
         password: form.password,
+        ...(derivedKeypair?.publicKey && {
+          publicKey: encodeBase64(derivedKeypair.publicKey),
+        }),
       })
 
       if (!response?.token) {
         throw new Error("No token received from server")
       }
 
-      setMsg(response.message || "Login successful. Redirecting...")
+      // ✅ E2EE: Derive keypair from password
+      try {
+        const keypair = derivedKeypair || await cryptoService.deriveKeypairFromPassword(
+          form.email.trim().toLowerCase(),
+          form.password
+        )
+        console.log("🔐 Keypair derived successfully");
+
+        // Get userId from decoded JWT token
+        const authUser = getAuthUser()
+        console.log("👤 Auth user:", authUser?.userId);
+
+        if (authUser?.userId) {
+          cryptoService.storeMyKeypair(
+            authUser.userId,
+            keypair.publicKey,
+            keypair.secretKey
+          )
+          console.log("✅ Encryption keypair stored for user:", authUser.userId);
+          console.log("🔑 Crypto status:", cryptoService.getKeyStatus());
+        } else {
+          console.error("⚠️ Could not get userId from auth token");
+        }
+      } catch (cryptoError) {
+        console.error("❌ Failed to derive encryption keypair:", cryptoError.message)
+        // Don't block login if keypair derivation fails, but warn user
+        setMsg(
+          (response.message || "Login successful") +
+          " (Warning: E2EE setup incomplete)"
+        )
+      }
+
+      setMsg(response.message || "Login successful. Encrypting messages...")
       setIsSuccess(true)
       setAttemptCount(0)
       navigate(redirectTo, { replace: true })

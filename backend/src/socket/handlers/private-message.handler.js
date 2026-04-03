@@ -7,7 +7,7 @@ import { getCache, setCache } from '../../config/redis.js';
  * Handle private messages
  */
 export async function handlePrivateMessage(socket, io, payload, userId, name, onlineUsers) {
-    const { toUserId, message, uniqueId } = payload;
+    const { toUserId, message, isEncrypted, uniqueId } = payload;
 
     try {
         if (!toUserId || typeof toUserId !== "string") {
@@ -17,14 +17,24 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             return;
         }
 
-        if (!message || typeof message !== "string" || message.trim().length === 0) {
+        if (!message || typeof message !== "string" || message.length === 0) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
                 message: MESSAGES.SOCKET.MESSAGE_EMPTY
             });
             return;
         }
 
-        const trimmedMessage = message.trim();
+        // For encrypted messages, don't trim (preserves encryption format)
+        // For plaintext messages, trim whitespace
+        const processedMessage = isEncrypted ? message : message.trim();
+
+        if (!isEncrypted && processedMessage.length === 0) {
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+                message: MESSAGES.SOCKET.MESSAGE_EMPTY
+            });
+            return;
+        }
+
         const receiverUser = onlineUsers.get(toUserId);
 
         const friendshipCacheKey = `friendship:${userId}:${toUserId}`;
@@ -54,8 +64,9 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             savedMessage = await Message.create({
                 senderId: userId,
                 receiverId: toUserId,
-                message: trimmedMessage,
-                chatType: 'private'
+                message: processedMessage,
+                chatType: 'private',
+                isEncrypted: isEncrypted || false // Store encryption flag
             });
         } catch (dbError) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
@@ -69,9 +80,10 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             fromUserId: userId,
             toUserId: toUserId,
             fromUserName: name,
-            message: trimmedMessage,
+            message: processedMessage,
             time: savedMessage.createdAt.toISOString(),
-            delivered: false
+            delivered: false,
+            isEncrypted: isEncrypted || false // Include encryption flag in payload
         };
 
         io.to(toUserId.toString()).emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
@@ -98,10 +110,11 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             fromUserId: userId,
             toUserId: toUserId,
             fromUserName: name,
-            message: trimmedMessage,
+            message: processedMessage,
             time: savedMessage.createdAt.toISOString(),
             delivered: !!receiverUser,
-            saved: true
+            saved: true,
+            isEncrypted: isEncrypted || false
         });
 
     } catch (error) {

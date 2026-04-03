@@ -10,6 +10,7 @@ import {
   disconnectSocket,
 } from "@socket/socketClient.js";
 import authService from "@services/auth.service";
+import cryptoService from "@services/crypto.service";
 import { applyTheme } from "@utils/themeUtils.js";
 import ThemeChanger from "@components/ThemeChanger";
 import Chat from "./Chat";
@@ -83,6 +84,17 @@ export default function Layoute({ initialTab = "chats" }) {
     }
   }, [token]);
 
+  useEffect(() => {
+    if (!token || !currentUserId || cryptoService.myKeypair) {
+      return;
+    }
+
+    const restored = cryptoService.restoreMyKeypairFromSession(currentUserId);
+    if (!restored) {
+      console.warn("E2EE keypair not available in current session for user:", currentUserId);
+    }
+  }, [token, currentUserId]);
+
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -132,6 +144,10 @@ export default function Layoute({ initialTab = "chats" }) {
   }, [activeTab]); //  ADD activeTab as dependency
 
   const handleLogout = async () => {
+    // ✅ E2EE: Clear encryption keys on logout
+    cryptoService.clearAllKeys();
+    console.log("🔐 Encryption keys cleared on logout");
+
     await authService.logout();
     disconnectSocket();
     navigate("/login");

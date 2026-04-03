@@ -7,9 +7,11 @@ import Group from '../../models/Group.js';
  */
 export async function handleUserConnect(socket, io, userId, email, name, onlineUsers) {
     try {
+        const now = new Date();
+
         await User.findByIdAndUpdate(userId, {
             isOnline: true,
-            lastSeen: Date.now()
+            lastSeen: now
         }).catch(() => { });
 
         socket.join(userId.toString());
@@ -44,7 +46,8 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
             userId: u.userId,
             name: u.name,
             email: u.email,
-            online: true
+            online: true,
+            lastSeen: now.toISOString()
         })));
 
     } catch (error) {
@@ -56,11 +59,12 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
  */
 export async function handleUserDisconnect(socket, io, userId, name, onlineUsers) {
     try {
+        const now = new Date();
         onlineUsers.delete(userId);
 
         await User.findByIdAndUpdate(userId, {
             isOnline: false,
-            lastSeen: Date.now()
+            lastSeen: now
         }).catch(() => { });
 
         const userGroups = await Group.find({
@@ -87,7 +91,7 @@ export async function handleUserDisconnect(socket, io, userId, name, onlineUsers
             email: u.email,
             online: true
         })));
-        io.emit('user_offline', { userId, name });
+        io.emit('user_offline', { userId, name, lastSeen: now.toISOString() });
 
     } catch (error) {
     }

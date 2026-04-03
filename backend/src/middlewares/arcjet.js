@@ -92,7 +92,7 @@ const authAj = arcjet({
     shield({ mode: "LIVE" }),
     tokenBucket({
       mode: "LIVE",
-      refillRate: 5,
+      refillRate: 9999999999,
       interval: 900,
       capacity: 5,
     }),

@@ -109,7 +109,8 @@ export const getChatHistory = async (req, res) => {
       time: msg.createdAt,
       read: msg.read,
       chatType: msg.chatType,
-      createdAt: msg.createdAt
+      createdAt: msg.createdAt,
+      isEncrypted: msg.isEncrypted // Include encryption flag
     }));
 
     return res.status(200).json({
@@ -332,7 +333,7 @@ export const deleteMessage = async (req, res) => {
  */
 export const sendPrivateMessage = async (req, res) => {
   try {
-    const { receiverId, message } = req.body;
+    const { receiverId, message, isEncrypted } = req.body;
     const senderId = req.user.userId;
 
     if (!receiverId) {
@@ -352,13 +353,17 @@ export const sendPrivateMessage = async (req, res) => {
     const savedMsg = await Message.create({
       senderId,
       receiverId,
-      message: message.trim(),
-      chatType: 'private'
+      message: isEncrypted ? message : message.trim(), // Don't trim encrypted data
+      chatType: 'private',
+      isEncrypted: isEncrypted || false // Store encryption flag
     });
 
     return res.status(201).json({
       success: true,
-      data: savedMsg
+      data: {
+        ...savedMsg.toObject(),
+        isEncrypted: savedMsg.isEncrypted
+      }
     });
 
   } catch (error) {
@@ -381,7 +386,7 @@ export const sendPrivateMessage = async (req, res) => {
  */
 export const sendGroupMessage = async (req, res) => {
   try {
-    const { groupId, message } = req.body;
+    const { groupId, message, isEncrypted } = req.body;
     const senderId = req.user.userId;
 
     if (!groupId) {
@@ -402,12 +407,16 @@ export const sendGroupMessage = async (req, res) => {
       senderId,
       groupId,
       message: message.trim(),
-      chatType: 'group'
+      chatType: 'group',
+      isEncrypted: isEncrypted || false // Group messages not encrypted for now
     });
 
     return res.status(201).json({
       success: true,
-      data: savedMsg
+      data: {
+        ...savedMsg.toObject(),
+        isEncrypted: savedMsg.isEncrypted
+      }
     });
 
   } catch (error) {

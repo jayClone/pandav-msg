@@ -67,6 +67,12 @@ const messageSchema = new mongoose.Schema(
     deletedAt: {
       type: Date,
       default: null
+    },
+
+    isEncrypted: {
+      type: Boolean,
+      default: false,
+      index: true
     }
   },
   { timestamps: true }

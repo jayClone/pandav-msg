@@ -1,4 +1,5 @@
 import API from "@api/axios.js";
+import cryptoService from "@services/crypto.service.js";
 import {
   clearStoredToken,
   getAuthUser,
@@ -16,7 +17,8 @@ const authService = {
       name: userData.name.trim(),
       email: userData.email.trim().toLowerCase(),
       password: userData.password,
-      otp: userData.otp.toString().trim()
+      otp: userData.otp.toString().trim(),
+      ...(userData.publicKey && { publicKey: userData.publicKey })
     };
 
     const response = await API.post("/auth/register", payload);
@@ -33,6 +35,7 @@ const authService = {
       const payload = {
         email: credentials.email.trim().toLowerCase(),
         password: credentials.password,
+        ...(credentials.publicKey && { publicKey: credentials.publicKey }),
         ...(credentials.otp && { otp: credentials.otp.toString() })
       };
 
@@ -68,6 +71,8 @@ const authService = {
     return API.post("/auth/logout")
       .catch(() => Promise.resolve())
       .finally(() => {
+        // ✅ E2EE: Clear all encryption keys from memory on logout
+        cryptoService.clearAllKeys();
         clearStoredToken();
       });
   },

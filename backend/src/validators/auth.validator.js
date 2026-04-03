@@ -39,6 +39,13 @@ export const RegisterSchema = Joi.object({
       'string.length': 'OTP must be 6 digits',
       'string.pattern.base': 'OTP must contain only numbers',
       'string.empty': 'OTP is required'
+    }),
+
+  publicKey: Joi.string()
+    .base64()
+    .optional()
+    .messages({
+      'string.base64': 'Public key must be valid base64'
     })
 });
 
@@ -56,5 +63,12 @@ export const LoginSchema = Joi.object({
     .required()
     .messages({
       'string.empty': 'Password is required'
+    }),
+
+  publicKey: Joi.string()
+    .base64()
+    .optional()
+    .messages({
+      'string.base64': 'Public key must be valid base64'
     })
 });

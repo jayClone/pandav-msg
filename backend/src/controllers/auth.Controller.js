@@ -114,7 +114,8 @@ const buildAuthResponse = (user, accessToken) => ({
   data: {
     _id: user._id,
     name: user.name,
-    email: user.email
+    email: user.email,
+    publicKey: user.publicKey || null
   }
 });
 
@@ -144,7 +145,7 @@ const revokeStoredRefreshToken = async (userId) => {
 
 export const register = async (req, res) => {
   try {
-    const { name, email, password, otp } = req.body;
+    const { name, email, password, otp, publicKey } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({
@@ -209,7 +210,8 @@ export const register = async (req, res) => {
     const user = await User.create({
       name: name.trim(),
       email: normalizedEmail,
-      password
+      password,
+      publicKey: publicKey || null
     });
 
     await EmailService.sendWelcomeEmail(normalizedEmail, name);
@@ -234,7 +236,7 @@ export const register = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, publicKey } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
@@ -261,6 +263,11 @@ export const login = async (req, res) => {
         success: false,
         message: 'Invalid email or password'
       });
+    }
+
+    if (publicKey && publicKey !== user.publicKey) {
+      user.publicKey = publicKey;
+      await user.save();
     }
 
     const accessToken = await issueSession(res, user);

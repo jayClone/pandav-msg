@@ -1,8 +1,10 @@
 import { useState } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import authService from "@services/auth.service.js"
+import cryptoService from "@services/crypto.service.js"
 import otpAPI from "@api/otp.api.js"
 import OTPVerification from "./OTPVerification"
+import { encodeBase64 } from "tweetnacl-util"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -143,11 +145,17 @@ export function SignupForm({ ...props }) {
     setError("")
 
     try {
+      const keypair = await cryptoService.deriveKeypairFromPassword(
+        form.email.trim().toLowerCase(),
+        form.password
+      )
+
       const response = await authService.register({
         name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
         password: form.password,
-        otp: otpCode
+        otp: otpCode,
+        publicKey: encodeBase64(keypair.publicKey)
       })
 
       if (response.success || response.token) {

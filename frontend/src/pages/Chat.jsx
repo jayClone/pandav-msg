@@ -7,6 +7,8 @@ import React, {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import messageService from "@services/message.service.js";
+import cryptoService from "@services/crypto.service.js";
+import { getAuthUser } from "@/utils/authStorage.js";
 import friendAPI from '@api/friend.api.js';
 import { SOCKET_EVENTS } from "@constants/socketEvents.js";
 import { applyTheme, saveTheme } from "@utils/themeUtils.js";
@@ -32,6 +34,7 @@ import {
   AlertCircle,
   Wifi,
   WifiOff,
+  Lock,
 } from "lucide-react";
 import ThemeChanger from "@/components/ThemeChanger";
 import { useDebounce } from '@hooks/useDebounce';
@@ -48,6 +51,78 @@ export default function Chat({
   isChatOpen,
 }) {
   const navigate = useNavigate();
+
+  // ✅ Helper to ensure sender's public key is available before decryption
+  const ensureSenderPublicKey = useCallback(async (senderId) => {
+    const pubKey = cryptoService.getPublicKey(senderId);
+    if (pubKey) {
+      return true;
+    }
+
+    const sender = allUsers.find(u => u.userId === senderId);
+    if (!sender?.publicKey) {
+      console.warn("⚠️ Sender public key not found for:", senderId);
+      return false;
+    }
+
+    try {
+      cryptoService.storePublicKey(senderId, sender.publicKey);
+      console.log("🔑 Loaded sender public key for:", sender.name);
+      return true;
+    } catch (error) {
+      console.error("❌ Failed to load sender public key:", error.message);
+      return false;
+    }
+  }, [allUsers]);
+
+  const getMessagePeerId = useCallback((message) => {
+    return String(message.fromUserId) === String(currentUserId)
+      ? message.toUserId
+      : message.fromUserId;
+  }, [currentUserId]);
+
+  const ensureMessagePeerKey = useCallback(async (message) => {
+    const peerId = getMessagePeerId(message);
+    if (!peerId) {
+      return null;
+    }
+
+    const existingKey = cryptoService.getPublicKey(peerId);
+    if (existingKey) {
+      return peerId;
+    }
+
+    const peerUser = allUsers.find((user) => String(user.userId) === String(peerId));
+    if (!peerUser?.publicKey) {
+      console.warn("⚠️ Message peer public key not found for:", peerId);
+      return null;
+    }
+
+    try {
+      cryptoService.storePublicKey(peerId, peerUser.publicKey);
+      return peerId;
+    } catch (error) {
+      console.error("❌ Failed to load message peer public key:", error.message);
+      return null;
+    }
+  }, [allUsers, getMessagePeerId]);
+
+  // ✅ Helper to check if keypair is initialized
+  const getEncryptionKey = useCallback(() => {
+    if (cryptoService.myKeypair) {
+      return true;
+    }
+
+    const restored = cryptoService.restoreMyKeypairFromSession(currentUserId);
+    if (restored) {
+      console.log("🔐 Restored E2EE keypair during chat flow");
+      return true;
+    }
+
+    console.warn("❌ Keypair not initialized!");
+    return false;
+  }, [currentUserId]);
+
   const messagesEndRef = useRef(null);
   const messageInputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -115,6 +190,27 @@ export default function Chat({
     const savedTheme = localStorage.getItem('selectedTheme') || 'dark';
     applyTheme(savedTheme);
   }, []);
+
+  // ✅ E2EE: Clear keys when user logs out (token becomes falsy)
+  useEffect(() => {
+    if (!token) {
+      cryptoService.clearAllKeys();
+      console.log("🔐 Encryption keys cleared on logout");
+    }
+  }, [token]);
+
+  //  🔍 DIAGNOSTIC: Log userId and encryption key status
+  useEffect(() => {
+    const authUser = getAuthUser();
+    const keyStatus = cryptoService.getKeyStatus();
+    console.log("🔍 [CHAT DIAGNOSTIC]", {
+      currentUserIdProp: currentUserId,
+      authUserIdToken: authUser?.userId,
+      keysStored: keyStatus.keysStored,
+      storedUserIds: keyStatus.userIds,
+      matchesAuth: String(currentUserId) === String(authUser?.userId),
+    });
+  }, [currentUserId]);
 
   //  COMPREHENSIVE PROTECTION: NO BACK, NO CLOSE, NO SWIPE-BACK
   useEffect(() => {
@@ -196,17 +292,35 @@ export default function Chat({
       if (response.data.success) {
         const rawData = response.data?.data;
         const friends = Array.isArray(rawData) ? rawData : (rawData?.data || []);
-        
-        setAllUsers(
-          friends.map((u) => ({
-            userId: u._id || u.userId,
-            name: u.name,
-            email: u.email,
-            online: false,
-            lastSeen: u.lastSeen,
-            createdAt: u.createdAt,
-          }))
-        );
+
+        const friendsList = friends.map((u) => ({
+          userId: u._id || u.userId,
+          name: u.name,
+          email: u.email,
+          publicKey: u.publicKey || null,
+          online: !!u.isOnline,
+          lastSeen: u.lastSeen || null,
+          createdAt: u.createdAt,
+        }));
+
+        setAllUsers(friendsList);
+
+        // ✅ E2EE: Pre-load ALL friends' public keys on startup
+        // This ensures we can decrypt messages from anyone before they arrive
+        let preloadedKeyCount = 0;
+        for (const friend of friendsList) {
+          if (friend.publicKey) {
+            try {
+              cryptoService.storePublicKey(friend.userId, friend.publicKey);
+              preloadedKeyCount += 1;
+              console.log("🔑 Pre-loaded public key for friend:", friend.name);
+            } catch (keyError) {
+              console.warn("⚠️ Could not pre-load key for", friend.name, ":", keyError.message);
+            }
+          }
+        }
+        console.log(`✅ Pre-loaded ${preloadedKeyCount}/${friendsList.length} friends' public keys`);
+
         setError("");
       }
     } catch (err) {
@@ -253,22 +367,54 @@ export default function Chat({
     let cleanup;
 
     //  ONLINE USERS HANDLER
-    const handleOnlineUsers = (users) => {
-      if (users && users.length > 0) {
-        setAllUsers((prevUsers) => {
-          return prevUsers.map((friendUser) => {
-            const onlineUser = users.find(
-              (ou) => String(ou.userId) === String(friendUser.userId)
-            );
-            return { ...friendUser, online: !!onlineUser };
-          });
+    const handleOnlineUsers = (users = []) => {
+      setAllUsers((prevUsers) => {
+        return prevUsers.map((friendUser) => {
+          const onlineUser = users.find(
+            (ou) => String(ou.userId) === String(friendUser.userId)
+          );
+          return {
+            ...friendUser,
+            online: !!onlineUser,
+            lastSeen: onlineUser?.lastSeen || friendUser.lastSeen,
+          };
         });
-      }
+      });
     };
 
     //  INCOMING MESSAGE HANDLER
-    const handlePrivateMessage = (data) => {
+    const handlePrivateMessage = async (data) => {
       const isInCurrentChat = String(data.fromUserId) === String(selectedUserIdRef.current);
+
+      // ✅ E2EE: Decrypt encrypted messages BEFORE state update
+      let messageText = data.message;
+      let decrypted = false;
+
+      if (data.isEncrypted && cryptoService.isEncrypted(data.message)) {
+        try {
+          if (!getEncryptionKey()) {
+            messageText = "[Decryption failed - keypair not initialized]";
+            console.error("❌ No keypair!");
+          } else {
+            // ✅ Ensure sender's public key is loaded before decrypting
+            const hasKey = await ensureSenderPublicKey(data.fromUserId);
+            if (!hasKey) {
+              messageText = "[Decryption failed - sender public key unavailable]";
+              console.error("❌ Sender public key not found:", data.fromUserId);
+            } else {
+              messageText = await cryptoService.decryptMessage(data.message, data.fromUserId);
+              decrypted = true;
+              console.log("✅ Message decrypted successfully from:", data.fromUserId);
+            }
+          }
+        } catch (error) {
+          console.error("❌ Decryption failed:", error.message);
+          messageText = "[Decryption failed]";
+          decrypted = false;
+        }
+      } else {
+        decrypted = true; // Plaintext message
+      }
 
       setMessages((prev) => {
         if (prev.some((m) => String(m._id) === String(data._id))) return prev;
@@ -278,10 +424,12 @@ export default function Chat({
           fromUserId: data.fromUserId,
           fromUserName: data.fromUserName || "Unknown",
           toUserId: data.toUserId || currentUserId,
-          message: data.message,
+          message: messageText,
           time: data.time || new Date().toISOString(),
           read: isInCurrentChat,
           delivered: true,
+          isEncrypted: data.isEncrypted,
+          decrypted,
         };
         return [...prev, newMessage];
       });
@@ -304,20 +452,40 @@ export default function Chat({
     };
 
     //  MESSAGE SENT CONFIRMATION
-    const handleMessageSent = (data) => {
+    const handleMessageSent = async (data) => {
+      // ✅ For sent messages: we already showed plaintext optimistically
+      // The server echo just confirms delivery + gets the _id
+      // No need to decrypt - we already know the plaintext
       setMessages((prev) => {
+        const tempIndex = prev.findIndex((m) => String(m._id).startsWith("temp_"));
+        if (tempIndex !== -1) {
+          // Replace temp message with server's confirmed version (keeps plaintext)
+          const updated = [...prev];
+          updated[tempIndex] = {
+            ...updated[tempIndex],
+            _id: data._id, // Replace temp _id with real _id
+            delivered: true,
+            read: false,
+          };
+          return updated;
+        }
+
+        // If temp message wasn't found, add it (shouldn't happen)
         if (prev.some((m) => String(m._id) === String(data._id))) return prev;
+
         return [
           ...prev,
           {
             _id: data._id,
             fromUserId: data.fromUserId,
             toUserId: data.toUserId,
-            fromUserName: data.fromUserName,
-            message: data.message,
+            fromUserName: data.fromUserName || currentUserName,
+            message: data.message, // Keep original (already plaintext from our send)
             time: data.time,
-            delivered: data.delivered,
+            delivered: true,
             read: false,
+            isEncrypted: data.isEncrypted,
+            decrypted: true,
           }
         ];
       });
@@ -337,9 +505,9 @@ export default function Chat({
     };
 
     //  USER OFFLINE HANDLER
-    const handleUserOffline = ({ userId: offlineUserId }) => {
+    const handleUserOffline = ({ userId: offlineUserId, lastSeen }) => {
       setAllUsers((prev) => prev.map(u => 
-        String(u.userId) === String(offlineUserId) ? { ...u, online: false } : u
+        String(u.userId) === String(offlineUserId) ? { ...u, online: false, lastSeen: lastSeen || new Date().toISOString() } : u
       ));
     };
 
@@ -354,8 +522,6 @@ export default function Chat({
     };
 
     const registerListeners = (socket) => {
-      if (socket.connected) setSocketStatus('connected');
-      
       const onConnect = () => {
         setSocketStatus('connected');
         setSocketError('');
@@ -382,6 +548,13 @@ export default function Chat({
       socket.on(SOCKET_EVENTS.TYPING, handleTyping);
       socket.on(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
       socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
+
+      // Handle the race where the socket connects before listeners are attached.
+      if (socket.connected) {
+        onConnect();
+      } else {
+        setSocketStatus('connecting');
+      }
 
       return () => {
         socket.off('connect', onConnect);
@@ -426,17 +599,65 @@ export default function Chat({
       setLoading(true);
       isInitialLoad.current = true;
       try {
+        // ✅ E2EE: Pre-load recipient's and all participants' public keys
+        const recipient = allUsers.find(u => u.userId === selectedUserId);
+        const usersToPreload = [recipient].filter(Boolean); // Only recipient in 1-on-1 chat
+
+        for (const user of usersToPreload) {
+          if (user?.publicKey) {
+            try {
+              cryptoService.storePublicKey(user.userId, user.publicKey);
+              console.log("🔑 Public key pre-loaded for:", user.userId);
+            } catch (keyError) {
+              console.warn("⚠️ Could not pre-load public key for", user.userId, ":", keyError.message);
+            }
+          }
+        }
+
         const data = await messageService.fetchChatHistory(selectedUserId);
-        const messagesWithIds = data.messages.map((msg) => ({
-          _id: msg._id,
-          fromUserId: msg.fromUserId,
-          toUserId: msg.toUserId,
-          fromUserName: msg.senderName || "Unknown",
-          message: msg.message,
-          time: msg.time,
-          read: msg.read,
-          createdAt: msg.createdAt,
-        }));
+
+        // ✅ E2EE: Decrypt messages on history load
+        const messagesWithIds = await Promise.all(
+          data.messages.map(async (msg) => {
+            let messageText = msg.message;
+            let decrypted = false;
+
+            if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
+              try {
+                if (!getEncryptionKey()) {
+                  messageText = "[Decryption failed - keypair not initialized]";
+                } else {
+                  const peerId = await ensureMessagePeerKey(msg);
+                  if (!peerId) {
+                    messageText = "[Decryption failed - peer key unavailable]";
+                  } else {
+                    messageText = await cryptoService.decryptMessage(msg.message, peerId);
+                    decrypted = true;
+                  }
+                }
+              } catch (error) {
+                console.error("❌ Decryption failed for history message:", error.message);
+                messageText = "[Decryption failed]";
+              }
+            } else {
+              decrypted = true;
+            }
+
+            return {
+              _id: msg._id,
+              fromUserId: msg.fromUserId,
+              toUserId: msg.toUserId,
+              fromUserName: msg.senderName || "Unknown",
+              message: messageText,
+              time: msg.time,
+              read: msg.read,
+              createdAt: msg.createdAt,
+              isEncrypted: msg.isEncrypted,
+              decrypted,
+            };
+          })
+        );
+
         setMessages(messagesWithIds);
         setHasMore(data.hasMore);
         setNextCursor(data.nextCursor);
@@ -494,16 +715,48 @@ export default function Chat({
 
     try {
       const data = await messageService.fetchChatHistory(selectedUserId, nextCursor);
-      const olderMessages = data.messages.map((msg) => ({
-        _id: msg._id,
-        fromUserId: msg.fromUserId,
-        toUserId: msg.toUserId,
-        fromUserName: msg.senderName || "Unknown",
-        message: msg.message,
-        time: msg.time,
-        read: msg.read,
-        createdAt: msg.createdAt,
-      }));
+
+      // ✅ E2EE: Decrypt older messages on infinite scroll
+      const olderMessages = await Promise.all(
+        data.messages.map(async (msg) => {
+          let messageText = msg.message;
+          let decrypted = false;
+
+          if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
+            try {
+              if (!getEncryptionKey()) {
+                messageText = "[Decryption failed - keypair not initialized]";
+              } else {
+                const peerId = await ensureMessagePeerKey(msg);
+                if (!peerId) {
+                  messageText = "[Decryption failed - peer key unavailable]";
+                } else {
+                  messageText = await cryptoService.decryptMessage(msg.message, peerId);
+                  decrypted = true;
+                }
+              }
+            } catch (error) {
+              console.error("❌ Decryption failed for older message:", error.message);
+              messageText = "[Decryption failed]";
+            }
+          } else {
+            decrypted = true;
+          }
+
+          return {
+            _id: msg._id,
+            fromUserId: msg.fromUserId,
+            toUserId: msg.toUserId,
+            fromUserName: msg.senderName || "Unknown",
+            message: messageText,
+            time: msg.time,
+            read: msg.read,
+            createdAt: msg.createdAt,
+            isEncrypted: msg.isEncrypted,
+            decrypted,
+          };
+        })
+      );
 
       setMessages(prev => [...olderMessages, ...prev]);
       setHasMore(data.hasMore);
@@ -523,7 +776,7 @@ export default function Chat({
     } finally {
       setLoadingMore(false);
     }
-  }, [selectedUserId, nextCursor, hasMore, loadingMore]);
+  }, [selectedUserId, nextCursor, hasMore, loadingMore, ensureMessagePeerKey, getEncryptionKey]);
 
   //  SCROLL LISTENER FOR INFINITE SCROLL
   const handleScroll = useCallback((e) => {
@@ -597,7 +850,7 @@ export default function Chat({
   }, [messages, selectedUserId, currentUserId]);
 
   // Send message
-  const handleSendMessage = useCallback(() => {
+  const handleSendMessage = useCallback(async () => {
     const socket = getSocket();
     if (!socket || !isSocketConnected()) {
       setSocketError("🔴 Not connected. Please refresh.");
@@ -606,15 +859,68 @@ export default function Chat({
 
     if (!selectedUserId || !messageInput.trim()) return;
 
-    console.log("📤 [SEND] Sending message:", messageInput.trim());
+    const plaintext = messageInput.trim();
+    console.log("📤 [SEND] Sending message:", plaintext);
 
-    socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
-      toUserId: selectedUserId,
-      message: messageInput.trim(),
-    });
+    try {
+      // ✅ E2EE: Check keypair is initialized
+      if (!getEncryptionKey()) {
+        console.error("❌ Encryption keypair not initialized");
+        console.log("🔑 Crypto status:", cryptoService.getKeyStatus());
+        setSocketError("🔓 Encryption not ready. Please refresh and log in again.");
+        return;
+      }
+
+      // ✅ Encrypt for recipient using their public key
+      // First, ensure we have recipient's public key
+      let recipientPublicKey = cryptoService.getPublicKey(selectedUserId);
+      if (!recipientPublicKey) {
+        const selectedUser = allUsers.find((user) => String(user.userId) === String(selectedUserId));
+
+        if (selectedUser?.publicKey) {
+          cryptoService.storePublicKey(selectedUserId, selectedUser.publicKey);
+          recipientPublicKey = cryptoService.getPublicKey(selectedUserId);
+        }
+      }
+
+      if (!recipientPublicKey) {
+        console.warn("⚠️ Recipient public key is missing for selected user:", selectedUserId);
+        setSocketError("🔐 Recipient encryption key is missing. Ask them to log in again once so their key can be published.");
+        return;
+      }
+
+      const encryptedMessage = await cryptoService.encryptMessage(plaintext, selectedUserId);
+
+      // Send encrypted blob to recipient
+      socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
+        toUserId: selectedUserId,
+        message: encryptedMessage,
+        isEncrypted: true,
+      });
+
+      // Show plaintext in own UI (optimistic - we know the plaintext)
+      setMessages((prev) => [
+        ...prev,
+        {
+          _id: `temp_${Date.now()}`,
+          fromUserId: currentUserId,
+          toUserId: selectedUserId,
+          fromUserName: currentUserName,
+          message: plaintext,
+          time: new Date().toISOString(),
+          read: false,
+          delivered: true,
+          isEncrypted: true,
+          decrypted: true, // Already decrypted for sender (we encrypted it)
+        },
+      ]);
+    } catch (err) {
+      console.error("❌ Encryption failed:", err.message);
+      setSocketError(`🔒 Encryption error: ${err.message}`);
+    }
 
     setMessageInput("");
-  }, [selectedUserId, messageInput]);
+  }, [selectedUserId, messageInput, currentUserId, currentUserName, allUsers, getEncryptionKey]);
 
   // Handle typing
   const handleChatTyping = useCallback(
@@ -1058,7 +1364,15 @@ export default function Chat({
                             <span className="text-xs text-[rgb(var(--text-muted))] font-medium">
                               {formatTime(m.time)}
                             </span>
-                            
+
+                            {/* ✅ E2EE: Show lock icon for encrypted messages */}
+                            {m.isEncrypted && (
+                              <Lock
+                                className="w-3 h-3 text-amber-500 flex-shrink-0"
+                                title="Message is encrypted"
+                              />
+                            )}
+
                             {isOwn && (
                               <>
                                 {m.sending ? (
