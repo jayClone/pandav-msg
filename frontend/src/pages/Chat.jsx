@@ -67,7 +67,6 @@ export default function Chat({
 
     try {
       cryptoService.storePublicKey(senderId, sender.publicKey);
-      console.log("🔑 Loaded sender public key for:", sender.name);
       return true;
     } catch (error) {
       console.error("❌ Failed to load sender public key:", error.message);
@@ -115,7 +114,6 @@ export default function Chat({
 
     const restored = cryptoService.restoreMyKeypairFromSession(currentUserId);
     if (restored) {
-      console.log("🔐 Restored E2EE keypair during chat flow");
       return true;
     }
 
@@ -195,22 +193,9 @@ export default function Chat({
   useEffect(() => {
     if (!token) {
       cryptoService.clearAllKeys();
-      console.log("🔐 Encryption keys cleared on logout");
     }
   }, [token]);
 
-  //  🔍 DIAGNOSTIC: Log userId and encryption key status
-  useEffect(() => {
-    const authUser = getAuthUser();
-    const keyStatus = cryptoService.getKeyStatus();
-    console.log("🔍 [CHAT DIAGNOSTIC]", {
-      currentUserIdProp: currentUserId,
-      authUserIdToken: authUser?.userId,
-      keysStored: keyStatus.keysStored,
-      storedUserIds: keyStatus.userIds,
-      matchesAuth: String(currentUserId) === String(authUser?.userId),
-    });
-  }, [currentUserId]);
 
   //  COMPREHENSIVE PROTECTION: NO BACK, NO CLOSE, NO SWIPE-BACK
   useEffect(() => {
@@ -313,13 +298,11 @@ export default function Chat({
             try {
               cryptoService.storePublicKey(friend.userId, friend.publicKey);
               preloadedKeyCount += 1;
-              console.log("🔑 Pre-loaded public key for friend:", friend.name);
             } catch (keyError) {
               console.warn("⚠️ Could not pre-load key for", friend.name, ":", keyError.message);
             }
           }
         }
-        console.log(`✅ Pre-loaded ${preloadedKeyCount}/${friendsList.length} friends' public keys`);
 
         setError("");
       }
@@ -607,7 +590,6 @@ export default function Chat({
           if (user?.publicKey) {
             try {
               cryptoService.storePublicKey(user.userId, user.publicKey);
-              console.log("🔑 Public key pre-loaded for:", user.userId);
             } catch (keyError) {
               console.warn("⚠️ Could not pre-load public key for", user.userId, ":", keyError.message);
             }
@@ -860,13 +842,11 @@ export default function Chat({
     if (!selectedUserId || !messageInput.trim()) return;
 
     const plaintext = messageInput.trim();
-    console.log("📤 [SEND] Sending message:", plaintext);
 
     try {
       // ✅ E2EE: Check keypair is initialized
       if (!getEncryptionKey()) {
         console.error("❌ Encryption keypair not initialized");
-        console.log("🔑 Crypto status:", cryptoService.getKeyStatus());
         setSocketError("🔓 Encryption not ready. Please refresh and log in again.");
         return;
       }

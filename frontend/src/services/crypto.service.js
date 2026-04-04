@@ -67,7 +67,6 @@ class CryptoService {
         decodeBase64(stored.publicKey),
         decodeBase64(stored.secretKey)
       );
-      console.log("Session E2EE keypair restored for user:", stored.userId);
       return true;
     } catch (error) {
       console.error('Failed to restore keypair from session:', error.message);
@@ -113,7 +112,6 @@ class CryptoService {
       // Create deterministic keypair from seed
       const keypair = nacl.box.keyPair.fromSecretKey(new Uint8Array(seed));
 
-      console.log("🔐 Keypair derived from password");
       return keypair;
     } catch (error) {
       console.error('Keypair derivation failed:', error.message);
@@ -133,7 +131,6 @@ class CryptoService {
     // ✅ Also store our own public key so we can decrypt our own messages (server echoes)
     this.publicKeys.set(userId, publicKey);
     this.persistMyKeypair();
-    console.log("✅ My keypair stored for user:", userId);
   }
 
   /**
@@ -151,7 +148,6 @@ class CryptoService {
       }
 
       this.publicKeys.set(userId, publicKey);
-      console.log("✅ Public key stored for user:", userId);
     } catch (error) {
       console.error('Failed to store public key:', error.message);
       throw error;
@@ -202,12 +198,9 @@ class CryptoService {
       // Create public key from seed (matches keypair format)
       const keypair = nacl.box.keyPair.fromSecretKey(new Uint8Array(seed));
 
-      console.log("🔓 Derived public key for email:", email);
-
       // Cache it
       if (userId) {
         this.publicKeys.set(userId, keypair.publicKey);
-        console.log("✅ Public key cached for user:", userId);
       }
 
       return keypair.publicKey;
@@ -367,7 +360,6 @@ class CryptoService {
     this.myUserId = null;
     this.publicKeys.clear();
     this.clearPersistedKeypair();
-    console.log("🔐 All cryptographic keys cleared");
   }
 }
 

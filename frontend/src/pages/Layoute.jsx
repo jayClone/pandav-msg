@@ -89,10 +89,7 @@ export default function Layoute({ initialTab = "chats" }) {
       return;
     }
 
-    const restored = cryptoService.restoreMyKeypairFromSession(currentUserId);
-    if (!restored) {
-      console.warn("E2EE keypair not available in current session for user:", currentUserId);
-    }
+    cryptoService.restoreMyKeypairFromSession(currentUserId);
   }, [token, currentUserId]);
 
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -146,7 +143,6 @@ export default function Layoute({ initialTab = "chats" }) {
   const handleLogout = async () => {
     // ✅ E2EE: Clear encryption keys on logout
     cryptoService.clearAllKeys();
-    console.log("🔐 Encryption keys cleared on logout");
 
     await authService.logout();
     disconnectSocket();

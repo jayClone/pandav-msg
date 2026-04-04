@@ -107,11 +107,9 @@ export function LoginForm({ className, ...props }) {
           form.email.trim().toLowerCase(),
           form.password
         )
-        console.log("🔐 Keypair derived successfully");
 
         // Get userId from decoded JWT token
         const authUser = getAuthUser()
-        console.log("👤 Auth user:", authUser?.userId);
 
         if (authUser?.userId) {
           cryptoService.storeMyKeypair(
@@ -119,8 +117,6 @@ export function LoginForm({ className, ...props }) {
             keypair.publicKey,
             keypair.secretKey
           )
-          console.log("✅ Encryption keypair stored for user:", authUser.userId);
-          console.log("🔑 Crypto status:", cryptoService.getKeyStatus());
         } else {
           console.error("⚠️ Could not get userId from auth token");
         }
