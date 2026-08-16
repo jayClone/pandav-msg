@@ -1,13 +1,13 @@
+import crypto from 'crypto';
 import OTP from '../models/OTP.js';
 import EmailService from '../services/email.service.js';
 import User from '../models/User.js';
 import logger from '../config/logger.js';
+import { sendServerError } from '../utils/errorResponse.js';
 
-//  Generate random OTP
+//  Generate random 6-digit OTP using a CSPRNG (not Math.random())
 const generateOTP = () => {
-  return Math.floor(Math.pow(10, 5) + Math.random() * 9 * Math.pow(10, 5))
-    .toString()
-    .substring(0, 6);
+  return crypto.randomInt(100000, 1000000).toString();
 };
 
 export class OTPController {
@@ -16,7 +16,10 @@ export class OTPController {
     try {
       const { email, name, purpose = 'registration' } = req.body;
 
-      if (!email || !name) {
+      // `name` is optional for password-reset (see otp.validator.js) — the
+      // Joi schema already enforces this correctly; this check just needs
+      // to not re-impose the stricter rule on top of it.
+      if (!email || (!name && purpose !== 'password-reset')) {
         return res.status(400).json({
           success: false,
           message: 'Email and name are required'
@@ -25,24 +28,32 @@ export class OTPController {
 
       const normalizedEmail = email.trim().toLowerCase();
 
-      if (purpose === 'login') {
-        const userExists = await User.findOne({ email: normalizedEmail });
-        if (!userExists) {
-          return res.status(404).json({
-            success: false,
-            message: 'User with this email not found'
-          });
+      // Generic response used whether or not an OTP is actually sent, so the
+      // response itself never reveals whether this email is registered.
+      const genericResponse = {
+        success: true,
+        message: `If eligible, an OTP has been sent to ${normalizedEmail}`,
+        data: {
+          email: normalizedEmail,
+          expiresIn: `${process.env.OTP_EXPIRY_MINUTES || 10} minutes`
         }
+      };
+
+      const userExists = await User.findOne({ email: normalizedEmail });
+
+      if (purpose === 'login' && !userExists) {
+        return res.status(200).json(genericResponse);
       }
 
-      if (purpose === 'registration') {
-        const userExists = await User.findOne({ email: normalizedEmail });
-        if (userExists) {
-          return res.status(409).json({
-            success: false,
-            message: 'User with this email already exists'
-          });
-        }
+      if (purpose === 'registration' && userExists) {
+        return res.status(200).json(genericResponse);
+      }
+
+      // Same enumeration-prevention pattern as login: never send (or reveal
+      // via timing/response-shape) whether an email has an account when
+      // someone claims to have forgotten its password.
+      if (purpose === 'password-reset' && !userExists) {
+        return res.status(200).json(genericResponse);
       }
 
       const otp = generateOTP();
@@ -50,33 +61,27 @@ export class OTPController {
 
       await OTP.deleteMany({ email: normalizedEmail, purpose });
 
-      const otpRecord = await OTP.create({
+      await OTP.create({
         email: normalizedEmail,
         otp,
         purpose,
-        verified: false,  
+        verified: false,
         expiresAt
       });
 
-      
-      await EmailService.sendOTPEmail(normalizedEmail, otp, name, purpose);
+      // A forgot-password form only collects an email, not a name — use the
+      // account's real name for the email greeting instead of trusting
+      // (optional, usually absent) client input for this purpose.
+      const greetingName = purpose === 'password-reset' ? (userExists?.name || 'there') : name;
+
+      await EmailService.sendOTPEmail(normalizedEmail, otp, greetingName, purpose);
 
       logger.info(`✅ OTP sent to ${normalizedEmail} for ${purpose}`);
 
-      res.status(200).json({
-        success: true,
-        message: `OTP sent to ${normalizedEmail}`,
-        data: {
-          email: normalizedEmail,
-          expiresIn: `${process.env.OTP_EXPIRY_MINUTES || 10} minutes`
-        }
-      });
+      res.status(200).json(genericResponse);
     } catch (error) {
       logger.error(`❌ Send OTP error: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Failed to send OTP'
-      });
+      sendServerError(res, error, 'Failed to send OTP');
     }
   }
 
@@ -154,10 +159,7 @@ export class OTPController {
       });
     } catch (error) {
       logger.error(`❌ Verify OTP error: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Failed to verify OTP'
-      });
+      sendServerError(res, error, 'Failed to verify OTP');
     }
   }
 
@@ -186,11 +188,17 @@ export class OTPController {
         email: normalizedEmail,
         otp,
         purpose,
-        verified: false,  
+        verified: false,
         expiresAt
       });
 
-      await EmailService.sendOTPEmail(normalizedEmail, otp, name || 'User', purpose);
+      let greetingName = name || 'User';
+      if (purpose === 'password-reset') {
+        const user = await User.findOne({ email: normalizedEmail }).select('name');
+        greetingName = user?.name || 'there';
+      }
+
+      await EmailService.sendOTPEmail(normalizedEmail, otp, greetingName, purpose);
 
       logger.info(`✅ OTP resent to ${normalizedEmail}`);
 
@@ -200,10 +208,7 @@ export class OTPController {
       });
     } catch (error) {
       logger.error(`❌ Resend OTP error: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Failed to resend OTP'
-      });
+      sendServerError(res, error, 'Failed to resend OTP');
     }
   }
 }

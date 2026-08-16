@@ -10,7 +10,12 @@ const otpAPI = {
       
       const response = await API.post('/otp/send-otp', {
         email: email.trim().toLowerCase(),
-        name: name.trim(),
+        // Omit the key entirely when there's no name (e.g. the
+        // forgot-password flow) rather than sending an empty string — Joi's
+        // `.when(...).then(Joi.optional())` only skips validation when the
+        // key is *absent*; an empty string is still present and still
+        // fails the underlying `.min(1)`.
+        ...(name?.trim() && { name: name.trim() }),
         purpose
       });
 
@@ -58,7 +63,7 @@ const otpAPI = {
       
       const response = await API.post('/otp/resend-otp', {
         email: email.trim().toLowerCase(),
-        name: name.trim(),
+        ...(name?.trim() && { name: name.trim() }),
         purpose
       });
 

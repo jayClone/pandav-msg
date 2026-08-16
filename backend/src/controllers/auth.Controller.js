@@ -6,10 +6,11 @@ import OTP from '../models/OTP.js';
 import EmailService from '../services/email.service.js';
 import { deleteCache } from '../config/redis.js';
 import logger from '../config/logger.js';
+import { sendServerError } from '../utils/errorResponse.js';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_REGEX = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])[A-Za-z0-9!@#$%^&*]{8,}$/;
-const ACCESS_TOKEN_EXPIRE = process.env.JWT_EXPIRE || '15m';
+const ACCESS_TOKEN_EXPIRE = process.env.JWT_ACCESS_EXPIRE || '15m';
 const REFRESH_TOKEN_EXPIRE = process.env.JWT_REFRESH_EXPIRE || '30d';
 const REFRESH_COOKIE_NAME = 'refreshToken';
 
@@ -250,7 +251,23 @@ export const register = async (req, res) => {
       publicKey: publicKey || null
     });
 
-    await EmailService.sendWelcomeEmail(normalizedEmail, name);
+    // Fire-and-forget: registration latency shouldn't depend on two
+    // external mail providers (Resend, then a Gmail SMTP fallback) —
+    // send the welcome email in the background and just log a failure
+    // instead of blocking the response on it. sendWelcomeEmail currently
+    // catches its own errors and resolves with {success:false} rather than
+    // rejecting, so check that; .catch() is a defensive fallback in case
+    // that ever changes.
+    EmailService.sendWelcomeEmail(normalizedEmail, name)
+      .then((result) => {
+        if (!result?.success) {
+          logger.error(`Welcome email failed for ${normalizedEmail}: ${result?.error}`);
+        }
+      })
+      .catch((err) => {
+        logger.error(`Welcome email failed for ${normalizedEmail}: ${err.message}`);
+      });
+
     await OTP.deleteOne({ _id: otpRecord._id });
 
     const accessToken = await issueSession(res, user);
@@ -262,11 +279,14 @@ export const register = async (req, res) => {
       message: 'User registered successfully'
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'User with this email already exists'
+      });
+    }
     logger.error(`Registration error: ${error.message}`);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    sendServerError(res, error, 'Registration failed');
   }
 };
 
@@ -317,10 +337,87 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     logger.error(`Login error: ${error.message}`);
-    res.status(500).json({
-      success: false,
-      message: error.message
+    sendServerError(res, error, 'Login failed');
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email, OTP, and new password are required'
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const otpRecord = await OTP.findOne({
+      email: normalizedEmail,
+      otp: otp.toString(),
+      purpose: 'password-reset',
+      verified: true
     });
+
+    if (!otpRecord) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP not verified. Please verify your email with the correct OTP.'
+      });
+    }
+
+    if (new Date() > otpRecord.expiresAt) {
+      await OTP.deleteOne({ _id: otpRecord._id });
+      return res.status(400).json({
+        success: false,
+        message: 'OTP expired. Please request a new OTP.'
+      });
+    }
+
+    if (!PASSWORD_REGEX.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters with uppercase, number, and special character'
+      });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      await OTP.deleteOne({ _id: otpRecord._id });
+      return res.status(404).json({
+        success: false,
+        message: 'No account found for this email'
+      });
+    }
+
+    // pre('save') on the User model hashes this automatically.
+    user.password = newPassword;
+    await user.save();
+
+    await OTP.deleteOne({ _id: otpRecord._id });
+
+    // Resetting a password is a strong "kill every existing session" signal
+    // — whether the user genuinely forgot it or someone else had account
+    // access, neither case should leave old sessions valid. The client
+    // isn't auto-logged-in here on purpose: the E2EE keypair is derived
+    // from the password (see crypto.service.js), so the frontend needs to
+    // go through the normal login flow next to re-derive and re-publish the
+    // correct public key for the new password — a token from this endpoint
+    // would just encourage skipping that.
+    await revokeStoredRefreshToken(user._id);
+    clearRefreshCookie(res);
+
+    logger.info(`Password reset for ${normalizedEmail}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successful. Please log in with your new password.'
+    });
+  } catch (error) {
+    logger.error(`Reset password error: ${error.message}`);
+    sendServerError(res, error, 'Password reset failed');
   }
 };
 
@@ -385,10 +482,7 @@ export const refreshSession = async (req, res) => {
   } catch (error) {
     logger.error(`Refresh error: ${error.message}`);
     clearRefreshCookie(res);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    sendServerError(res, error, 'Session refresh failed');
   }
 };
 
@@ -417,10 +511,7 @@ export const logout = async (req, res) => {
   } catch (error) {
     logger.error(`Logout error: ${error.message}`);
     clearRefreshCookie(res);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    sendServerError(res, error, 'Logout failed');
   }
 };
 
@@ -446,9 +537,6 @@ export const getCurrentUser = async (req, res) => {
     });
   } catch (error) {
     logger.error(`Get user error: ${error.message}`);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    sendServerError(res, error, 'Failed to fetch current user');
   }
 };

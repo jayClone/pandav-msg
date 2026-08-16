@@ -1,10 +1,10 @@
 import express from 'express';
-import { register, login, logout, refreshSession, getCurrentUser } from '../../controllers/auth.Controller.js';
+import { register, login, logout, refreshSession, getCurrentUser, resetPassword } from '../../controllers/auth.Controller.js';
 import { protect } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { validate } from '../../middlewares/validate.js';
 import { authArcjet } from '../../middlewares/arcjet.js';
-import { RegisterSchema, LoginSchema } from '../../validators/auth.validator.js';
+import { RegisterSchema, LoginSchema, ResetPasswordSchema } from '../../validators/auth.validator.js';
 
 const router = express.Router();
 
@@ -28,6 +28,17 @@ router.post(
   '/login',
   validate(LoginSchema, 'body'),  authArcjet,
   asyncHandler(login)
+);
+
+/**
+ * @route POST /api/v1/auth/reset-password
+ * @desc Reset password using a verified password-reset OTP
+ * @access Public
+ */
+router.post(
+  '/reset-password',
+  validate(ResetPasswordSchema, 'body'), authArcjet,
+  asyncHandler(resetPassword)
 );
 
 router.post('/refresh', asyncHandler(refreshSession));

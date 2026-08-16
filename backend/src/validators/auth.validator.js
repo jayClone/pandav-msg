@@ -49,6 +49,37 @@ export const RegisterSchema = Joi.object({
     })
 });
 
+export const ResetPasswordSchema = Joi.object({
+  email: Joi.string()
+    .email()
+    .lowercase()
+    .required()
+    .messages({
+      'string.email': 'Please provide a valid email',
+      'string.empty': 'Email is required'
+    }),
+
+  otp: Joi.string()
+    .length(6)
+    .pattern(/^\d+$/)
+    .required()
+    .messages({
+      'string.length': 'OTP must be 6 digits',
+      'string.pattern.base': 'OTP must contain only numbers',
+      'string.empty': 'OTP is required'
+    }),
+
+  newPassword: Joi.string()
+    .min(8)
+    .pattern(/^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Password must contain uppercase, number, and special character',
+      'string.min': 'Password must be at least 8 characters',
+      'string.empty': 'New password is required'
+    })
+});
+
 export const LoginSchema = Joi.object({
   email: Joi.string()
     .email()

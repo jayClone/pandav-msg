@@ -52,6 +52,16 @@ const authService = {
     }
   },
 
+  resetPassword: async ({ email, otp, newPassword }) => {
+    const response = await API.post("/auth/reset-password", {
+      email: email.trim().toLowerCase(),
+      otp: otp.toString(),
+      newPassword
+    });
+
+    return response.data;
+  },
+
   refreshSession: async () => {
     const response = await API.post("/auth/refresh");
 

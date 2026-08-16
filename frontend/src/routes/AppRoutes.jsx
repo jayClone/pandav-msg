@@ -5,6 +5,7 @@ import Index from "@/pages/Index";
 //  LAZY LOAD HEAVY PAGES
 const Register = lazy(() => import("@pages/Register"));
 const Login = lazy(() => import("@pages/Login"));
+const ForgotPassword = lazy(() => import("@pages/ForgotPassword"));
 const Layoute = lazy(() => import("@/pages/Layoute"));
 
 //  FALLBACK LOADING COMPONENT
@@ -28,6 +29,7 @@ export default function AppRoutes() {
           {/*  WRAPPED WITH SUSPENSE */}
           <Route path="/register" element={<Register />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route
             path="/chat"
             element={

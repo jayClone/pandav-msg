@@ -266,15 +266,24 @@ export function LoginForm({ className, ...props }) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label
-                    htmlFor="password"
-                    className={cn(
-                      "text-xs font-bold uppercase tracking-wider",
-                      fieldErrors.password ? "text-red-500" : "text-muted-foreground"
-                    )}
-                  >
-                    Password
-                  </Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label
+                      htmlFor="password"
+                      className={cn(
+                        "text-xs font-bold uppercase tracking-wider",
+                        fieldErrors.password ? "text-red-500" : "text-muted-foreground"
+                      )}
+                    >
+                      Password
+                    </Label>
+                    <Link
+                      to="/forgot-password"
+                      className="text-xs font-medium text-primary hover:underline"
+                      tabIndex={loading ? -1 : 0}
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
                   <div className="relative">
                     <Input
                       id="password"
@@ -296,6 +305,8 @@ export function LoginForm({ className, ...props }) {
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       disabled={loading}
+                      title={showPassword ? "Hide password" : "Show password"}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

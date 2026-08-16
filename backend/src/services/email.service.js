@@ -2,6 +2,18 @@ import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import logger from '../config/logger.js';
 
+//  Escape HTML special characters before interpolating untrusted values
+//  (e.g. `name`) into email templates, to prevent HTML/link injection into
+//  mail sent from this app's own trusted sending domain.
+const escapeHtml = (value) => {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
 //  RESEND CLIENT
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -14,11 +26,19 @@ const gmailTransporter = nodemailer.createTransport({
   }
 });
 
+const OTP_SUBJECTS = {
+  'password-reset': 'Reset your Pandav MSG password',
+  login: 'Your Pandav MSG login code',
+  registration: 'Your Pandav MSG Verification Code'
+};
+
 export class EmailService {
   /**
    * Send OTP Email via Resend (Primary) or Gmail (Fallback)
    */
   static async sendOTPEmail(email, otp, name, purpose = 'registration') {
+    const subject = OTP_SUBJECTS[purpose] || OTP_SUBJECTS.registration;
+
     try {
       console.log(' Sending OTP via Resend to:', email);
 
@@ -27,7 +47,7 @@ export class EmailService {
           const response = await resend.emails.send({
             from: `${process.env.RESEND_FROM_NAME} <${process.env.RESEND_FROM_EMAIL}>`,
             to: email,
-            subject: ' Your Pandav MSG Verification Code',
+            subject,
             html: this.getOTPTemplate(otp, name, purpose)
           });
 
@@ -50,7 +70,7 @@ export class EmailService {
       const mailOptions = {
         from: `Pandav MSG <${process.env.GMAIL_USER}>`,
         to: email,
-        subject: ' Your Pandav MSG Verification Code',
+        subject,
         html: this.getOTPTemplate(otp, name, purpose)
       };
 
@@ -119,6 +139,10 @@ export class EmailService {
    * OTP Email Template
    */
   static getOTPTemplate(otp, name, purpose = 'registration') {
+    const introText = purpose === 'password-reset'
+      ? 'Use this code to reset your password:'
+      : 'Your verification code is:';
+
     return `
       <!DOCTYPE html>
       <html>
@@ -127,9 +151,9 @@ export class EmailService {
         <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
           <h1 style="color: #22c55e; text-align: center; margin-top: 0;">🔐 Pandav MSG</h1>
           
-          <p style="font-size: 16px; color: #333;">Hi ${name},</p>
-          
-          <p style="font-size: 14px; color: #666;">Your verification code is:</p>
+          <p style="font-size: 16px; color: #333;">Hi ${escapeHtml(name)},</p>
+
+          <p style="font-size: 14px; color: #666;">${introText}</p>
           
           <div style="background: #f0f9ff; border-left: 4px solid #22c55e; padding: 20px; margin: 20px 0; text-align: center; border-radius: 4px;">
             <h2 style="color: #22c55e; font-family: 'Courier New', monospace; letter-spacing: 6px; margin: 0; font-size: 32px;">${otp}</h2>
@@ -169,8 +193,8 @@ export class EmailService {
         <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
           <h1 style="color: #22c55e; text-align: center; margin-top: 0;">👋 Welcome to Pandav MSG!</h1>
           
-          <p style="font-size: 16px; color: #333;">Hi ${name},</p>
-          
+          <p style="font-size: 16px; color: #333;">Hi ${escapeHtml(name)},</p>
+
           <p style="font-size: 14px; color: #666; line-height: 1.6;">
             Your account has been created successfully! 🎉<br>
             You can now start connecting with your friends and enjoy secure, real-time messaging.
