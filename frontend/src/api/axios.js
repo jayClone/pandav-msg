@@ -116,7 +116,15 @@ API.interceptors.response.use(
       clearStoredToken();
     }
 
-    if (error.response?.status === 500) {
+    // A 401 from an auth endpoint (login/register/refresh/logout) is a
+    // normal, expected outcome the caller already handles — e.g. a guest
+    // visiting the site with no session cookie yet triggers a silent
+    // "am I logged in?" refresh check that's *supposed* to fail. Logging
+    // that as a red console.error on every guest page load is misleading
+    // noise, not a real problem, so it's downgraded here.
+    if (error.response?.status === 401 && isAuthEndpoint) {
+      console.info(`[AUTH] ${normalizedError.status}`, normalizedError.message);
+    } else if (error.response?.status === 500) {
       console.error("Server error:", normalizedError.message);
     } else {
       console.error(`[API-ERROR] ${normalizedError.status}`, normalizedError.message);
