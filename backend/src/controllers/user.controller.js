@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import mongoose from 'mongoose';
 import { getCache, setCache } from '../config/redis.js';
+import { sendServerError } from '../utils/errorResponse.js';
 
 /**
  * Get all registered users with pagination and caching
@@ -61,11 +62,7 @@ export const getAllUsers = async (req, res) => {
 
   } catch (error) {
     console.error('Get all users error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch users',
-      error: error.message
-    });
+    return sendServerError(res, error, 'Failed to fetch users');
   }
 };
 
@@ -117,11 +114,7 @@ export const getUserProfile = async (req, res) => {
 
   } catch (error) {
     console.error('Get user profile error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch user',
-      error: error.message
-    });
+    return sendServerError(res, error, 'Failed to fetch user');
   }
 };
 
@@ -147,25 +140,28 @@ export const searchUsers = async (req, res) => {
 
     const searchTerm = q.trim();
 
-    const total = await User.countDocuments({
+    // Uses the { name: 'text', email: 'text' } index instead of an
+    // unanchored $regex scan, so this stays indexed (not a COLLSCAN) as the
+    // users collection grows. Trade-off: $text does word/token matching, not
+    // substring/prefix matching — searching "jo" will not match "John" the
+    // way the old regex did. This endpoint isn't currently called by the
+    // frontend (it does its own client-side filtering instead), so this
+    // changes no live behavior today; if this gets wired up as a live
+    // "search as you type" box later, revisit whether $text's matching
+    // semantics still fit, or whether a prefix-anchored regex / Atlas Search
+    // is a better match for that UX.
+    const textFilter = {
       _id: { $ne: currentUserId },
-      $or: [
-        { name: { $regex: searchTerm, $options: 'i' } },
-        { email: { $regex: searchTerm, $options: 'i' } }
-      ]
-    });
+      $text: { $search: searchTerm }
+    };
 
-    const users = await User.find({
-      _id: { $ne: currentUserId },
-      $or: [
-        { name: { $regex: searchTerm, $options: 'i' } },
-        { email: { $regex: searchTerm, $options: 'i' } }
-      ]
-    })
+    const total = await User.countDocuments(textFilter);
+
+    const users = await User.find(textFilter)
       .select('_id name email isOnline lastSeen')
       .lean()
-      .skip(skip)       
-      .limit(limit)      
+      .skip(skip)
+      .limit(limit)
       .sort({ name: 1 });
 
     return res.status(200).json({

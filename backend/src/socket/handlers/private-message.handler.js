@@ -1,5 +1,5 @@
 import { MESSAGES, SOCKET_EVENTS } from "../../constant/response.messages.js";
-import Friend from "../../models/Friend";
+import Friend from "../../models/Friend.js";
 import Message from '../../models/Message.js';
 import { getCache, setCache } from '../../config/redis.js';
 

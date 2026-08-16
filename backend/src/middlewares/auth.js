@@ -53,6 +53,13 @@ export const protect = async (req, res, next) => {
       });
     }
 
+    if (decoded.type !== 'access') {
+      return res.status(401).json({
+        success: false,
+        message: 'Token is invalid or expired'
+      });
+    }
+
     const user = await User.findById(decoded.userId);
     
     if (!user) {

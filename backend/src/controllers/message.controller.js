@@ -2,7 +2,9 @@ import mongoose from 'mongoose';
 import Message from '../models/Message.js'
 import User from '../models/User.js';
 import Group from '../models/Group.js';
+import Friend from '../models/Friend.js';
 import { getCache, setCache } from '../config/redis.js';
+import { sendServerError } from '../utils/errorResponse.js';
 
 
 /**
@@ -128,11 +130,7 @@ export const getChatHistory = async (req, res) => {
 
   } catch (error) {
     console.error("getChatHistory error", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server Error retrieving chat history",
-      error: error.message
-    });
+    return sendServerError(res, error, 'Server error retrieving chat history');
   }
 };
 
@@ -149,20 +147,20 @@ export const getChatHistory = async (req, res) => {
 export const getConversations = async (req, res) => {
   try {
     const myId = req.user?._id || req.user?.userId;
+    const { skip, limit, page } = req.pagination || { skip: 0, limit: 50, page: 1 };
 
-    const cacheKey = `conversations:${myId}`;
+    const cacheKey = `conversations:${myId}:page:${page}:limit:${limit}`;
     const cachedData = await getCache(cacheKey);
 
     if (cachedData) {
       return res.status(200).json({
         success: true,
         message: 'Conversations fetched from cache',
-        data: cachedData,
-        count: cachedData.length
+        ...cachedData
       });
     }
 
-    const conversations = await Message.aggregate([
+    const [result] = await Message.aggregate([
       {
         $match: {
           $or: [
@@ -214,15 +212,32 @@ export const getConversations = async (req, res) => {
       },
       {
         $sort: { lastMessageTime: -1 }
+      },
+      {
+        $facet: {
+          data: [{ $skip: skip }, { $limit: limit }],
+          totalCount: [{ $count: 'count' }]
+        }
       }
     ]);
 
-    await setCache(cacheKey, conversations, 60);
+    const conversations = result?.data || [];
+    const total = result?.totalCount?.[0]?.count || 0;
+
+    const responseData = {
+      data: conversations,
+      count: conversations.length,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit)
+    };
+
+    await setCache(cacheKey, responseData, 60);
 
     return res.status(200).json({
       success: true,
-      data: conversations,
-      count: conversations.length
+      ...responseData
     });
 
   } catch (error) {
@@ -284,7 +299,6 @@ export const deleteMessage = async (req, res) => {
   try {
     const messageId = req.params.messageId;
     const myId = req.user?._id || req.user?.userId
-    const message = await Message.findById(messageId);
 
     if (!mongoose.Types.ObjectId.isValid(messageId)) {
       return res.status(400).json({
@@ -292,6 +306,8 @@ export const deleteMessage = async (req, res) => {
         message: "Invalid message ID format"
       })
     }
+
+    const message = await Message.findById(messageId);
 
     if (!message) {
       return res.status(404).json({
@@ -315,10 +331,7 @@ export const deleteMessage = async (req, res) => {
     })
   } catch (error) {
     console.error('deleteMessage error:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    return sendServerError(res, error, 'Failed to delete message');
   }
 };
 
@@ -347,6 +360,36 @@ export const sendPrivateMessage = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Message cannot be empty'
+      });
+    }
+
+    if (!isValidObjectId(receiverId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid receiver ID format'
+      });
+    }
+
+    const receiverUser = await User.findById(receiverId);
+    if (!receiverUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Recipient user not found'
+      });
+    }
+
+    const areFriends = await Friend.findOne({
+      status: 'accepted',
+      $or: [
+        { senderId, receiverId },
+        { senderId: receiverId, receiverId: senderId }
+      ]
+    });
+
+    if (!areFriends) {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot message non-friends'
       });
     }
 
@@ -386,7 +429,7 @@ export const sendPrivateMessage = async (req, res) => {
  */
 export const sendGroupMessage = async (req, res) => {
   try {
-    const { groupId, message, isEncrypted } = req.body;
+    const { groupId, message, isEncrypted, ciphertexts } = req.body;
     const senderId = req.user.userId;
 
     if (!groupId) {
@@ -396,25 +439,76 @@ export const sendGroupMessage = async (req, res) => {
       });
     }
 
-    if (!message || !message.trim()) {
+    if (!isEncrypted && (!message || !message.trim())) {
       return res.status(400).json({
         success: false,
         message: 'Message cannot be empty'
       });
     }
 
+    if (isEncrypted && (!ciphertexts || Object.keys(ciphertexts).length === 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ciphertexts is required for encrypted group messages'
+      });
+    }
+
+    if (!isValidObjectId(groupId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid group ID format'
+      });
+    }
+
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found'
+      });
+    }
+
+    const isMember = group.participants.some(
+      p => p.toString() === senderId.toString()
+    );
+
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not a member of this group'
+      });
+    }
+
+    if (isEncrypted) {
+      // Every current member (including the sender) must have their own
+      // ciphertext, or they'd have no way to ever read this message.
+      const participantIds = group.participants.map(p => p.toString()).sort();
+      const providedIds = Object.keys(ciphertexts).sort();
+      const coversAllMembers = participantIds.length === providedIds.length &&
+        participantIds.every((id, i) => id === providedIds[i]);
+
+      if (!coversAllMembers) {
+        return res.status(400).json({
+          success: false,
+          message: "ciphertexts must include exactly the group's current members"
+        });
+      }
+    }
+
     const savedMsg = await Message.create({
       senderId,
       groupId,
-      message: message.trim(),
       chatType: 'group',
-      isEncrypted: isEncrypted || false // Group messages not encrypted for now
+      isEncrypted: !!isEncrypted,
+      ...(isEncrypted
+        ? { groupCiphertexts: ciphertexts }
+        : { message: message.trim() })
     });
 
     return res.status(201).json({
       success: true,
       data: {
-        ...savedMsg.toObject(),
+        ...savedMsg.toObject({ flattenMaps: true }),
         isEncrypted: savedMsg.isEncrypted
       }
     });
@@ -502,11 +596,7 @@ export const markGroupMessagesAsRead = async (req, res) => {
 
   } catch (error) {
     console.error('Mark group messages as read error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to mark messages as read',
-      error: error.message
-    });
+    return sendServerError(res, error, 'Failed to mark messages as read');
   }
 };
 
@@ -514,6 +604,7 @@ export const markGroupMessagesAsRead = async (req, res) => {
 export const getMessageReadReceipts = async (req, res) => {
   try {
     const { messageId } = req.params;
+    const myId = req.user?.userId || req.user?._id;
 
     if (!isValidObjectId(messageId)) {
       return res.status(400).json({
@@ -529,6 +620,25 @@ export const getMessageReadReceipts = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'message not found'
+      });
+    }
+
+    let isParticipant;
+    if (message.chatType === 'group') {
+      const group = await Group.findById(message.groupId);
+      isParticipant = !!group && group.participants.some(
+        p => p.toString() === myId.toString()
+      );
+    } else {
+      isParticipant = [message.senderId, message.receiverId].some(
+        id => id && id.toString() === myId.toString()
+      );
+    }
+
+    if (!isParticipant) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view this message'
       });
     }
 

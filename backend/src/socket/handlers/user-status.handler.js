@@ -29,16 +29,17 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
         });
 
         for (const group of userGroups) {
-            if (!group.onlineMembers.includes(userId)) {
-                group.onlineMembers.push(userId);
-                await group.save();
-            }
+            const updatedGroup = await Group.findByIdAndUpdate(
+                group._id,
+                { $addToSet: { onlineMembers: userId } },
+                { new: true }
+            );
 
             io.to(group._id.toString()).emit('user_came_online', {
                 groupId: group._id,
                 userId: userId,
                 userName: name,
-                onlineCount: group.onlineMembers.length,
+                onlineCount: updatedGroup.onlineMembers.length,
             });
         }
 
@@ -51,6 +52,7 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
         })));
 
     } catch (error) {
+        console.error('[ERROR] handleUserConnect failed:', error.message);
     }
 }
 
@@ -72,16 +74,17 @@ export async function handleUserDisconnect(socket, io, userId, name, onlineUsers
         });
 
         for (const group of userGroups) {
-            group.onlineMembers = group.onlineMembers.filter(
-                id => id.toString() !== userId.toString()
+            const updatedGroup = await Group.findByIdAndUpdate(
+                group._id,
+                { $pull: { onlineMembers: userId } },
+                { new: true }
             );
-            await group.save();
 
             io.to(group._id.toString()).emit('user_went_offline', {
                 groupId: group._id,
                 userId: userId,
                 userName: name,
-                onlineCount: group.onlineMembers.length,
+                onlineCount: updatedGroup.onlineMembers.length,
             });
         }
 
@@ -94,6 +97,7 @@ export async function handleUserDisconnect(socket, io, userId, name, onlineUsers
         io.emit('user_offline', { userId, name, lastSeen: now.toISOString() });
 
     } catch (error) {
+        console.error('[ERROR] handleUserDisconnect failed:', error.message);
     }
 }
 

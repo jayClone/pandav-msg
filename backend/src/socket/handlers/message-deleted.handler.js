@@ -1,3 +1,4 @@
+import { SOCKET_EVENTS } from "../../constant/response.messages.js";
 import Message from '../../models/Message.js';
 
 /**
@@ -8,6 +9,19 @@ export async function handleMessageDeleted(socket, io, data, userId, onlineUsers
     const { messageId, groupId, toUserId } = data;
 
     try {
+        const message = await Message.findById(messageId);
+
+        if (!message) {
+            return;
+        }
+
+        if (message.senderId.toString() !== userId.toString()) {
+            socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+                message: 'you can only delete your own message'
+            });
+            return;
+        }
+
         const deletedMessage = await Message.findByIdAndDelete(messageId);
 
         if (!deletedMessage) {
@@ -43,5 +57,6 @@ export async function handleMessageDeleted(socket, io, data, userId, onlineUsers
             });
         }
     } catch (err) {
+        console.error('[ERROR] handleMessageDeleted failed:', err.message);
     }
 }

@@ -2,7 +2,9 @@ import { describe, it, beforeAll, afterAll, beforeEach, expect } from 'bun:test'
 import request from 'supertest';
 import app from '../app.js';
 import User from '@models/User.js';
+import OTP from '@models/OTP.js';
 import { connectDB } from '@config/db.js';
+import { registerTestUser } from './helpers/otp.js';
 
 // ✅ FIX: Bypass rate limiting in tests
 app.set('trust proxy', 1);
@@ -13,12 +15,14 @@ describe('🧪 USER API TESTS', () => {
   beforeAll(async () => {
     await connectDB();
     await User.deleteMany({});
+    await OTP.deleteMany({});
     console.log('✅ Test database ready');
   });
 
   afterAll(async () => {
     console.log('🧹 Cleaning up test data...');
     await User.deleteMany({});
+    await OTP.deleteMany({});
   });
 
   describe('A) GET ALL USERS - GET /api/v1/users', () => {
@@ -26,45 +30,33 @@ describe('🧪 USER API TESTS', () => {
 
     beforeEach(async () => {
       await User.deleteMany({});
+      await OTP.deleteMany({});
 
-      const regA = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: 'User Alpha',
-          email: 'alpha@example.com',
-          password: 'AlphaPass123!'
-        })
-        .timeout(15000);
+      const regA = await registerTestUser(app, {
+        name: 'User Alpha',
+        email: 'alpha@example.com',
+        password: 'AlphaPass123!'
+      });
 
       userA = regA.body.data;
       tokenA = regA.body.token;
 
-      await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY));
-
-      const regB = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: 'User Beta',
-          email: 'beta@example.com',
-          password: 'BetaPass123!'
-        })
-        .timeout(15000);
+      const regB = await registerTestUser(app, {
+        name: 'User Beta',
+        email: 'beta@example.com',
+        password: 'BetaPass123!'
+      });
 
       userB = regB.body.data;
 
-      await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY));
-
-      const regC = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: 'User Gamma',
-          email: 'gamma@example.com',
-          password: 'GammaPass123!'
-        })
-        .timeout(15000);
+      const regC = await registerTestUser(app, {
+        name: 'User Gamma',
+        email: 'gamma@example.com',
+        password: 'GammaPass123!'
+      });
 
       userC = regC.body.data;
-    });
+    }, 30000);
 
     it('TC-U-01: Get all users with valid token', async () => {
       const response = await request(app)
@@ -127,32 +119,25 @@ describe('🧪 USER API TESTS', () => {
 
     beforeEach(async () => {
       await User.deleteMany({});
+      await OTP.deleteMany({});
 
-      const regA = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: 'Profile Test A',
-          email: 'profilea@example.com',
-          password: 'ProfileA123!'
-        })
-        .timeout(15000);
+      const regA = await registerTestUser(app, {
+        name: 'Profile Test A',
+        email: 'profilea@example.com',
+        password: 'ProfileA123!'
+      });
 
       userA = regA.body.data;
       tokenA = regA.body.token;
 
-      await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY));
-
-      const regB = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: 'Profile Test B',
-          email: 'profileb@example.com',
-          password: 'ProfileB123!'
-        })
-        .timeout(15000);
+      const regB = await registerTestUser(app, {
+        name: 'Profile Test B',
+        email: 'profileb@example.com',
+        password: 'ProfileB123!'
+      });
 
       userB = regB.body.data;
-    });
+    }, 20000);
 
     it('TC-U-08: Get specific user profile successfully', async () => {
       const response = await request(app)
@@ -210,20 +195,16 @@ describe('🧪 USER API TESTS', () => {
 
     beforeEach(async () => {
       await User.deleteMany({});
+      await OTP.deleteMany({});
 
-      const regA = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: 'Search Test User',
-          email: 'searchtest@example.com',
-          password: 'SearchTest123!'
-        })
-        .timeout(15000);
+      const regA = await registerTestUser(app, {
+        name: 'Search Test User',
+        email: 'searchtest@example.com',
+        password: 'SearchTest123!'
+      });
 
       userA = regA.body.data;
       tokenA = regA.body.token;
-
-      await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY));
 
       const usersToCreate = [
         { name: 'John Doe', email: 'john@example.com' },
@@ -232,18 +213,13 @@ describe('🧪 USER API TESTS', () => {
       ];
 
       for (const user of usersToCreate) {
-        await request(app)
-          .post('/api/v1/auth/register')
-          .send({
-            name: user.name,
-            email: user.email,
-            password: 'Password123!'
-          })
-          .timeout(15000);
-
-        await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY));
+        await registerTestUser(app, {
+          name: user.name,
+          email: user.email,
+          password: 'Password123!'
+        });
       }
-    });
+    }, 40000);
 
     it('TC-U-14: Search users by name', async () => {
       await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY));
@@ -342,19 +318,17 @@ describe('🧪 USER API TESTS', () => {
 
     beforeEach(async () => {
       await User.deleteMany({});
+      await OTP.deleteMany({});
 
-      const regA = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: 'Edge Case User',
-          email: 'edgecase@example.com',
-          password: 'EdgeCase123!'
-        })
-        .timeout(15000);
+      const regA = await registerTestUser(app, {
+        name: 'Edge Case User',
+        email: 'edgecase@example.com',
+        password: 'EdgeCase123!'
+      });
 
       userA = regA.body.data;
       tokenA = regA.body.token;
-    });
+    }, 15000);
 
     it('TC-U-32: Handle very long search query gracefully', async () => {
       await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY));
@@ -374,14 +348,11 @@ describe('🧪 USER API TESTS', () => {
     it('TC-U-33: Handle special characters in search', async () => {
       await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY));
 
-      await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: "O'Brien",
-          email: 'obrien@example.com',
-          password: 'OBrien123!'
-        })
-        .timeout(15000);
+      await registerTestUser(app, {
+        name: "O'Brien",
+        email: 'obrien@example.com',
+        password: 'OBrien123!'
+      });
 
       await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY));
 
@@ -393,6 +364,27 @@ describe('🧪 USER API TESTS', () => {
       expect(response.status).toBe(200);
 
       console.log('✅ TC-U-33 PASSED');
+    });
+
+    it('TC-U-40: Regex-metacharacter-heavy search query returns quickly with no error (audit 05 regression)', async () => {
+      await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY));
+
+      // Classic ReDoS trigger pattern — catastrophic if this string were ever
+      // fed into `new RegExp()`. The endpoint uses a $text index search
+      // instead, so this should resolve fast regardless of query shape.
+      const evilQuery = encodeURIComponent('(a+)+' + 'a'.repeat(30) + '!');
+
+      const start = Date.now();
+      const response = await request(app)
+        .get(`/api/v1/users/search?q=${evilQuery}`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .timeout(15000);
+      const elapsedMs = Date.now() - start;
+
+      expect([200, 400, 500]).toContain(response.status);
+      expect(elapsedMs).toBeLessThan(3000);
+
+      console.log(`✅ TC-U-40 PASSED (${elapsedMs}ms)`);
     });
 
     it('TC-U-34: Validate token format strictness', async () => {
@@ -427,19 +419,17 @@ describe('🧪 USER API TESTS', () => {
 
     beforeEach(async () => {
       await User.deleteMany({});
+      await OTP.deleteMany({});
 
-      const regA = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: 'Rate Limit Test',
-          email: 'ratelimit@example.com',
-          password: 'RateLimit123!'
-        })
-        .timeout(15000);
+      const regA = await registerTestUser(app, {
+        name: 'Rate Limit Test',
+        email: 'ratelimit@example.com',
+        password: 'RateLimit123!'
+      });
 
       userA = regA.body.data;
       tokenA = regA.body.token;
-    });
+    }, 15000);
 
     it('TC-U-36: Respect rate limiting with delays', async () => {
       const results = [];

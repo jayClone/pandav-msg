@@ -1,14 +1,27 @@
 import arcjet, { tokenBucket, shield, detectBot } from "@arcjet/node";
 
+// Arcjet is a real, cloud-backed rate limiter with a real quota. Automated
+// tests share one IP+UA characteristic across potentially dozens of runs in
+// a short window (this suite alone drives the OTP-gated auth flow directly,
+// unlike before), so without this they'd trip real rate limits and fail for
+// reasons that have nothing to do with what each test is actually checking.
+// Bypassing Arcjet entirely in tests is the standard pattern for this exact
+// problem — don't let CI depend on a live third-party service's quota.
+const isTestEnv = process.env.NODE_ENV === "test";
+
 /**
  * Initialize Arcjet for Bun + Express
- * Uses ONLY user-agent - most reliable characteristic
+ * Tracks by source IP (Arcjet's built-in fingerprint) plus user-agent as a
+ * secondary signal. IP alone would previously have been skipped in favor of
+ * user-agent only, which meant every client sharing a UA string shared one
+ * rate-limit bucket and the limit was trivially bypassed by rotating the header.
  */
 const aj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
 
   characteristics: [
+    "ip.src",
     "http.request.headers['user-agent']",
   ],
 
@@ -40,6 +53,10 @@ const aj = arcjet({
  * ✅ Skips /health endpoint
  */
 export const globalArcjet = async (req, res, next) => {
+  if (isTestEnv) {
+    return next();
+  }
+
   if (req.path === "/health" || req.path === "/api/v1/health") {
     return next();
   }
@@ -87,7 +104,7 @@ export const globalArcjet = async (req, res, next) => {
 const authAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["http.request.headers['user-agent']"],
+  characteristics: ["ip.src", "http.request.headers['user-agent']"],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -100,6 +117,10 @@ const authAj = arcjet({
 });
 
 export const authArcjet = async (req, res, next) => {
+  if (isTestEnv) {
+    return next();
+  }
+
   try {
     const decision = await authAj.protect(req, { requested: 1 });
 
@@ -133,7 +154,7 @@ export const authArcjet = async (req, res, next) => {
 const otpAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["http.request.headers['user-agent']"],
+  characteristics: ["ip.src", "http.request.headers['user-agent']"],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -146,6 +167,10 @@ const otpAj = arcjet({
 });
 
 export const otpArcjet = async (req, res, next) => {
+  if (isTestEnv) {
+    return next();
+  }
+
   try {
     const decision = await otpAj.protect(req, { requested: 1 });
 
@@ -179,7 +204,9 @@ export const otpArcjet = async (req, res, next) => {
 const msgAj = arcjet({
   key: process.env.ARCJET_KEY,
   environment: process.env.ARCJET_ENV || "production",
-  characteristics: ["http.request.headers['user-agent']"],
+  // messageArcjet always runs after `protect`, so the authenticated user id
+  // is available and is a stronger key than IP/UA for a per-account limit.
+  characteristics: ["ip.src", "userId"],
   rules: [
     shield({ mode: "LIVE" }),
     tokenBucket({
@@ -192,8 +219,15 @@ const msgAj = arcjet({
 });
 
 export const messageArcjet = async (req, res, next) => {
+  if (isTestEnv) {
+    return next();
+  }
+
   try {
-    const decision = await msgAj.protect(req, { requested: 1 });
+    const decision = await msgAj.protect(req, {
+      requested: 1,
+      userId: req.user?.userId || req.user?._id?.toString() || "anonymous",
+    });
 
     const remaining = decision.limits?.[0]?.remaining ?? 50;
     const resetTime = decision.limits?.[0]?.resetTime ?? (Date.now() + 60000);

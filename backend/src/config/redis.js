@@ -135,6 +135,28 @@ export const deleteCache = async (key) => {
 };
 
 /**
+ * Cache helper - DELETE all keys matching a pattern (e.g. "requests:pending:<userId>:*")
+ * Used when a write needs to invalidate every paginated cache entry for a
+ * resource, since we don't know which page/limit combinations are cached.
+ */
+export const deleteCacheByPattern = async (pattern) => {
+  if (!redisClient) return;
+
+  try {
+    const keys = [];
+    for await (const batch of redisClient.scanIterator({ MATCH: pattern, COUNT: 100 })) {
+      keys.push(...batch);
+    }
+    if (keys.length > 0) {
+      await redisClient.del(keys);
+      console.debug(`✅ Cache DELETE (pattern): ${pattern} (${keys.length} keys)`);
+    }
+  } catch (error) {
+    console.warn(`⚠️  Cache DELETE by pattern failed: ${error.message}`);
+  }
+};
+
+/**
  * Health check
  */
 export const checkRedisHealth = async () => {
@@ -157,5 +179,6 @@ export default {
   getCache,
   setCache,
   deleteCache,
+  deleteCacheByPattern,
   checkRedisHealth
 };

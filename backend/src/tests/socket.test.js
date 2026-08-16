@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import io from 'socket.io-client';
 import http from 'http';
+import mongoose from 'mongoose';
 import app from '../app.js';
 import { createSocketServer } from '@socket/socket.server.js';
-import { connectDB, disconnectDB } from '@config/db.js';  
+import { connectDB } from '@config/db.js';
 import User from '../models/User.js';
 import Message from '../models/Message.js';
 import Friend from '../models/Friend.js';  // ✅ ADD THIS
+import Group from '../models/Group.js';
 import jwt from 'jsonwebtoken';
 
 /**
@@ -37,7 +39,8 @@ const generateToken = (user) => {
   return jwt.sign({
     userId: user.id,
     email: user.email,
-    name: user.name
+    name: user.name,
+    type: 'access'
   }, process.env.JWT_SECRET, {
     expiresIn: '7d'
   });
@@ -210,10 +213,10 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
         if (mongoose.connection && mongoose.connection.readyState === 1) {
           try {
             console.log('🗑️  Cleaning MongoDB collections...');
-            await User.deleteMany({}).timeout(5000);
-            await Message.deleteMany({}).timeout(5000);
-            await Friend.deleteMany({}).timeout(5000);
-            await Group.deleteMany({}).timeout(5000);
+            await User.deleteMany({});
+            await Message.deleteMany({});
+            await Friend.deleteMany({});
+            await Group.deleteMany({});
             console.log('✅ Test data cleaned from MongoDB');
           } catch (cleanupError) {
             // Ignore "Client must be connected" errors during cleanup
@@ -227,17 +230,11 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
           console.warn('⚠️  MongoDB not connected, skipping data cleanup');
         }
 
-        // ✅ FIX 5: Finally disconnect MongoDB
-        await new Promise(res => setTimeout(res, 500));
-      
-        if (mongoose.connection && mongoose.connection.readyState === 1) {
-          try {
-            await disconnectDB();
-            console.log('✅ MongoDB disconnected\n');
-          } catch (dbError) {
-            console.warn('⚠️  Error disconnecting DB:', dbError.message);
-          }
-        }
+        // Deliberately not calling disconnectDB() here: bun test runs
+        // multiple test files concurrently against one shared mongoose
+        // connection, so one file disconnecting tears down the connection
+        // out from under whichever other files are still mid-test
+        // (see docs/audit/09).
 
         // ✅ FIX 6: Final cleanup delay
         await new Promise(res => setTimeout(res, 500));
@@ -391,6 +388,45 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
       socket.on('connect_error', (error) => {
         console.log('✅ PASS: Expired token rejected');
         errorReceived = true;
+        socket.disconnect();
+        done();
+      });
+
+      setTimeout(() => {
+        if (!errorReceived) {
+          socket.disconnect();
+          done();
+        }
+      }, 3000);
+    });
+
+    it('should reject a refresh-type token used for socket auth (audit 04 regression)', (done) => {
+      // Signed with the same secret a real access token would use, but
+      // with type: 'refresh' — isolates socketAuthMiddleware's
+      // `decoded.type !== 'access'` check from any secret-mismatch side effect.
+      const refreshToken = jwt.sign(
+        { userId: testUsers.userA.id, type: 'refresh' },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      const socket = io(API_URL, {
+        auth: { token: refreshToken },
+        reconnection: false,
+        transports: ['websocket', 'polling']
+      });
+
+      let errorReceived = false;
+
+      socket.on('connect_error', (error) => {
+        console.log('✅ PASS: Refresh-type token rejected for socket auth');
+        errorReceived = true;
+        socket.disconnect();
+        done();
+      });
+
+      socket.on('connect', () => {
+        console.error('❌ FAIL: Should not connect with a refresh-type token');
         socket.disconnect();
         done();
       });
@@ -640,6 +676,151 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
         done();
       }, 5001);
     });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // TEST SUITE 8: MESSAGE DELETION OWNERSHIP (owed regression test, audit 02)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('8️⃣ Message Deletion Ownership Test (audit 02 regression)', () => {
+
+    it('should reject a non-owner deleting another user\'s message and leave it intact', (done) => {
+      (async () => {
+        const msg = await Message.create({
+          senderId: testUsers.userA.id,
+          receiverId: testUsers.userB.id,
+          message: 'Owned by A',
+          chatType: 'private'
+        });
+
+        const tokenB = generateToken(testUsers.userB);
+        const socketB = io(API_URL, {
+          auth: { token: tokenB },
+          reconnection: false,
+          transports: ['websocket', 'polling']
+        });
+
+        let handled = false;
+        const finish = async () => {
+          if (handled) return;
+          handled = true;
+          const stillExists = await Message.findById(msg._id);
+          expect(stillExists).not.toBeNull();
+          socketB.disconnect();
+          done();
+        };
+
+        socketB.on('error_message', (data) => {
+          console.log('✅ PASS: Non-owner delete rejected:', data.message);
+          finish();
+        });
+
+        socketB.on('connect', () => {
+          socketB.emit('message_deleted', { messageId: msg._id.toString(), toUserId: testUsers.userA.id });
+        });
+
+        socketB.on('connect_error', (error) => {
+          console.error('Error:', error.message);
+          finish();
+        });
+
+        setTimeout(finish, 5000);
+      })();
+    }, 8000);
+
+    it('should allow the owner to delete their own message', (done) => {
+      (async () => {
+        const msg = await Message.create({
+          senderId: testUsers.userA.id,
+          receiverId: testUsers.userB.id,
+          message: 'Owned by A, to be deleted',
+          chatType: 'private'
+        });
+
+        const tokenA = generateToken(testUsers.userA);
+        const socketA = io(API_URL, {
+          auth: { token: tokenA },
+          reconnection: false,
+          transports: ['websocket', 'polling']
+        });
+
+        let handled = false;
+        const finish = async () => {
+          if (handled) return;
+          handled = true;
+          const stillExists = await Message.findById(msg._id);
+          expect(stillExists).toBeNull();
+          socketA.disconnect();
+          done();
+        };
+
+        socketA.on('message_deleted', (data) => {
+          console.log('✅ PASS: Owner delete succeeded:', data.messageId);
+          finish();
+        });
+
+        socketA.on('connect', () => {
+          socketA.emit('message_deleted', { messageId: msg._id.toString(), toUserId: testUsers.userB.id });
+        });
+
+        socketA.on('connect_error', (error) => {
+          console.error('Error:', error.message);
+          finish();
+        });
+
+        setTimeout(finish, 5000);
+      })();
+    }, 8000);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // TEST SUITE 9: GROUP MESSAGE AUTHORIZATION (owed regression test, audit 01)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('9️⃣ Group Message Authorization Test (audit 01 regression)', () => {
+
+    it('should reject a non-member sending a group message and create no message', (done) => {
+      (async () => {
+        const group = await Group.create({
+          name: 'Members Only (socket test)',
+          participants: [testUsers.userA.id],
+          adminId: testUsers.userA.id
+        });
+
+        const tokenB = generateToken(testUsers.userB);
+        const socketB = io(API_URL, {
+          auth: { token: tokenB },
+          reconnection: false,
+          transports: ['websocket', 'polling']
+        });
+
+        let handled = false;
+        const finish = async () => {
+          if (handled) return;
+          handled = true;
+          const created = await Message.findOne({ groupId: group._id });
+          expect(created).toBeNull();
+          socketB.disconnect();
+          done();
+        };
+
+        socketB.on('error_message', (data) => {
+          console.log('✅ PASS: Non-member group message rejected:', data.message);
+          finish();
+        });
+
+        socketB.on('connect', () => {
+          socketB.emit('group_message', { groupId: group._id.toString(), message: 'I should not be able to send this' });
+        });
+
+        socketB.on('connect_error', (error) => {
+          console.error('Error:', error.message);
+          finish();
+        });
+
+        setTimeout(finish, 5000);
+      })();
+    }, 8000);
   });
 
 });

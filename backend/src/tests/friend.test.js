@@ -3,7 +3,9 @@ import request from 'supertest';
 import app from '../app.js';
 import User from '@models/User.js';
 import Friend from '@models/Friend.js';
+import OTP from '@models/OTP.js';
 import { connectDB } from '@config/db.js';
+import { sendAndVerifyOtp } from './helpers/otp.js';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -61,13 +63,15 @@ describe('🧪 FRIEND REQUEST FEATURE TESTS', () => {
     await connectDB();
     await User.deleteMany({});
     await Friend.deleteMany({});
+    await OTP.deleteMany({});
     console.log('✅ Test database ready');
 
     // Register all test users
     for (const [key, userData] of Object.entries(testUsers)) {
+      const otp = await sendAndVerifyOtp(app, { email: userData.email, name: userData.name });
       const registerRes = await request(app)
         .post('/api/v1/auth/register')
-        .send(userData)
+        .send({ ...userData, otp })
         .timeout(15000);
 
       expect(registerRes.status).toBe(201);
@@ -101,6 +105,7 @@ describe('🧪 FRIEND REQUEST FEATURE TESTS', () => {
     console.log('🧹 Cleaning up test data...');
     await User.deleteMany({});
     await Friend.deleteMany({});
+    await OTP.deleteMany({});
     console.log('✅ Cleanup complete');
   });
 

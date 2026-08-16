@@ -55,6 +55,11 @@ const userSchema = new mongoose.Schema({
 
 userSchema.index({ email: 1, isOnline: 1 });
 
+// Text index backing $text search in searchUsers — see docs/audit/06 for why
+// this replaced an unanchored $regex scan, and the search-semantics tradeoff
+// that comes with it (word/token matching, not substring/prefix matching).
+userSchema.index({ name: 'text', email: 'text' });
+
 userSchema.pre('save', async function() {
   if (!this.isModified('password')) {
     return; 

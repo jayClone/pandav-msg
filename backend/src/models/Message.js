@@ -30,8 +30,36 @@ const messageSchema = new mongoose.Schema(
 
     message: {
       type: String,
-      required: [true, 'Message cannot be empty'],
-      trim: true 
+      // Not required for encrypted group messages, which carry their
+      // content in groupCiphertexts instead (see below) — every other
+      // message (private, or an unencrypted group message) still needs it.
+      required: [
+        function () {
+          return !(this.chatType === 'group' && this.groupCiphertexts && this.groupCiphertexts.size > 0);
+        },
+        'Message cannot be empty'
+      ],
+      maxlength: [10000, 'Message cannot exceed 10000 characters'],
+      trim: true
+    },
+
+    // Group E2EE: one NaCl-box ciphertext of the same plaintext per current
+    // group member (including the sender, so they can re-read their own
+    // sent messages later), keyed by member userId. Mirrors the private
+    // message model's single ciphertext, just fanned out per recipient
+    // since a group has more than one. Only set when isEncrypted && chatType
+    // === 'group'.
+    groupCiphertexts: {
+      type: Map,
+      of: {
+        type: String,
+        maxlength: [20000, 'Ciphertext is too large']
+      },
+      validate: {
+        validator: (map) => !map || map.size <= 200,
+        message: 'groupCiphertexts cannot cover more than 200 members'
+      },
+      default: undefined
     },
 
     read: {

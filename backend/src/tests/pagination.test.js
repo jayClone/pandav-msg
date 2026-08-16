@@ -4,7 +4,9 @@ import app from '../app.js';
 import User from '@models/User.js';
 import Message from '@models/Message.js';
 import Group from '@models/Group.js';
+import OTP from '@models/OTP.js';
 import { connectDB } from '@config/db.js';
+import { registerTestUser } from './helpers/otp.js';
 
 describe('🧪 PAGINATION TESTS', () => {
     let userA, userB;
@@ -15,9 +17,10 @@ describe('🧪 PAGINATION TESTS', () => {
         await User.deleteMany({});
         await Message.deleteMany({});
         await Group.deleteMany({});
+        await OTP.deleteMany({});
 
         // Register User A
-        const regA = await request(app).post('/api/v1/auth/register').send({
+        const regA = await registerTestUser(app, {
             name: 'User A', email: 'a@test.com', password: 'Password123!'
         });
         userA = regA.body.data;
@@ -27,7 +30,7 @@ describe('🧪 PAGINATION TESTS', () => {
         tokenA = loginA.body.token;
 
         // Register User B
-        const regB = await request(app).post('/api/v1/auth/register').send({
+        const regB = await registerTestUser(app, {
             name: 'User B', email: 'b@test.com', password: 'Password123!'
         });
         userB = regB.body.data;
@@ -35,12 +38,13 @@ describe('🧪 PAGINATION TESTS', () => {
             email: 'b@test.com', password: 'Password123!'
         });
         tokenB = loginB.body.token;
-    });
+    }, 20000);
 
     afterAll(async () => {
         await User.deleteMany({});
         await Message.deleteMany({});
         await Group.deleteMany({});
+        await OTP.deleteMany({});
     });
 
     describe('1) Private Chat Pagination', () => {
@@ -85,11 +89,20 @@ describe('🧪 PAGINATION TESTS', () => {
 
     describe('2) Group Chat Pagination', () => {
         it('should paginate group messages correctly', async () => {
+            // Groups require members to be friends first
+            const sendRes = await request(app)
+                .post('/api/v1/friends')
+                .set('Authorization', `Bearer ${tokenA}`)
+                .send({ receiverId: userB._id });
+            await request(app)
+                .patch(`/api/v1/friends/${sendRes.body.data._id}/accept`)
+                .set('Authorization', `Bearer ${tokenB}`);
+
             // Create a group
             const groupRes = await request(app)
                 .post('/api/v1/groups')
                 .set('Authorization', `Bearer ${tokenA}`)
-                .send({ name: 'Test Group', members: [userB._id] });
+                .send({ name: 'Test Group', memberIds: [userB._id] });
 
             const groupId = groupRes.body.data._id;
 
@@ -99,6 +112,7 @@ describe('🧪 PAGINATION TESTS', () => {
                 msgs.push({
                     senderId: userA._id,
                     groupId: groupId,
+                    chatType: 'group',
                     message: `Group Msg ${i}`,
                     createdAt: new Date(Date.now() - (13 - i) * 60000)
                 });

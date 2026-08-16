@@ -10,8 +10,10 @@ import {
   getMessageReadReceipts
 } from '../../controllers/message.controller.js';
 import { protect } from '../../middlewares/auth.js';
-import { pagination } from '../../middlewares/pagination.js'; 
+import { pagination } from '../../middlewares/pagination.js';
 import { messageArcjet } from '../../middlewares/arcjet.js';
+import { validate } from '../../middlewares/validate.js';
+import { SendPrivateMessageSchema, SendGroupMessageSchema } from '../../validators/message.validator.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 
 
@@ -24,7 +26,7 @@ const router = express.Router();
  * @param {string} receiverId - User to receive message
  * @param {string} message - Message content
  */
-router.post('/private', protect,messageArcjet, asyncHandler(sendPrivateMessage));
+router.post('/private', protect, validate(SendPrivateMessageSchema), messageArcjet, asyncHandler(sendPrivateMessage));
 
 /**
  * @route POST /api/v1/messages/group
@@ -33,7 +35,7 @@ router.post('/private', protect,messageArcjet, asyncHandler(sendPrivateMessage))
  * @param {string} groupId - Group to receive message
  * @param {string} message - Message content
  */
-router.post('/group', protect,messageArcjet, asyncHandler(sendGroupMessage));
+router.post('/group', protect, validate(SendGroupMessageSchema), messageArcjet, asyncHandler(sendGroupMessage));
 
 /**
  * @route GET /api/v1/messages/:userId

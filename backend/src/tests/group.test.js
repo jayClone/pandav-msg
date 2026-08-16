@@ -5,8 +5,10 @@ import User from '@models/User.js';
 import Group from '@models/Group.js';
 import Message from '@models/Message.js';
 import Friend from '@models/Friend.js';  // ✅ ADD THIS
+import OTP from '@models/OTP.js';
 import mongoose from 'mongoose';
-import { connectDB, disconnectDB } from '@config/db.js';
+import { connectDB } from '@config/db.js';
+import { sendAndVerifyOtp, registerTestUser } from './helpers/otp.js';
 
 describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
   let userA, userB, userC, userD;
@@ -70,13 +72,15 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
     await Group.deleteMany({});
     await Message.deleteMany({});
     await Friend.deleteMany({});  // ✅ ADD THIS
+    await OTP.deleteMany({});
     console.log('✅ Test database ready\n');
 
     // Register all test users
     for (const [key, userData] of Object.entries(testUsers)) {
+      const otp = await sendAndVerifyOtp(app, { email: userData.email, name: userData.name });
       const registerRes = await request(app)
         .post('/api/v1/auth/register')
-        .send(userData)
+        .send({ ...userData, otp })
         .timeout(15000);
 
       expect(registerRes.status).toBe(201);
@@ -115,7 +119,7 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
 
     console.log(`✅ All friendships created\n`);
     console.log(`✅ Test users ready: ${userA.name}, ${userB.name}, ${userC.name}, ${userD.name}\n`);
-  });
+  }, 30000); // 4 sequential real OTP send/verify/register/login round-trips need more than the default hook timeout
 
   afterAll(async () => {
     console.log('\n🧹 Cleaning up test data...');
@@ -123,7 +127,11 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
     await Group.deleteMany({});
     await Message.deleteMany({});
     await Friend.deleteMany({});  // ✅ ADD THIS
-    await disconnectDB();
+    await OTP.deleteMany({});
+    // Deliberately not calling disconnectDB() here: bun test runs multiple
+    // test files concurrently against one shared mongoose connection, so
+    // one file disconnecting tears down the connection out from under
+    // whichever other files are still mid-test (see docs/audit/09).
     console.log('✅ Cleanup complete\n');
   });
 
@@ -396,33 +404,53 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
       console.log('✅ TC-G-15 PASSED\n');
     });
 
-    it('TC-G-16: History limit works (pagination)', async () => {
+    it('TC-G-16: History limit works (cursor-based pagination)', async () => {
+      // getGroupMessages uses cursor pagination (`before` + `limit`), not
+      // page numbers — `page` is accepted but only echoed back, it doesn't
+      // change which messages come back. This test previously asserted a
+      // `totalPages` field that has never existed on this response and
+      // re-requested with `page=2` (which the endpoint ignores), so it was
+      // testing an API shape this endpoint never actually had.
+      // Explicit, distinct createdAt per message: insertMany runs as one
+      // bulk write, so without this every document would get effectively
+      // the same auto-timestamp and the createdAt-sort tie-order between
+      // page 1 and page 2 wouldn't be guaranteed stable.
+      const baseTime = Date.now();
       const messages = [];
       for (let i = 0; i < 100; i++) {
         messages.push({
           senderId: userA._id,
           groupId: testGroup._id,
           message: `Message ${i}`,
-          chatType: 'group'
+          chatType: 'group',
+          createdAt: new Date(baseTime + i)
         });
       }
       await Message.insertMany(messages);
 
       const response1 = await request(app)
-        .get(`/api/v1/groups/${testGroup._id}/messages?page=1&limit=50`)
+        .get(`/api/v1/groups/${testGroup._id}/messages?limit=50`)
         .set('Authorization', `Bearer ${tokenA}`)
         .timeout(15000);
 
       expect(response1.body.data.length).toBe(50);
       expect(response1.body.totalCount).toBe(100);
-      expect(response1.body.totalPages).toBe(2);
+      expect(response1.body.hasMore).toBe(true);
+      expect(response1.body.nextCursor).toBeDefined();
 
       const response2 = await request(app)
-        .get(`/api/v1/groups/${testGroup._id}/messages?page=2&limit=50`)
+        .get(`/api/v1/groups/${testGroup._id}/messages?limit=50&before=${response1.body.nextCursor}`)
         .set('Authorization', `Bearer ${tokenA}`)
         .timeout(15000);
 
       expect(response2.body.data.length).toBe(50);
+      expect(response2.body.hasMore).toBe(false);
+
+      // The two pages shouldn't overlap
+      const idsPage1 = new Set(response1.body.data.map(m => m._id));
+      const idsPage2 = new Set(response2.body.data.map(m => m._id));
+      const overlap = [...idsPage1].filter(id => idsPage2.has(id));
+      expect(overlap.length).toBe(0);
 
       console.log('✅ TC-G-16 PASSED\n');
     });
@@ -712,14 +740,11 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
     });
 
     it('TC-G-37: Non-member cannot leave group', async () => {
-      const otherUserReg = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: 'Other User Leave',
-          email: 'otherleave@example.com',
-          password: 'Other123!'
-        })
-        .timeout(15000);
+      const otherUserReg = await registerTestUser(app, {
+        name: 'Other User Leave',
+        email: 'otherleave@example.com',
+        password: 'Other123!'
+      });
 
       if (!otherUserReg.body.data) {
         throw new Error('Other user registration failed');
@@ -819,14 +844,11 @@ it('TC-G-40: Leave reduces participant count', async () => {
     let testGroup, deleteTestUserA, deleteTestUserB, deleteTokenA, deleteTokenB;
 
     beforeAll(async () => {
-      const regA = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: 'Delete Test User A',
-          email: 'deletetestA@example.com',
-          password: 'DeleteTest123!'
-        })
-        .timeout(15000);
+      const regA = await registerTestUser(app, {
+        name: 'Delete Test User A',
+        email: 'deletetestA@example.com',
+        password: 'DeleteTest123!'
+      });
 
       if (!regA.body.data) {
         throw new Error('User A registration failed for delete tests');
@@ -835,14 +857,11 @@ it('TC-G-40: Leave reduces participant count', async () => {
       deleteTestUserA = regA.body.data;
       deleteTokenA = regA.body.token;
 
-      const regB = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          name: 'Delete Test User B',
-          email: 'deletetestB@example.com',
-          password: 'DeleteTest123!'
-        })
-        .timeout(15000);
+      const regB = await registerTestUser(app, {
+        name: 'Delete Test User B',
+        email: 'deletetestB@example.com',
+        password: 'DeleteTest123!'
+      });
 
       if (!regB.body.data) {
         throw new Error('User B registration failed for delete tests');
@@ -853,7 +872,7 @@ it('TC-G-40: Leave reduces participant count', async () => {
 
       // ✅ Create friendship between delete test users
       await makeFriendsDirectly(deleteTestUserA._id, deleteTestUserB._id);
-    });
+    }, 20000); // 2 sequential real OTP round-trips need more than the default hook timeout
 
     beforeEach(async () => {
       testGroup = await Group.create({
@@ -954,6 +973,51 @@ it('TC-G-40: Leave reduces participant count', async () => {
       expect(response.body.message).toContain('Invalid group ID format');
 
       console.log('✅ TC-G-46 PASSED\n');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // I) AUTHORIZATION — Non-member group posting (owed regression test, audit 01)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('I) AUTHORIZATION — Non-member group posting (audit 01 regression)', () => {
+    let memberGroup, outsider, outsiderToken;
+
+    beforeAll(async () => {
+      const outsiderReg = await registerTestUser(app, {
+        name: 'Outsider',
+        email: 'outsider-groupauth@example.com',
+        password: 'Outsider123!'
+      });
+      outsider = outsiderReg.body.data;
+      outsiderToken = outsiderReg.body.token;
+    }, 15000);
+
+    // The outer describe's beforeEach wipes the Group collection before
+    // every test in this file, so memberGroup has to be (re)created here
+    // rather than in beforeAll or it won't exist by the time this test runs.
+    beforeEach(async () => {
+      memberGroup = await Group.create({
+        name: 'Members Only Group',
+        participants: [userA._id, userB._id],
+        adminId: userA._id
+      });
+    });
+
+    it('TC-G-47: REST — non-member posting to a group is rejected with 403 and no message is created', async () => {
+      const response = await request(app)
+        .post('/api/v1/messages/group')
+        .set('Authorization', `Bearer ${outsiderToken}`)
+        .send({ groupId: memberGroup._id.toString(), message: 'I should not be able to send this' })
+        .timeout(15000);
+
+      expect(response.status).toBe(403);
+      expect(response.body.success).toBe(false);
+
+      const created = await Message.findOne({ groupId: memberGroup._id, senderId: outsider._id });
+      expect(created).toBeNull();
+
+      console.log('✅ TC-G-47 PASSED\n');
     });
   });
 });

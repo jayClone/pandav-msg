@@ -13,6 +13,7 @@
     "@arcjet/inspect": "^1.1.0",
     "@arcjet/node": "^1.1.0",
     "@sendgrid/mail": "^8.1.6",
+    "@socket.io/redis-adapter": "^8.3.0",
     "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",
     "compression": "^1.8.1",

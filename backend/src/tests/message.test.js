@@ -3,7 +3,10 @@ import request from 'supertest';
 import app from '../app.js';
 import User from '@models/User.js';
 import Message from '@models/Message.js';
+import OTP from '@models/OTP.js';
+import Friend from '@models/Friend.js';
 import { connectDB } from '@config/db.js';
+import { registerTestUser } from './helpers/otp.js';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -51,14 +54,12 @@ describe('🧪 MESSAGE API & PERSISTENCE TESTS', () => {
     await connectDB();
     await User.deleteMany({});
     await Message.deleteMany({});
+    await OTP.deleteMany({});
     console.log('✅ Test database ready');
 
     // Register all test users
     for (const [key, userData] of Object.entries(testUsers)) {
-      const registerRes = await request(app)
-        .post('/api/v1/auth/register')
-        .send(userData)
-        .timeout(15000);
+      const registerRes = await registerTestUser(app, userData);
 
       expect(registerRes.status).toBe(201);
 
@@ -83,12 +84,13 @@ describe('🧪 MESSAGE API & PERSISTENCE TESTS', () => {
     }
 
     console.log(`✅ Test users created: ${userA.name}, ${userB.name}, ${userC.name}`);
-  });
+  }, 30000);
 
   afterAll(async () => {
     console.log('🧹 Cleaning up test data...');
     await User.deleteMany({});
     await Message.deleteMany({});
+    await OTP.deleteMany({});
     console.log('✅ Cleanup complete');
   });
 
@@ -475,7 +477,8 @@ describe('🧪 MESSAGE API & PERSISTENCE TESTS', () => {
         });
 
       expect(response.status).toBe(400);
-      expect(response.body.message).toContain('receiverId is required');
+      expect(response.body.message).toContain('Validation failed');
+      expect(response.body.errors.some(e => e.includes('receiverId is required'))).toBe(true);
     });
   });
 
@@ -686,9 +689,9 @@ describe('🧪 MESSAGE API & PERSISTENCE TESTS', () => {
       const saved = await Message.insertMany(messages);
       expect(saved.length).toBe(100);
 
-      // Fetch all
+      // Fetch all (raise limit above the default page size of 50 to get everything in one page)
       const response = await request(app)
-        .get(`/api/v1/messages/${userB._id}`)
+        .get(`/api/v1/messages/${userB._id}?limit=100`)
         .set('Authorization', `Bearer ${tokenA}`)
         .timeout(15000);
 
@@ -758,6 +761,122 @@ describe('🧪 MESSAGE API & PERSISTENCE TESTS', () => {
       expect(updated.read).toBe(true);
 
       console.log('✅ TC-M-BONUS-01 PASSED: Read status updated');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // H) AUTHORIZATION & FRIEND-CHECK (owed regression tests, audit 02 & 05)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('H) AUTHORIZATION & FRIEND-CHECK', () => {
+    beforeAll(async () => {
+      await Friend.deleteMany({});
+      await Friend.create({
+        senderId: userA._id,
+        receiverId: userB._id,
+        status: 'accepted',
+        acceptedAt: new Date()
+      });
+      // userA and userC are deliberately left as non-friends for TC-M-19
+    });
+
+    afterAll(async () => {
+      await Friend.deleteMany({});
+    });
+
+    it('TC-M-18: POST /messages/private to a friend succeeds (201)', async () => {
+      const response = await request(app)
+        .post('/api/v1/messages/private')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ receiverId: userB._id, message: 'Hi friend' })
+        .timeout(15000);
+
+      expect(response.status).toBe(201);
+      expect(response.body.success).toBe(true);
+
+      console.log('✅ TC-M-18 PASSED');
+    });
+
+    it('TC-M-19: POST /messages/private to a non-friend is rejected (403)', async () => {
+      const response = await request(app)
+        .post('/api/v1/messages/private')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ receiverId: userC._id, message: 'Hi stranger' })
+        .timeout(15000);
+
+      expect(response.status).toBe(403);
+      expect(response.body.success).toBe(false);
+
+      console.log('✅ TC-M-19 PASSED');
+    });
+
+    it('TC-M-20: POST /messages/private to a nonexistent user is rejected (404)', async () => {
+      const fakeId = '507f1f77bcf86cd799439011';
+      const response = await request(app)
+        .post('/api/v1/messages/private')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ receiverId: fakeId, message: 'Hello?' })
+        .timeout(15000);
+
+      expect(response.status).toBe(404);
+      expect(response.body.success).toBe(false);
+
+      console.log('✅ TC-M-20 PASSED');
+    });
+
+    it('TC-M-21: Message over 10000 chars is rejected via REST (Joi)', async () => {
+      const response = await request(app)
+        .post('/api/v1/messages/private')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ receiverId: userB._id, message: 'A'.repeat(10001) })
+        .timeout(15000);
+
+      expect(response.status).toBe(400);
+      expect(response.body.errors.some(e => e.includes('10000'))).toBe(true);
+
+      console.log('✅ TC-M-21 PASSED');
+    });
+
+    it('TC-M-22: Read receipts endpoint rejects a user with no relation to the message (403)', async () => {
+      const msg = await Message.create({
+        senderId: userA._id,
+        receiverId: userB._id,
+        message: 'Private between A and B',
+        chatType: 'private'
+      });
+
+      const response = await request(app)
+        .get(`/api/v1/messages/${msg._id}/read-receipts`)
+        .set('Authorization', `Bearer ${tokenC}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(403);
+      expect(response.body.success).toBe(false);
+
+      console.log('✅ TC-M-22 PASSED');
+    });
+
+    it('TC-M-23: Read receipts endpoint allows sender and receiver (200)', async () => {
+      const msg = await Message.create({
+        senderId: userA._id,
+        receiverId: userB._id,
+        message: 'Private between A and B',
+        chatType: 'private'
+      });
+
+      const senderRes = await request(app)
+        .get(`/api/v1/messages/${msg._id}/read-receipts`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .timeout(15000);
+      expect(senderRes.status).toBe(200);
+
+      const receiverRes = await request(app)
+        .get(`/api/v1/messages/${msg._id}/read-receipts`)
+        .set('Authorization', `Bearer ${tokenB}`)
+        .timeout(15000);
+      expect(receiverRes.status).toBe(200);
+
+      console.log('✅ TC-M-23 PASSED');
     });
   });
 });

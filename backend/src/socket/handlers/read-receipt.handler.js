@@ -70,5 +70,6 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
     }
 
   } catch (error) {
+    console.error('[ERROR] handleReadReceipt failed:', error.message);
   }
 }

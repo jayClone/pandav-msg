@@ -1,27 +1,14 @@
 import { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import { socketAuthMiddleware } from './socket.auth.js';
 import { registerSocketEvents } from './socket.event.js';
+import { allowedOrigins } from '../config/cors.js';
+import { getRedis } from '../config/redis.js';
 
-export function createSocketServer(httpServer) {
-  const getOrigin = () => {
-    const origins = [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:3001',
-    ];
-
-    if (process.env.NODE_ENV === 'production') {
-      origins.push(process.env.CLIENT_URL);
-      origins.push('https://pandav.jaychaudhari.me'); 
-      origins.push('https://www.pandav.jaychaudhari.me');
-    }
-
-    return origins;
-  };
-
+export async function createSocketServer(httpServer) {
   const io = new Server(httpServer, {
     cors: {
-      origin: getOrigin(),
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -51,8 +38,27 @@ export function createSocketServer(httpServer) {
     reconnectionAttempts: 5,
   });
 
-  
+
   const onlineUsers = new Map();
+
+  // Multi-instance support: without this, presence/rooms/broadcasts only
+  // reach sockets connected to the same process — silent data loss the
+  // moment there's more than one server instance. Falls back to Socket.IO's
+  // default in-memory adapter (single-instance only) if Redis isn't
+  // available, matching this app's existing fail-open Redis pattern.
+  const pubClient = getRedis();
+  if (pubClient) {
+    try {
+      const subClient = pubClient.duplicate();
+      await subClient.connect();
+      io.adapter(createAdapter(pubClient, subClient));
+      console.log('✅ Socket.IO Redis adapter attached (multi-instance ready)');
+    } catch (error) {
+      console.warn('⚠️  Socket.IO Redis adapter setup failed, falling back to in-memory adapter:', error.message);
+    }
+  } else {
+    console.warn('⚠️  Redis not available — Socket.IO using in-memory adapter (single-instance only)');
+  }
 
   io.use((socket, next) => {
     socketAuthMiddleware(socket, next);

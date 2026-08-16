@@ -17,7 +17,11 @@ export function socketAuthMiddleware(socket, next) {
         }
         
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
+
+        if (decoded.type !== 'access') {
+            return next(new Error(`AUTH_ERROR : ${MESSAGES.AUTH.TOKEN_INVALID}`));
+        }
+
         socket.user = {
             userId: decoded.userId,
             email: decoded.email,

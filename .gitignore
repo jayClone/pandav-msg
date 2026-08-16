@@ -1,0 +1,15 @@
+skills
+
+# environment files (real secrets — never commit)
+.env
+.env.local
+.env.*.local
+
+# dependency directories
+node_modules/
+
+# logs
+*.log
+
+# editor/OS noise
+.DS_Store

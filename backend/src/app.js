@@ -4,7 +4,10 @@ import cors from 'cors';
 import compression from 'compression';
 import logger from './config/logger.js';
 import apiRoutes from './routes/index.js';
-import { globalArcjet } from './middlewares/arcjet.js'; 
+import { globalArcjet } from './middlewares/arcjet.js';
+import { sanitizeRequest } from './middlewares/mongoSanitize.js';
+import { allowedOrigins } from './config/cors.js';
+import { getHealthStatus } from './controllers/health.controller.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -30,8 +33,14 @@ if (!fs.existsSync(logsDir)) {
 // ============================================
 
 //  1. Body parser BEFORE any other middleware
-app.use(express.json({ limit: '50mb' }));  
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// (1mb is generous for a text-chat JSON API — there are no file/upload
+// routes in this backend; the old 50mb limit on every route, including
+// unauthenticated ones like /auth/login, was an unnecessary DoS surface)
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
+
+//  1b. Strip Mongo operator keys ($..., a.b) from body/params/query
+app.use(sanitizeRequest);
 
 //  ADD COMPRESSION MIDDLEWARE (AFTER body parser, BEFORE routes)
 app.use(compression({
@@ -54,28 +63,13 @@ app.use(globalArcjet);
 app.use(helmet());
 
 // 3. THEN CORS
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://localhost:3001',
-  process.env.CLIENT_URL,
-  process.env.FRONTEND_URL,
-  'https://pandav-msg.vercel.app',  
-  'https://pandav-msg-frontend.vercel.app'
-].filter(Boolean); 
-
+// Single shared allow-list (config/cors.js) — also used by Socket.IO, so
+// REST and sockets always enforce the same origins, and CLIENT_URL/
+// FRONTEND_URL actually take effect (previously computed but unused here).
 console.log('🔐 [CORS] Allowed origins:', allowedOrigins);
 
 app.use(cors({
   origin: (origin, callback) => {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:3001',
-      'https://pandav-msg-frontend.vercel.app',
-      'https://pandav-msg.vercel.app',
-    ];
-    
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -123,18 +117,22 @@ if (process.env.NODE_ENV === 'development') {
 // HEALTH CHECK
 // ============================================
 
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
   try {
-    res.status(200).json({
-      success: true,
-      message: 'Server is running',
+    const status = await getHealthStatus();
+
+    res.status(status.healthy ? 200 : 503).json({
+      success: status.healthy,
+      message: status.healthy ? 'Server is running' : 'Server is running but a dependency is degraded',
+      mongo: status.mongo,
+      redis: status.redis,
       timestamp: new Date().toISOString(),
       version: process.env.API_VERSION || 'v1',
       environment: process.env.NODE_ENV || 'development'
     });
   } catch (err) {
     console.error('Health check error:', err);
-    res.status(200).json({ success: true, status: 'ok' });
+    res.status(503).json({ success: false, status: 'error', message: err.message });
   }
 });
 

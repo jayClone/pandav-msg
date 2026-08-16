@@ -1,9 +1,12 @@
 import { describe, it, beforeAll, afterAll, beforeEach, afterEach, expect } from 'bun:test';
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import app from '../app.js';
 import User from '@models/User.js';
-import { connectDB, disconnectDB } from '@config/db.js';
+import OTP from '@models/OTP.js';
+import { connectDB } from '@config/db.js';
 import Message from '@models/Message.js';
+import { sendAndVerifyOtp, forceVerifiedOtp } from './helpers/otp.js';
 
 describe('🧪 Auth API Tests', () => {
   beforeAll(async () => {
@@ -13,6 +16,7 @@ describe('🧪 Auth API Tests', () => {
     try {
       await User.deleteMany({});
       await Message.deleteMany({});
+      await OTP.deleteMany({});
       console.log('✅ Test database cleaned');
     } catch (error) {
       console.error('⚠️  Could not clean database:', error.message);
@@ -24,17 +28,16 @@ describe('🧪 Auth API Tests', () => {
     try {
       await User.deleteMany({});
       await Message.deleteMany({});
+      await OTP.deleteMany({});
       console.log('✅ Cleanup complete');
     } catch (error) {
       console.error('⚠️  Cleanup error:', error.message);
     }
     
-    try {
-      await disconnectDB();
-      console.log('✅ Database connection closed');
-    } catch (error) {
-      console.error('⚠️  Disconnect error:', error.message);
-    }
+    // Deliberately not calling disconnectDB() here: bun test runs multiple
+    // test files concurrently against one shared mongoose connection, so
+    // one file disconnecting tears down the connection out from under
+    // whichever other files are still mid-test (see docs/audit/09).
   });
 
   describe('POST /api/v1/auth/register', () => {
@@ -46,9 +49,11 @@ describe('🧪 Auth API Tests', () => {
         password: 'SecurePass123!'
       };
 
+      const otp = await sendAndVerifyOtp(app, { email: userData.email, name: userData.name });
+
       const response = await request(app)
         .post('/api/v1/auth/register')
-        .send(userData)
+        .send({ ...userData, otp })
         .timeout(15000);
 
       expect(response.status).toBe(201);
@@ -67,14 +72,21 @@ describe('🧪 Auth API Tests', () => {
         password: 'SecurePass123!'
       };
 
+      const firstOtp = await sendAndVerifyOtp(app, { email: userData.email, name: userData.name });
       await request(app)
         .post('/api/v1/auth/register')
-        .send(userData)
+        .send({ ...userData, otp: firstOtp })
         .timeout(15000);
 
+      // send-otp intentionally won't issue a new OTP for an email that's
+      // already registered (enumeration-prevention, see docs/audit/05), so
+      // this simulates the only realistic way a second register attempt
+      // could reach the duplicate-email guard: an OTP that's still
+      // technically valid despite the account now existing.
+      const secondOtp = await forceVerifiedOtp({ email: userData.email });
       const response = await request(app)
         .post('/api/v1/auth/register')
-        .send(userData)
+        .send({ ...userData, otp: secondOtp })
         .timeout(15000);
 
       expect(response.status).toBe(409);
@@ -202,10 +214,12 @@ describe('🧪 Auth API Tests', () => {
 
     beforeEach(async () => {
       await User.deleteMany({ email: testUser.email });
-      
+      await OTP.deleteMany({ email: testUser.email });
+
+      const otp = await sendAndVerifyOtp(app, { email: testUser.email, name: testUser.name });
       await request(app)
         .post('/api/v1/auth/register')
-        .send(testUser)
+        .send({ ...testUser, otp })
         .timeout(15000);
     });
 
@@ -314,10 +328,12 @@ describe('🧪 Auth API Tests', () => {
 
     beforeEach(async () => {
       await User.deleteMany({ email: testUser.email });
+      await OTP.deleteMany({ email: testUser.email });
 
+      const otp = await sendAndVerifyOtp(app, { email: testUser.email, name: testUser.name });
       await request(app)
         .post('/api/v1/auth/register')
-        .send(testUser)
+        .send({ ...testUser, otp })
         .timeout(15000);
 
       const loginRes = await request(app)
@@ -398,9 +414,10 @@ describe('🧪 Auth API Tests', () => {
         password: 'AnotherPass123!'
       };
 
+      const anotherOtp = await sendAndVerifyOtp(app, { email: anotherUser.email, name: anotherUser.name });
       await request(app)
         .post('/api/v1/auth/register')
-        .send(anotherUser)
+        .send({ ...anotherUser, otp: anotherOtp })
         .timeout(15000);
 
       const response = await request(app)
@@ -414,6 +431,49 @@ describe('🧪 Auth API Tests', () => {
       expect(response.body.data.email).not.toBe(anotherUser.email);
       
       console.log('✅ TEST PASSED: User can only access their own data');
+    });
+  });
+
+  describe('🔒 Token Type Security (audit 04 regression)', () => {
+    const testUser = {
+      name: 'Refresh Token Test User',
+      email: 'refreshtypetest@example.com',
+      password: 'SecurePass123!'
+    };
+    let userId;
+
+    beforeAll(async () => {
+      await User.deleteMany({ email: testUser.email });
+      await OTP.deleteMany({ email: testUser.email });
+
+      const otp = await sendAndVerifyOtp(app, { email: testUser.email, name: testUser.name });
+      const res = await request(app)
+        .post('/api/v1/auth/register')
+        .send({ ...testUser, otp })
+        .timeout(15000);
+
+      userId = res.body.data._id;
+    });
+
+    it('rejects a refresh-type token used as a Bearer access token', async () => {
+      // Signed with the same secret as a real access token, but with
+      // type: 'refresh' — isolates the `decoded.type !== 'access'` check
+      // in protect() from any secret-mismatch side effect.
+      const refreshToken = jwt.sign(
+        { userId, type: 'refresh' },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      const response = await request(app)
+        .get('/api/v1/auth/current')
+        .set('Authorization', `Bearer ${refreshToken}`)
+        .timeout(15000);
+
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+
+      console.log('✅ TEST PASSED: Refresh token rejected as access token');
     });
   });
 });
