@@ -5,6 +5,7 @@ describe('CryptoService', () => {
   beforeEach(() => {
     cryptoService.clearAllKeys();
     window.sessionStorage.clear();
+    window.localStorage.clear();
   });
 
   it('derives a deterministic keypair from email and password', async () => {
@@ -63,5 +64,58 @@ describe('CryptoService', () => {
 
     expect(window.sessionStorage.getItem('e2ee-keypair')).toBeNull();
     expect(cryptoService.getKeyStatus().hasKeypair).toBe(false);
+  });
+
+  describe('public key pinning (TOFU + change detection)', () => {
+    it('pins a public key on first sight and trusts it', async () => {
+      const bob = await cryptoService.deriveKeypairFromPassword('bob@example.com', 'bob-pass');
+
+      const result = cryptoService.storePublicKey('bob-id', bob.publicKey);
+
+      expect(result).toEqual({ changed: false, trusted: true });
+      expect(cryptoService.getPublicKey('bob-id')).toEqual(bob.publicKey);
+    });
+
+    it('accepts the same key again as a no-op', async () => {
+      const bob = await cryptoService.deriveKeypairFromPassword('bob@example.com', 'bob-pass');
+
+      cryptoService.storePublicKey('bob-id', bob.publicKey);
+      const result = cryptoService.storePublicKey('bob-id', bob.publicKey);
+
+      expect(result).toEqual({ changed: false, trusted: true });
+    });
+
+    it('refuses a different key for an already-pinned userId and emits a warning event', async () => {
+      const bob = await cryptoService.deriveKeypairFromPassword('bob@example.com', 'bob-pass');
+      const attacker = await cryptoService.deriveKeypairFromPassword('attacker@example.com', 'attacker-pass');
+
+      cryptoService.storePublicKey('bob-id', bob.publicKey);
+
+      let eventDetail = null;
+      const handler = (e) => { eventDetail = e.detail; };
+      window.addEventListener(cryptoService.KEY_CHANGED_EVENT, handler);
+
+      const result = cryptoService.storePublicKey('bob-id', attacker.publicKey);
+
+      window.removeEventListener(cryptoService.KEY_CHANGED_EVENT, handler);
+
+      expect(result).toEqual({ changed: true, trusted: false });
+      // still trusts the OLD key, not the new one
+      expect(cryptoService.getPublicKey('bob-id')).toEqual(bob.publicKey);
+      expect(eventDetail).toMatchObject({ userId: 'bob-id' });
+    });
+
+    it('accepts a changed key once explicitly trusted via trustKeyChange', async () => {
+      const bob = await cryptoService.deriveKeypairFromPassword('bob@example.com', 'bob-pass');
+      const bobNew = await cryptoService.deriveKeypairFromPassword('bob@example.com', 'bob-new-pass');
+
+      cryptoService.storePublicKey('bob-id', bob.publicKey);
+      cryptoService.storePublicKey('bob-id', bobNew.publicKey); // rejected, stays pinned to old key
+
+      const result = cryptoService.trustKeyChange('bob-id', bobNew.publicKey);
+
+      expect(result).toEqual({ changed: true, trusted: true });
+      expect(cryptoService.getPublicKey('bob-id')).toEqual(bobNew.publicKey);
+    });
   });
 });

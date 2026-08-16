@@ -4,476 +4,333 @@ import { MemoryRouter } from "react-router-dom"
 import { SignupForm } from "../signup-form"
 import { vi } from "vitest"
 
-// Mock API Service
-vi.mock("@/services/api", () => ({
+// Registration is now a two-step flow: fill the form -> send an OTP -> enter
+// the OTP (rendered by the real OTPVerification component, not mocked, so
+// these tests exercise the actual handoff between the two) -> register.
+vi.mock("@api/otp.api.js", () => ({
   default: {
-    auth: {
-      register: vi.fn(),
-    },
+    sendOTP: vi.fn(),
+    verifyOTP: vi.fn(),
+    resendOTP: vi.fn(),
   },
 }))
 
-// Mock Socket Connection
-vi.mock("@/socket/socketClient", () => ({
-  connectSocket: vi.fn(),
+vi.mock("@services/auth.service.js", () => ({
+  default: {
+    register: vi.fn(),
+  },
 }))
 
-// Import after mocking
-import apiService from "@/services/api"
-import { connectSocket } from "@/socket/socketClient"
+vi.mock("@services/crypto.service.js", () => ({
+  default: {
+    deriveKeypairFromPassword: vi.fn(),
+  },
+}))
 
-// Get references using vi.mocked()
-const mockRegister = vi.mocked(apiService.auth.register)
-const mockConnectSocket = vi.mocked(connectSocket)
-
-describe("SignupForm - UI Render Tests", () => {
-  test("should render create account heading", () => {
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-    expect(screen.getByText(/create account/i)).toBeInTheDocument()
-  })
-
-  test("should render all input fields", () => {
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-    expect(screen.getByLabelText(/full name/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument()
-  })
-
-  test("should render register button", () => {
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-    expect(screen.getByRole("button", { name: /register now/i })).toBeInTheDocument()
-  })
-
-  test("should render sign in link", () => {
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-    expect(screen.getByRole("link", { name: /sign in/i })).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute("href", "/login")
-  })
-
-  test("should display correct initial placeholder text", () => {
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-    expect(screen.getByPlaceholderText("John Doe")).toBeInTheDocument()
-    expect(screen.getByPlaceholderText("name@example.com")).toBeInTheDocument()
-  })
+const mockNavigate = vi.fn()
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual("react-router-dom")
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  }
 })
 
-describe("SignupForm - Register Success Flow", () => {
+import otpAPI from "@api/otp.api.js"
+import authService from "@services/auth.service.js"
+import cryptoService from "@services/crypto.service.js"
+
+const mockSendOTP = vi.mocked(otpAPI.sendOTP)
+const mockVerifyOTP = vi.mocked(otpAPI.verifyOTP)
+const mockRegister = vi.mocked(authService.register)
+const mockDeriveKeypair = vi.mocked(cryptoService.deriveKeypairFromPassword)
+
+const fakeKeypair = {
+  publicKey: new Uint8Array([1, 2, 3, 4]),
+  secretKey: new Uint8Array([5, 6, 7, 8]),
+}
+
+// A password that satisfies every client-side rule (8+ chars, uppercase,
+// number, special char) — the "Continue" button stays disabled until this
+// is true, so most tests need a valid one even when they're not testing
+// password rules themselves.
+const VALID_PASSWORD = "Password123!"
+
+const fillForm = async (user, overrides = {}) => {
+  const data = {
+    name: "John Doe",
+    email: "john@example.com",
+    password: VALID_PASSWORD,
+    confirmPassword: VALID_PASSWORD,
+    ...overrides,
+  }
+
+  if (data.name) await user.type(screen.getByLabelText(/full name/i), data.name)
+  if (data.email) await user.type(screen.getByLabelText(/^email$/i), data.email)
+  if (data.password) await user.type(screen.getByLabelText(/^password$/i), data.password)
+  if (data.confirmPassword) await user.type(screen.getByLabelText(/^confirm password$/i), data.confirmPassword)
+}
+
+const submitForm = async (user) => {
+  await user.click(screen.getByRole("button", { name: /continue with email verification/i }))
+}
+
+const enterOtpAndVerify = async (user, code = "123456") => {
+  const otpInputs = screen.getAllByRole("textbox")
+  for (let i = 0; i < otpInputs.length; i++) {
+    await user.type(otpInputs[i], code[i])
+  }
+  await user.click(screen.getByRole("button", { name: /verify otp/i }))
+}
+
+describe("SignupForm", () => {
   beforeEach(() => {
-    mockRegister.mockClear()
-    mockConnectSocket.mockClear()
+    vi.clearAllMocks()
     localStorage.clear()
-    vi.clearAllTimers()
+    mockDeriveKeypair.mockResolvedValue(fakeKeypair)
   })
 
-  test("should show success message when registration succeeds", async () => {
-    const user = userEvent.setup()
-    mockRegister.mockResolvedValueOnce({
-      data: {
-        token: "test-token-123",
-        message: "Account created successfully! Redirecting...",
-      },
+  describe("UI Render Tests", () => {
+    test("renders the create-account heading", () => {
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
+      expect(screen.getByText(/create account/i)).toBeInTheDocument()
     })
 
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-
-    await user.type(screen.getByLabelText(/full name/i), "John Doe")
-    await user.type(screen.getByLabelText(/email/i), "john@example.com")
-    await user.type(screen.getByLabelText(/^password$/i), "password123")
-    await user.type(screen.getByLabelText(/confirm password/i), "password123")
-    await user.click(screen.getByRole("button", { name: /register now/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/account created successfully/i)).toBeInTheDocument()
-    })
-  })
-
-  test("should call register API with correct data", async () => {
-    const user = userEvent.setup()
-    mockRegister.mockResolvedValueOnce({
-      data: {
-        token: "test-token",
-        message: "Account created successfully! Redirecting...",
-      },
+    test("renders all input fields", () => {
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
+      expect(screen.getByLabelText(/full name/i)).toBeInTheDocument()
+      expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument()
+      expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument()
+      expect(screen.getByLabelText(/^confirm password$/i)).toBeInTheDocument()
     })
 
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-
-    const testName = "John Doe"
-    const testEmail = "john@example.com"
-    const testPassword = "password123"
-
-    await user.type(screen.getByLabelText(/full name/i), testName)
-    await user.type(screen.getByLabelText(/email/i), testEmail)
-    await user.type(screen.getByLabelText(/^password$/i), testPassword)
-    await user.type(screen.getByLabelText(/confirm password/i), testPassword)
-    await user.click(screen.getByRole("button", { name: /register now/i }))
-
-    await waitFor(() => {
-      expect(mockRegister).toHaveBeenCalledWith({
-        name: testName,
-        email: testEmail,
-        password: testPassword,
-      })
-    })
-  })
-
-  test("should save token to localStorage on successful registration", async () => {
-    const user = userEvent.setup()
-    const testToken = "test-auth-token-xyz"
-
-    mockRegister.mockResolvedValueOnce({
-      data: {
-        token: testToken,
-        message: "Account created successfully! Redirecting...",
-      },
+    test("renders a sign in link to /login", () => {
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
+      const link = screen.getByRole("link", { name: /sign in/i })
+      expect(link).toBeInTheDocument()
+      expect(link).toHaveAttribute("href", "/login")
     })
 
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
+    test("the submit button starts disabled until the password meets all requirements", async () => {
+      const user = userEvent.setup()
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
 
-    await user.type(screen.getByLabelText(/full name/i), "John Doe")
-    await user.type(screen.getByLabelText(/email/i), "john@example.com")
-    await user.type(screen.getByLabelText(/^password$/i), "password123")
-    await user.type(screen.getByLabelText(/confirm password/i), "password123")
-    await user.click(screen.getByRole("button", { name: /register now/i }))
+      expect(screen.getByRole("button", { name: /continue with email verification/i })).toBeDisabled()
 
-    await waitFor(() => {
-      expect(screen.getByText(/account created successfully/i)).toBeInTheDocument()
+      await fillForm(user)
+
+      expect(screen.getByRole("button", { name: /continue with email verification/i })).toBeEnabled()
     })
 
-    expect(localStorage.getItem("token")).toBe(testToken)
-  })
+    test("shows a live 'passwords do not match' indicator", async () => {
+      const user = userEvent.setup()
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
 
-  test("should connect socket with token on successful registration", async () => {
-    const user = userEvent.setup()
-    const testToken = "test-socket-token"
+      await user.type(screen.getByLabelText(/^password$/i), VALID_PASSWORD)
+      await user.type(screen.getByLabelText(/^confirm password$/i), "Different123!")
 
-    mockRegister.mockResolvedValueOnce({
-      data: {
-        token: testToken,
-        message: "Account created successfully! Redirecting...",
-      },
-    })
-
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-
-    await user.type(screen.getByLabelText(/full name/i), "John Doe")
-    await user.type(screen.getByLabelText(/email/i), "john@example.com")
-    await user.type(screen.getByLabelText(/^password$/i), "password123")
-    await user.type(screen.getByLabelText(/confirm password/i), "password123")
-    await user.click(screen.getByRole("button", { name: /register now/i }))
-
-    await waitFor(() => {
-      expect(mockConnectSocket).toHaveBeenCalledWith(testToken)
-    })
-  })
-
-  test("should hide form after successful registration", async () => {
-    const user = userEvent.setup()
-    mockRegister.mockResolvedValueOnce({
-      data: {
-        token: "test-token",
-        message: "Account created successfully! Redirecting...",
-      },
-    })
-
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-
-    await user.type(screen.getByLabelText(/full name/i), "John Doe")
-    await user.type(screen.getByLabelText(/email/i), "john@example.com")
-    await user.type(screen.getByLabelText(/^password$/i), "password123")
-    await user.type(screen.getByLabelText(/confirm password/i), "password123")
-    await user.click(screen.getByRole("button", { name: /register now/i }))
-
-    await waitFor(() => {
-      expect(screen.queryByLabelText(/full name/i)).not.toBeInTheDocument()
-    })
-  })
-
-  test("should handle registration without token", async () => {
-    const user = userEvent.setup()
-    mockRegister.mockResolvedValueOnce({
-      data: {
-        message: "Registration successful, please verify email",
-      },
-    })
-
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-
-    await user.type(screen.getByLabelText(/full name/i), "John Doe")
-    await user.type(screen.getByLabelText(/email/i), "john@example.com")
-    await user.type(screen.getByLabelText(/^password$/i), "password123")
-    await user.type(screen.getByLabelText(/confirm password/i), "password123")
-    await user.click(screen.getByRole("button", { name: /register now/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/registration successful/i)).toBeInTheDocument()
-    })
-
-    expect(localStorage.getItem("token")).toBeNull()
-    expect(mockConnectSocket).not.toHaveBeenCalled()
-  })
-})
-
-describe("SignupForm - Register Fail Flow", () => {
-  beforeEach(() => {
-    mockRegister.mockClear()
-    mockConnectSocket.mockClear()
-    localStorage.clear()
-  })
-
-  test("should show error message when email already exists", async () => {
-    const user = userEvent.setup()
-    mockRegister.mockRejectedValueOnce({
-      response: {
-        data: {
-          message: "Email already exists",
-        },
-      },
-    })
-
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-
-    await user.type(screen.getByLabelText(/full name/i), "John Doe")
-    await user.type(screen.getByLabelText(/email/i), "existing@example.com")
-    await user.type(screen.getByLabelText(/^password$/i), "password123")
-    await user.type(screen.getByLabelText(/confirm password/i), "password123")
-    await user.click(screen.getByRole("button", { name: /register now/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/email already exists/i)).toBeInTheDocument()
-    })
-  })
-
-  test("should show error when passwords do not match", async () => {
-    const user = userEvent.setup()
-
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-
-    await user.type(screen.getByLabelText(/full name/i), "John Doe")
-    await user.type(screen.getByLabelText(/email/i), "john@example.com")
-    await user.type(screen.getByLabelText(/^password$/i), "password123")
-    await user.type(screen.getByLabelText(/confirm password/i), "password456")
-    await user.click(screen.getByRole("button", { name: /register now/i }))
-
-    await waitFor(() => {
       expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument()
-    })
-
-    expect(mockRegister).not.toHaveBeenCalled()
-  })
-
-  test("should NOT save token when registration fails", async () => {
-    const user = userEvent.setup()
-    mockRegister.mockRejectedValueOnce({
-      response: {
-        data: {
-          message: "Email already exists",
-        },
-      },
-    })
-
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-
-    await user.type(screen.getByLabelText(/full name/i), "John Doe")
-    await user.type(screen.getByLabelText(/email/i), "existing@example.com")
-    await user.type(screen.getByLabelText(/^password$/i), "password123")
-    await user.type(screen.getByLabelText(/confirm password/i), "password123")
-    await user.click(screen.getByRole("button", { name: /register now/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/email already exists/i)).toBeInTheDocument()
-    })
-
-    expect(localStorage.getItem("token")).toBeNull()
-  })
-
-  test("should preserve form data when registration fails", async () => {
-    const user = userEvent.setup()
-    mockRegister.mockRejectedValueOnce({
-      response: {
-        data: {
-          message: "Email already exists",
-        },
-      },
-    })
-
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-
-    const testName = "John Doe"
-    const testEmail = "existing@example.com"
-    const testPassword = "password123"
-
-    const nameInput = screen.getByLabelText(/full name/i)
-    const emailInput = screen.getByLabelText(/email/i)
-    const passwordInput = screen.getByLabelText(/^password$/i)
-    const confirmInput = screen.getByLabelText(/confirm password/i)
-
-    await user.type(nameInput, testName)
-    await user.type(emailInput, testEmail)
-    await user.type(passwordInput, testPassword)
-    await user.type(confirmInput, testPassword)
-    await user.click(screen.getByRole("button", { name: /register now/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/email already exists/i)).toBeInTheDocument()
-    })
-
-    expect(nameInput).toHaveValue(testName)
-    expect(emailInput).toHaveValue(testEmail)
-    expect(passwordInput).toHaveValue(testPassword)
-    expect(confirmInput).toHaveValue(testPassword)
-  })
-
-  test("should handle unexpected registration errors", async () => {
-    const user = userEvent.setup()
-    mockRegister.mockRejectedValueOnce(new Error("Network error"))
-
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
-
-    await user.type(screen.getByLabelText(/full name/i), "John Doe")
-    await user.type(screen.getByLabelText(/email/i), "john@example.com")
-    await user.type(screen.getByLabelText(/^password$/i), "password123")
-    await user.type(screen.getByLabelText(/confirm password/i), "password123")
-    await user.click(screen.getByRole("button", { name: /register now/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/network error/i)).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: /continue with email verification/i })).toBeDisabled()
     })
   })
 
-  test("should show loading state during registration", async () => {
-    const user = userEvent.setup()
-    mockRegister.mockImplementationOnce(
-      () => new Promise((resolve, reject) => {
-        setTimeout(() => reject({
-          response: {
-            data: {
-              message: "Server error"
-            }
-          }
-        }), 100)
+  describe("Form-step validation", () => {
+    // NOTE: name/email/password/confirm-password all carry the native HTML
+    // `required` attribute, and email is `type="email"`. That means an
+    // empty name or email is blocked by the browser's own constraint
+    // validation *before* the submit event (and therefore handleSendOTP's
+    // "Full name is required" / "Email is required" branches) ever fires —
+    // in happy-dom here, and identically in a real browser. So those two
+    // specific JS message branches are currently dead code in production
+    // too; what's actually testable/guaranteed is that submission doesn't
+    // proceed, which is what these assert.
+    test("does not send an OTP when the name is empty", async () => {
+      const user = userEvent.setup()
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
+
+      await fillForm(user, { name: "" })
+      await submitForm(user)
+
+      expect(mockSendOTP).not.toHaveBeenCalled()
+    })
+
+    test("does not send an OTP when the email is empty", async () => {
+      const user = userEvent.setup()
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
+
+      await fillForm(user, { email: "" })
+      await submitForm(user)
+
+      expect(mockSendOTP).not.toHaveBeenCalled()
+    })
+
+    test("rejects an email with no domain suffix", async () => {
+      const user = userEvent.setup()
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
+
+      // Same native-constraint-validation note as Login.test.jsx: this
+      // input is type="email", so a value with no "@" at all never reaches
+      // React's onSubmit in the first place (happy-dom blocks it, like a
+      // real browser). "john@example" clears that native check but still
+      // fails the app's own stricter regex.
+      await fillForm(user, { email: "john@example" })
+      await submitForm(user)
+
+      expect(await screen.findByText(/invalid email format/i)).toBeInTheDocument()
+      expect(mockSendOTP).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("OTP step", () => {
+    test("moves to the OTP screen after a successful send", async () => {
+      const user = userEvent.setup()
+      mockSendOTP.mockResolvedValueOnce({ success: true })
+
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
+
+      await fillForm(user)
+      await submitForm(user)
+
+      expect(await screen.findByText(/verify email/i)).toBeInTheDocument()
+      expect(screen.getByText("john@example.com")).toBeInTheDocument()
+      expect(mockSendOTP).toHaveBeenCalledWith("john@example.com", "John Doe", "registration")
+    })
+
+    test("shows an error and stays on the form when sending the OTP fails", async () => {
+      const user = userEvent.setup()
+      mockSendOTP.mockRejectedValueOnce({ message: "Too many requests" })
+
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
+
+      await fillForm(user)
+      await submitForm(user)
+
+      expect(await screen.findByText(/too many requests/i)).toBeInTheDocument()
+      expect(screen.getByLabelText(/full name/i)).toBeInTheDocument()
+    })
+
+    test("shows an error on an invalid OTP and does not register", async () => {
+      const user = userEvent.setup()
+      mockSendOTP.mockResolvedValueOnce({ success: true })
+      mockVerifyOTP.mockResolvedValueOnce({ success: false, message: "Invalid OTP" })
+
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
+
+      await fillForm(user)
+      await submitForm(user)
+      await screen.findByText(/verify email/i)
+      await enterOtpAndVerify(user)
+
+      expect(await screen.findByText(/invalid otp/i)).toBeInTheDocument()
+      expect(mockRegister).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("Registration after OTP verification", () => {
+    test("registers with the derived public key and navigates to /login", async () => {
+      const user = userEvent.setup()
+      mockSendOTP.mockResolvedValueOnce({ success: true })
+      mockVerifyOTP.mockResolvedValueOnce({ success: true })
+      mockRegister.mockResolvedValueOnce({ success: true, token: "test-token" })
+
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
+
+      await fillForm(user)
+      await submitForm(user)
+      await screen.findByText(/verify email/i)
+      await enterOtpAndVerify(user, "654321")
+
+      await waitFor(() => {
+        expect(mockDeriveKeypair).toHaveBeenCalledWith("john@example.com", VALID_PASSWORD)
       })
-    )
 
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
+      expect(mockRegister).toHaveBeenCalledWith({
+        name: "John Doe",
+        email: "john@example.com",
+        password: VALID_PASSWORD,
+        otp: "654321",
+        publicKey: expect.any(String),
+      })
 
-    await user.type(screen.getByLabelText(/full name/i), "John Doe")
-    await user.type(screen.getByLabelText(/email/i), "john@example.com")
-    await user.type(screen.getByLabelText(/^password$/i), "password123")
-    await user.type(screen.getByLabelText(/confirm password/i), "password123")
-
-    const registerButton = screen.getByRole("button", { name: /register now/i })
-    await user.click(registerButton)
-
-    await waitFor(() => {
-      expect(screen.getByText(/creating account\.\.\./i)).toBeInTheDocument()
-    })
-
-    const loadingButton = screen.getByRole("button", { name: /creating account\.\.\./i })
-    expect(loadingButton).toBeDisabled()
-    
-    // Wait for the promise to reject so it doesn't affect next test
-    await waitFor(() => {
-      expect(screen.getByText(/server error/i)).toBeInTheDocument()
-    })
-  })
-
-  test("should not call socket connect on failed registration", async () => {
-    const user = userEvent.setup()
-    
-    mockRegister.mockRejectedValueOnce({
-      response: {
-        data: {
-          message: "Email already exists",
+      // Registration success schedules navigate("/login") ~1.5s later.
+      await waitFor(
+        () => {
+          expect(mockNavigate).toHaveBeenCalledWith("/login")
         },
-      },
+        { timeout: 3000 }
+      )
     })
 
-    render(
-      <MemoryRouter>
-        <SignupForm />
-      </MemoryRouter>
-    )
+    test("shows the error and does not navigate if registration fails after OTP verification", async () => {
+      const user = userEvent.setup()
+      mockSendOTP.mockResolvedValueOnce({ success: true })
+      mockVerifyOTP.mockResolvedValueOnce({ success: true })
+      mockRegister.mockRejectedValueOnce({ message: "Email already exists" })
 
-    await user.type(screen.getByLabelText(/full name/i), "John Doe")
-    await user.type(screen.getByLabelText(/email/i), "existing@example.com")
-    await user.type(screen.getByLabelText(/^password$/i), "password123")
-    await user.type(screen.getByLabelText(/confirm password/i), "password123")
-    await user.click(screen.getByRole("button", { name: /register now/i }))
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
 
-    await waitFor(() => {
-      expect(screen.getByText(/email already exists/i)).toBeInTheDocument()
+      await fillForm(user)
+      await submitForm(user)
+      await screen.findByText(/verify email/i)
+      await enterOtpAndVerify(user)
+
+      // Registration fails *after* a successful OTP verify — OTPVerification's
+      // own error state only covers OTP-verify failures, so SignupForm shows
+      // this one itself, above the (still-rendered) OTP screen.
+      expect(await screen.findByText(/email already exists/i)).toBeInTheDocument()
+      expect(mockNavigate).not.toHaveBeenCalled()
     })
-
-    expect(mockConnectSocket).not.toHaveBeenCalled()
   })
 })

@@ -191,6 +191,8 @@ export default function Layoute({ initialTab = "chats" }) {
                     : "text-[rgb(var(--text-muted))] hover:text-green-400"
                 }`}
                 title={item.label}
+                aria-label={item.label}
+                aria-current={activeTab === item.id ? "page" : undefined}
               >
                 <Icon className="w-5 lg:w-6 h-5 lg:h-6" />
               </button>
@@ -201,6 +203,7 @@ export default function Layoute({ initialTab = "chats" }) {
             onClick={() => setShowFriendModal(true)}
             className="p-3 lg:p-4 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex items-center justify-center"
             title="Add Contact"
+            aria-label="Add contact"
           >
             <Plus className="w-5 lg:w-6 h-5 lg:h-6" />
           </button>
@@ -215,6 +218,7 @@ export default function Layoute({ initialTab = "chats" }) {
                 : "text-[rgb(var(--text-muted))] hover:text-green-400 hover:bg-[rgb(var(--bg-hover))]"
             }`}
             title={`Theme: ${bgImage === "dark" ? "Dark" : "Light"}`}
+            aria-label={`Change theme (currently ${bgImage === "dark" ? "Dark" : "Light"})`}
           >
             {bgImage === "dark" ? (
               <Moon className="w-5 lg:w-6 h-5 lg:h-6" />
@@ -227,6 +231,7 @@ export default function Layoute({ initialTab = "chats" }) {
             onClick={() => setShowSettings(!showSettings)}
             className="p-3 lg:p-4 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex items-center justify-center"
             title="Settings"
+            aria-label="Settings"
           >
             <Settings className="w-5 lg:w-6 h-5 lg:h-6" />
           </button>
@@ -235,6 +240,7 @@ export default function Layoute({ initialTab = "chats" }) {
             onClick={handleLogout}
             className="p-3 lg:p-4 hover:bg-red-500/20 rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-red-400 flex items-center justify-center"
             title="Logout"
+            aria-label="Logout"
           >
             <LogOut className="w-5 lg:w-6 h-5 lg:h-6" />
           </button>
@@ -332,6 +338,7 @@ export default function Layoute({ initialTab = "chats" }) {
               : "text-[rgb(var(--text-muted))] hover:text-green-400"
           }`}
           title="More Options"
+          aria-expanded={mobileBottomSheetOpen}
         >
           <Settings className="w-6 h-6 flex-shrink-0" />
           <span className="text-xs font-medium mt-1">More</span>

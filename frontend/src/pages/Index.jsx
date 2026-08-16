@@ -42,6 +42,8 @@ function FeatureModal({ feature, isOpen, onClose }) {
           </div>
           <button
             onClick={onClose}
+            title="Close"
+            aria-label="Close"
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors ml-2"
           >
             <X className="w-5 sm:w-6 h-5 sm:h-6 text-gray-600" />

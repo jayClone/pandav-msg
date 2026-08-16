@@ -110,6 +110,8 @@ export default function Navbar() {
 
           <button
             onClick={toggleMenu}
+            aria-label={isOpen ? "Close menu" : "Open menu"}
+            aria-expanded={isOpen}
             className="md:hidden inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:text-blue-600 focus:outline-none"
           >
             <svg
@@ -117,6 +119,7 @@ export default function Navbar() {
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"
@@ -156,6 +159,8 @@ export default function Navbar() {
                 <button
                   type="button"
                   onClick={openChatDashboard}
+                  title="Open chat dashboard"
+                  aria-label="Open chat dashboard"
                   className="flex items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 px-4 py-3 text-base font-bold text-white shadow-md"
                 >
                   {getInitial(authUser?.name)}

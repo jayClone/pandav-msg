@@ -148,7 +148,7 @@ export default function OTPVerification({
 
       {/* Error Message */}
       {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+        <div role="alert" className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-red-700">{error}</p>
         </div>
@@ -156,7 +156,7 @@ export default function OTPVerification({
 
       {/* Success Message */}
       {success && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
+        <div role="status" className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
           <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-green-700">OTP verified successfully! Processing...</p>
         </div>
@@ -167,19 +167,21 @@ export default function OTPVerification({
         <label className="block text-sm font-medium text-gray-700 mb-4">
           Enter Verification Code
         </label>
-        <div className="flex gap-2 sm:gap-3 justify-center">
+        <div className="flex gap-2 sm:gap-3 justify-center" role="group" aria-label="6-digit verification code">
           {otp.map((digit, index) => (
             <input
               key={index}
               ref={(el) => (inputRefs.current[index] = el)}
               type="text"
               inputMode="numeric"
+              autoComplete={index === 0 ? "one-time-code" : "off"}
               value={digit}
               onChange={(e) => handleOTPChange(index, e.target.value)}
               onKeyDown={(e) => handleKeyDown(index, e)}
               onPaste={handlePaste}
               maxLength="1"
               disabled={loading || success}
+              aria-label={`Digit ${index + 1} of 6`}
               className="w-12 h-12 sm:w-14 sm:h-14 text-center text-2xl font-bold border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/20 disabled:bg-gray-100 disabled:cursor-not-allowed transition-all"
             />
           ))}

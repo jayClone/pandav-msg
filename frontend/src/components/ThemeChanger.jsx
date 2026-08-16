@@ -52,6 +52,8 @@ export default function ThemeChanger({ isOpen, onClose, onThemeChange }) {
           </div>
           <button
             onClick={onClose}
+            title="Close"
+            aria-label="Close theme settings"
             className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-gray-400 hover:text-red-400"
           >
             <X className="w-5 h-5" />
@@ -69,6 +71,7 @@ export default function ThemeChanger({ isOpen, onClose, onThemeChange }) {
                 <button
                   key={key}
                   onClick={(e) => handleThemeSelect(key, e)}
+                  aria-pressed={selectedTheme === key}
                   className={`group relative p-5 rounded-xl border-2 transition-all overflow-hidden ${
                     selectedTheme === key
                       ? 'border-green-500 shadow-lg glow-green bg-[rgb(var(--bg-tertiary))]/50'

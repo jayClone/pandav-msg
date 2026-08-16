@@ -21,10 +21,47 @@ class CryptoService {
     // Version prefix for encrypted messages to support future upgrades
     this.VERSION_PREFIX = 'nacl_000001';
     this.SESSION_STORAGE_KEY = 'e2ee-keypair';
+
+    // Trust-on-first-use key pinning: the server tells us a peer's public
+    // key (there's no way to independently re-derive someone else's key
+    // without their password), so the first key we see for a userId is
+    // pinned in localStorage — persisted across logout so it survives to
+    // the next session. If the server ever hands us a *different* key for
+    // the same userId later, that's either the peer legitimately rotating
+    // their key or a compromised/malicious server swapping in an
+    // attacker's key to MITM the conversation. Either way we don't
+    // silently trust it — see storePublicKey().
+    this.PINNED_KEYS_STORAGE_KEY = 'e2ee-pinned-keys';
+    this.KEY_CHANGED_EVENT = 'e2ee-key-changed';
   }
 
   canUseSessionStorage() {
     return typeof window !== 'undefined' && !!window.sessionStorage;
+  }
+
+  canUseLocalStorage() {
+    return typeof window !== 'undefined' && !!window.localStorage;
+  }
+
+  loadPinnedKeys() {
+    if (!this.canUseLocalStorage()) {
+      return {};
+    }
+
+    try {
+      const raw = window.localStorage.getItem(this.PINNED_KEYS_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  savePinnedKeys(pinned) {
+    if (!this.canUseLocalStorage()) {
+      return;
+    }
+
+    window.localStorage.setItem(this.PINNED_KEYS_STORAGE_KEY, JSON.stringify(pinned));
   }
 
   persistMyKeypair() {
@@ -134,11 +171,17 @@ class CryptoService {
   }
 
   /**
-   * Store another user's public key for encryption to them
+   * Store another user's public key for encryption to them.
+   * Pins the key on first sight (TOFU) and refuses to silently swap in a
+   * different key for a userId we've already pinned — see the
+   * PINNED_KEYS_STORAGE_KEY comment in the constructor for why.
    * @param {string} userId - Other user's ID
-   * @param {Uint8Array} publicKey - Their public key (base64 encoded string or Uint8Array)
+   * @param {Uint8Array|string} publicKeyData - Their public key (base64 encoded string or Uint8Array)
+   * @param {Object} [options]
+   * @param {boolean} [options.trustChange=false] - Explicitly accept a key that differs from the pinned one (user-confirmed)
+   * @returns {{changed: boolean, trusted: boolean}}
    */
-  storePublicKey(userId, publicKeyData) {
+  storePublicKey(userId, publicKeyData, { trustChange = false } = {}) {
     try {
       let publicKey = publicKeyData;
 
@@ -147,11 +190,43 @@ class CryptoService {
         publicKey = decodeBase64(publicKeyData);
       }
 
+      const encoded = encodeBase64(publicKey);
+      const pinned = this.loadPinnedKeys();
+      const previouslyPinned = pinned[userId];
+      const changed = !!previouslyPinned && previouslyPinned !== encoded;
+
+      if (changed && !trustChange) {
+        // Keep using the old (still-pinned) key rather than the new one —
+        // any decrypt against the new key will fail loudly instead of
+        // silently succeeding against a possibly-attacker-supplied key.
+        // Let the UI decide how to surface this to the user.
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent(this.KEY_CHANGED_EVENT, {
+            detail: { userId, oldPublicKey: previouslyPinned, newPublicKey: encoded },
+          }));
+        }
+        return { changed: true, trusted: false };
+      }
+
       this.publicKeys.set(userId, publicKey);
+      pinned[userId] = encoded;
+      this.savePinnedKeys(pinned);
+
+      return { changed, trusted: true };
     } catch (error) {
       console.error('Failed to store public key:', error.message);
       throw error;
     }
+  }
+
+  /**
+   * Explicitly accept a public key that differs from the previously pinned
+   * one for this userId (i.e. the user was warned and chose to trust it).
+   * @param {string} userId
+   * @param {Uint8Array|string} publicKeyData
+   */
+  trustKeyChange(userId, publicKeyData) {
+    return this.storePublicKey(userId, publicKeyData, { trustChange: true });
   }
 
   /**
@@ -161,53 +236,6 @@ class CryptoService {
    */
   getPublicKey(userId) {
     return this.publicKeys.get(userId) || null;
-  }
-
-  /**
-   * Derive another user's public key from their email
-   * This is possible because we use deterministic key derivation from email + password
-   * Any user can independently compute any other user's public key if they know the email
-   * @param {string} email - Other user's email
-   * @param {string} userId - Other user's ID (for caching)
-   * @returns {Promise<Uint8Array>} Their public key
-   */
-  async derivePublicKeyFromEmail(email, userId) {
-    try {
-      if (!email) {
-        throw new Error('Email required to derive public key');
-      }
-
-      // Check cache first
-      if (userId && this.publicKeys.has(userId)) {
-        return this.publicKeys.get(userId);
-      }
-
-      // Derive keypair from email (same method as login but we're deriving for someone else)
-      // They will use: deriveKeypairFromPassword(email, password)
-      // We'll use: deriveKeypairFromEmail(email) which derives from email alone
-      const emailBytes = new TextEncoder().encode(email);
-      const saltBytes = new TextEncoder().encode(email + ':publickey');
-
-      // Derive using scrypt
-      const seed = await scrypt.scrypt(
-        emailBytes,
-        saltBytes,
-        16384, 8, 1, 32
-      );
-
-      // Create public key from seed (matches keypair format)
-      const keypair = nacl.box.keyPair.fromSecretKey(new Uint8Array(seed));
-
-      // Cache it
-      if (userId) {
-        this.publicKeys.set(userId, keypair.publicKey);
-      }
-
-      return keypair.publicKey;
-    } catch (error) {
-      console.error('Failed to derive public key from email:', error.message);
-      throw error;
-    }
   }
 
   /**
@@ -263,6 +291,29 @@ class CryptoService {
       console.error('Message encryption failed:', error.message);
       throw new Error(`Encryption failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Encrypt a message for every member of a group (pairwise fan-out).
+   * Each member — including the sender themselves, so they can re-read
+   * their own sent messages later — gets their own NaCl box ciphertext of
+   * the same plaintext, produced with the exact same encryptMessage() used
+   * for private messages. No new crypto primitive: a group message is just
+   * N private-message encryptions of the same text.
+   * @param {string} plaintext - Message to encrypt
+   * @param {string[]} memberUserIds - Every current group member's userId, sender included
+   * @returns {Promise<Object>} { [userId]: "nacl_000001:base64data" }
+   */
+  async encryptForGroup(plaintext, memberUserIds) {
+    if (!Array.isArray(memberUserIds) || memberUserIds.length === 0) {
+      throw new Error('memberUserIds must be a non-empty array');
+    }
+
+    const entries = await Promise.all(
+      memberUserIds.map(async (memberId) => [memberId, await this.encryptMessage(plaintext, memberId)])
+    );
+
+    return Object.fromEntries(entries);
   }
 
   /**
