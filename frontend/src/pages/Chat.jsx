@@ -35,6 +35,7 @@ import {
   Wifi,
   WifiOff,
   Lock,
+  ShieldAlert,
 } from "lucide-react";
 import ThemeChanger from "@/components/ThemeChanger";
 import { useDebounce } from '@hooks/useDebounce';
@@ -158,6 +159,11 @@ export default function Chat({
   const [socketStatus, setSocketStatus] = useState('connecting');
   const [socketError, setSocketError] = useState('');
 
+  // ✅ E2EE: peers whose public key changed since we last pinned it
+  // (either a legit key rotation on their end, or the server swapping in
+  // a different key — we can't tell which, so we warn instead of guessing)
+  const [keyWarnings, setKeyWarnings] = useState({});
+
   const typingTimeoutRef = useRef(null);
   const lastTypingTimeRef = useRef(0);
   const errorTimeoutRef = useRef(null);
@@ -195,6 +201,30 @@ export default function Chat({
       cryptoService.clearAllKeys();
     }
   }, [token]);
+
+  // ✅ E2EE: Listen for pinned-key mismatches (see crypto.service.js storePublicKey)
+  useEffect(() => {
+    const handleKeyChanged = (e) => {
+      const { userId, oldPublicKey, newPublicKey } = e.detail || {};
+      if (!userId) return;
+      setKeyWarnings((prev) => ({ ...prev, [userId]: { oldPublicKey, newPublicKey } }));
+    };
+
+    window.addEventListener(cryptoService.KEY_CHANGED_EVENT, handleKeyChanged);
+    return () => window.removeEventListener(cryptoService.KEY_CHANGED_EVENT, handleKeyChanged);
+  }, []);
+
+  const handleTrustKeyChange = useCallback((userId) => {
+    const warning = keyWarnings[userId];
+    if (!warning) return;
+
+    cryptoService.trustKeyChange(userId, warning.newPublicKey);
+    setKeyWarnings((prev) => {
+      const updated = { ...prev };
+      delete updated[userId];
+      return updated;
+    });
+  }, [keyWarnings]);
 
 
   //  COMPREHENSIVE PROTECTION: NO BACK, NO CLOSE, NO SWIPE-BACK
@@ -504,6 +534,13 @@ export default function Chat({
       setMessages((prev) => prev.filter((m) => String(m._id) !== String(data.messageId)));
     };
 
+    // ✅ Real-time: someone accepting your friend request (or removing you)
+    // used to only be reflected here after a manual refresh. Refetch the
+    // friends list live instead.
+    const handleFriendListChanged = () => {
+      fetchFriends();
+    };
+
     const registerListeners = (socket) => {
       const onConnect = () => {
         setSocketStatus('connected');
@@ -531,6 +568,8 @@ export default function Chat({
       socket.on(SOCKET_EVENTS.TYPING, handleTyping);
       socket.on(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
       socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
+      socket.on(SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, handleFriendListChanged);
+      socket.on(SOCKET_EVENTS.FRIEND_REMOVED, handleFriendListChanged);
 
       // Handle the race where the socket connects before listeners are attached.
       if (socket.connected) {
@@ -550,6 +589,8 @@ export default function Chat({
         socket.off(SOCKET_EVENTS.TYPING, handleTyping);
         socket.off(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
         socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
+        socket.off(SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, handleFriendListChanged);
+        socket.off(SOCKET_EVENTS.FRIEND_REMOVED, handleFriendListChanged);
       };
     };
 
@@ -572,7 +613,7 @@ export default function Chat({
       if (socketInitInterval) clearInterval(socketInitInterval);
       if (cleanup) cleanup();
     };
-  }, [token, navigate, currentUserId, currentUserName, setAllUsers]);
+  }, [token, navigate, currentUserId, currentUserName, setAllUsers, fetchFriends]);
 
   //  FETCH CHAT HISTORY
   useEffect(() => {
@@ -1195,7 +1236,9 @@ export default function Chat({
                           e.stopPropagation();
                           togglePinChat(id);
                         }}
-                        className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
+                        title={isPinned ? "Unpin chat" : "Pin chat"}
+                        aria-label={isPinned ? "Unpin chat" : "Pin chat"}
+                        className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-all ${
                           isPinned
                             ? "text-green-400 bg-green-500/20"
                             : "text-[rgb(var(--text-muted))] hover:bg-[rgb(var(--bg-hover))] hover:text-green-400"
@@ -1225,6 +1268,8 @@ export default function Chat({
                         setSidebarOpen(true); //  OPEN SIDEBAR ON MOBILE
                       }
                     }}
+                    title="Back to friends list"
+                    aria-label="Back to friends list"
                     className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
                   >
                     <ChevronLeft className="w-4 sm:w-5 h-4 sm:h-5" />
@@ -1260,10 +1305,30 @@ export default function Chat({
                 </div>
 
                 {/* More Options Button */}
-                <button className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0">
+                <button
+                  title="More options"
+                  aria-label="More options"
+                  className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
+                >
                   <MoreVertical className="w-4 sm:w-5 h-4 sm:h-5" />
                 </button>
               </div>
+
+              {/* ✅ E2EE: Security key changed warning */}
+              {keyWarnings[selectedUserId] && (
+                <div className="px-3 sm:px-4 py-2.5 bg-red-500/10 border-b border-red-500/30 text-red-400 flex items-start sm:items-center gap-2 text-xs sm:text-sm">
+                  <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5 sm:mt-0" />
+                  <span className="flex-1">
+                    {getDisplayName(selectedUserId)}'s security key changed. This could mean they reinstalled/reset their account — or someone is intercepting this chat. Verify with them before trusting it.
+                  </span>
+                  <button
+                    onClick={() => handleTrustKeyChange(selectedUserId)}
+                    className="shrink-0 px-2.5 py-1 rounded-md bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 font-medium transition-colors"
+                  >
+                    Trust new key
+                  </button>
+                </div>
+              )}
 
               {/* Messages Area - Mobile Optimized */}
               <div 
@@ -1368,8 +1433,9 @@ export default function Chat({
                             {isOwn && (
                               <button
                                 onClick={() => handleDeleteMessage(m._id)}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 hover:bg-red-500/20 rounded-md text-red-400 hover:text-red-300 flex-shrink-0"
+                                className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity duration-200 p-1 hover:bg-red-500/20 rounded-md text-red-400 hover:text-red-300 flex-shrink-0"
                                 title="Delete"
+                                aria-label="Delete message"
                               >
                                 <svg
                                   className="w-3 h-3"
@@ -1401,10 +1467,20 @@ export default function Chat({
                 <div className="flex items-end gap-1 xs:gap-1.5 sm:gap-2">
                   {/* Hidden on mobile, visible on xs+ */}
                   <div className="hidden xs:flex gap-0.5 xs:gap-1">
-                    <button className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0">
+                    <button
+                      disabled
+                      title="Emoji picker (coming soon)"
+                      aria-label="Emoji picker (coming soon)"
+                      className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
+                    >
                       <Smile className="w-4 sm:w-5 h-4 sm:h-5" />
                     </button>
-                    <button className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0">
+                    <button
+                      disabled
+                      title="Attach file (coming soon)"
+                      aria-label="Attach file (coming soon)"
+                      className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
+                    >
                       <Paperclip className="w-4 sm:w-5 h-4 sm:h-5" />
                     </button>
                   </div>
@@ -1446,6 +1522,8 @@ export default function Chat({
                       handleChatTyping(false);
                     }}
                     disabled={!messageInput.trim()}
+                    title="Send message"
+                    aria-label="Send message"
                     className={`p-1.5 sm:p-2 md:p-3 rounded-lg transition-all shadow-lg flex-shrink-0 ${
                       messageInput.trim()
                         ? "bg-linear-to-br from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-white glow-green"

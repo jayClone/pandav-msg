@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Check, XCircle, Loader } from 'lucide-react';
 import friendAPI from '@api/friend.api.js';
+import { getSocket } from '@socket/socketClient.js';
+import { SOCKET_EVENTS } from '@constants/socketEvents.js';
 
-export default function FriendRequestModal({ 
-  isOpen, 
-  onClose, 
+export default function FriendRequestModal({
+  isOpen,
+  onClose,
   token,
   onFriendRemoved
 }) {
@@ -23,6 +25,52 @@ export default function FriendRequestModal({
       fetchAllData();
     }
   }, [isOpen, token]);
+
+  // ✅ Real-time: friend requests/accepts/removals used to only show up the
+  // next time this modal happened to be reopened. Listen live instead, so
+  // it's already up to date whenever the user does open it.
+  useEffect(() => {
+    if (!token) return;
+
+    let socketInitInterval;
+    let cleanup;
+
+    const registerListeners = (socket) => {
+      const refresh = () => fetchAllData();
+
+      socket.on(SOCKET_EVENTS.FRIEND_REQUEST_RECEIVED, refresh);
+      socket.on(SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, refresh);
+      socket.on(SOCKET_EVENTS.FRIEND_REQUEST_REJECTED, refresh);
+      socket.on(SOCKET_EVENTS.FRIEND_REMOVED, refresh);
+
+      return () => {
+        socket.off(SOCKET_EVENTS.FRIEND_REQUEST_RECEIVED, refresh);
+        socket.off(SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, refresh);
+        socket.off(SOCKET_EVENTS.FRIEND_REQUEST_REJECTED, refresh);
+        socket.off(SOCKET_EVENTS.FRIEND_REMOVED, refresh);
+      };
+    };
+
+    const init = () => {
+      const s = getSocket();
+      if (s) {
+        cleanup = registerListeners(s);
+        return true;
+      }
+      return false;
+    };
+
+    if (!init()) {
+      socketInitInterval = setInterval(() => {
+        if (init()) clearInterval(socketInitInterval);
+      }, 100);
+    }
+
+    return () => {
+      if (socketInitInterval) clearInterval(socketInitInterval);
+      if (cleanup) cleanup();
+    };
+  }, [token]);
 
   //  AUTO-CLEAR ERRORS
   useEffect(() => {
@@ -325,6 +373,8 @@ export default function FriendRequestModal({
                       <button
                         onClick={() => handleAcceptRequest(request._id)}
                         disabled={sendingRequest[request._id]}
+                        title="Accept friend request"
+                        aria-label={`Accept friend request from ${request.senderId?.name || 'Unknown'}`}
                         className="flex-1 sm:flex-none px-3 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-xs sm:text-sm"
                       >
                         {sendingRequest[request._id] ? (
@@ -337,6 +387,7 @@ export default function FriendRequestModal({
                       <button
                         onClick={() => handleRejectRequest(request._id)}
                         disabled={sendingRequest[request._id]}
+                        aria-label={`Reject friend request from ${request.senderId?.name || 'Unknown'}`}
                         className="flex-1 sm:flex-none px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all disabled:opacity-50 text-xs sm:text-sm"
                       >
                         <span className="hidden sm:inline">Reject</span>
@@ -364,6 +415,8 @@ export default function FriendRequestModal({
                     <button
                       onClick={() => handleCancelRequest(request._id)}
                       disabled={sendingRequest[request._id]}
+                      title="Cancel friend request"
+                      aria-label={`Cancel friend request to ${request.receiverId?.name || 'Unknown'}`}
                       className="w-full sm:w-auto px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-xs sm:text-sm"
                     >
                       {sendingRequest[request._id] ? (
@@ -394,6 +447,7 @@ export default function FriendRequestModal({
                       <button
                         onClick={() => handleSendRequest(user._id)}
                         disabled={sendingRequest[user._id]}
+                        aria-label={sendingRequest[user._id] ? `Sending friend request to ${user.name}` : `Add ${user.name} as a friend`}
                         className="w-full sm:w-auto px-3 sm:px-4 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-xs sm:text-sm"
                       >
                         {sendingRequest[user._id] ? (
@@ -415,6 +469,7 @@ export default function FriendRequestModal({
                       <button
                         onClick={() => handleRemoveFriend(user._id)}
                         disabled={sendingRequest[user._id]}
+                        aria-label={`Remove ${user.name} from friends`}
                         className="w-full sm:w-auto px-3 sm:px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all disabled:opacity-50 text-xs sm:text-sm"
                       >
                         {sendingRequest[user._id] ? 'Removing...' : 'Remove'}

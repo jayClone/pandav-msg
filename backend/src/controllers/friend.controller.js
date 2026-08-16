@@ -1,7 +1,15 @@
 import Friend from '../models/Friend.js';
 import User from '../models/User.js';
 import mongoose from 'mongoose';
-import { getCache, setCache, deleteCache } from '../config/redis.js';
+import { getCache, setCache, deleteCache, deleteCacheByPattern } from '../config/redis.js';
+import { sendServerError } from '../utils/errorResponse.js';
+import { emitToUser } from '../utils/socketEmit.js';
+import { SOCKET_EVENTS } from '../constant/response.messages.js';
+
+// getFriendshipSummary is a fixed "give me an overview" dashboard call, not
+// a paginated list endpoint, so each of its lists is capped at a flat limit
+// rather than wired up to page/limit query params.
+const SUMMARY_LIST_LIMIT = 100;
 
 /**
  * Send friend request
@@ -83,18 +91,27 @@ export const sendFriendRequest = async (req, res) => {
       status: 'pending',
     });
 
+    emitToUser(req, receiverId, SOCKET_EVENTS.FRIEND_REQUEST_RECEIVED, {
+      requestId: friendRequest._id,
+      senderId: req.user.userId,
+      senderName: req.user.name,
+      senderEmail: req.user.email,
+    });
+
     return res.status(201).json({
       success: true,
       message: 'Friend request sent successfully',
       data: friendRequest,
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Friend request already exists',
+      });
+    }
     console.error('❌ Error sending friend request:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to send friend request',
-      error: error.message,
-    });
+    return sendServerError(res, error, 'Failed to send friend request');
   }
 };
 
@@ -145,9 +162,18 @@ export const acceptFriendRequest = async (req, res) => {
       deleteCache(`friends:v2:${receiverId}`),
       deleteCache(`friendship:summary:v2:${friendRequest.senderId}`),
       deleteCache(`friendship:summary:v2:${receiverId}`),
-      deleteCache(`requests:pending:${receiverId}:page:1:limit:50`),
-      deleteCache(`requests:sent:${friendRequest.senderId}:page:1:limit:50`),
+      deleteCacheByPattern(`requests:pending:${receiverId}:page:*`),
+      deleteCacheByPattern(`requests:sent:${friendRequest.senderId}:page:*`),
     ]);
+
+    // Notify the original sender that their request was accepted — they're
+    // friends now, live, not just whenever they next reopen the modal.
+    emitToUser(req, friendRequest.senderId, SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, {
+      requestId: friendRequest._id,
+      friendId: req.user.userId,
+      friendName: req.user.name,
+      friendEmail: req.user.email,
+    });
 
     return res.status(200).json({
       success: true,
@@ -156,11 +182,7 @@ export const acceptFriendRequest = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error accepting friend request:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to accept friend request',
-      error: error.message,
-    });
+    return sendServerError(res, error, 'Failed to accept friend request');
   }
 };
 
@@ -206,9 +228,22 @@ export const rejectFriendRequest = async (req, res) => {
       deleteCache(`friends:v2:${friendRequest.receiverId}`),
       deleteCache(`friendship:summary:v2:${friendRequest.senderId}`),
       deleteCache(`friendship:summary:v2:${friendRequest.receiverId}`),
-      deleteCache(`requests:pending:${friendRequest.receiverId}:page:1:limit:50`),
-      deleteCache(`requests:sent:${friendRequest.senderId}:page:1:limit:50`),
+      deleteCacheByPattern(`requests:pending:${friendRequest.receiverId}:page:*`),
+      deleteCacheByPattern(`requests:sent:${friendRequest.senderId}:page:*`),
     ]);
+
+    // This endpoint covers both "receiver declines" and "sender cancels
+    // their own pending request" — notify whichever side didn't act.
+    const otherPartyId =
+      friendRequest.senderId.toString() === userId.toString()
+        ? friendRequest.receiverId
+        : friendRequest.senderId;
+
+    emitToUser(req, otherPartyId, SOCKET_EVENTS.FRIEND_REQUEST_REJECTED, {
+      requestId: friendRequest._id,
+      byUserId: req.user.userId,
+      byName: req.user.name,
+    });
 
     return res.status(200).json({
       success: true,
@@ -216,11 +251,7 @@ export const rejectFriendRequest = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error rejecting friend request:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to reject friend request',
-      error: error.message,
-    });
+    return sendServerError(res, error, 'Failed to reject friend request');
   }
 };
 
@@ -274,11 +305,7 @@ export const getSentRequests = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error fetching sent requests:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch sent requests',
-      error: error.message,
-    });
+    return sendServerError(res, error, 'Failed to fetch sent requests');
   }
 };
 
@@ -332,11 +359,7 @@ export const getPendingRequests = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error fetching pending requests:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch pending requests',
-      error: error.message,
-    });
+    return sendServerError(res, error, 'Failed to fetch pending requests');
   }
 };
 
@@ -413,11 +436,7 @@ export const getFriends = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error fetching friends:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch friends',
-      error: error.message,
-    });
+    return sendServerError(res, error, 'Failed to fetch friends');
   }
 };
 
@@ -459,11 +478,7 @@ export const checkFriendStatus = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error checking friend status:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to check friend status',
-      error: error.message,
-    });
+    return sendServerError(res, error, 'Failed to check friend status');
   }
 };
 
@@ -505,17 +520,18 @@ export const removeFriend = async (req, res) => {
       deleteCache(`friendship:summary:v2:${friendId}`)
     ]);
 
+    emitToUser(req, friendId, SOCKET_EVENTS.FRIEND_REMOVED, {
+      byUserId: req.user.userId,
+      byName: req.user.name,
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Friend removed successfully',
     });
   } catch (error) {
     console.error('❌ Error removing friend:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to remove friend',
-      error: error.message,
-    });
+    return sendServerError(res, error, 'Failed to remove friend');
   }
 };
 
@@ -552,6 +568,7 @@ export const getFriendshipSummary = async (req, res) => {
         .populate('senderId', 'name email publicKey _id')
         .populate('receiverId', 'name email publicKey _id')
         .sort({ acceptedAt: -1 })
+        .limit(SUMMARY_LIST_LIMIT)
         .lean(),
 
       Friend.find({
@@ -561,6 +578,7 @@ export const getFriendshipSummary = async (req, res) => {
         .populate('senderId', 'name email publicKey _id')
         .populate('receiverId', 'name email publicKey _id')
         .sort({ createdAt: -1 })
+        .limit(SUMMARY_LIST_LIMIT)
         .lean(),
 
       Friend.find({
@@ -570,6 +588,7 @@ export const getFriendshipSummary = async (req, res) => {
         .populate('senderId', 'name email publicKey _id')
         .populate('receiverId', 'name email publicKey _id')
         .sort({ createdAt: -1 })
+        .limit(SUMMARY_LIST_LIMIT)
         .lean()
     ]);
 
@@ -595,10 +614,6 @@ export const getFriendshipSummary = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Friendship summary error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch friendship summary',
-      error: error.message
-    });
+    return sendServerError(res, error, 'Failed to fetch friendship summary');
   }
 };

@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useEffect, useState, useRef } from 'react'
 import axios from 'axios'
 import groupService from '@services/group.service.js'
+import cryptoService from '@services/crypto.service.js'
 import { SOCKET_EVENTS } from '@constants/socketEvents.js'
 import { getSocket } from '@socket/socketClient.js'
 import {
@@ -18,6 +19,7 @@ import {
   Loader,
   Trash2,
   AlertTriangle,
+  ShieldAlert,
   LogOut, UserPlus, MoreVertical, Menu
 } from 'lucide-react'
 import friendAPI from '@api/friend.api.js'
@@ -83,6 +85,27 @@ export default function GroupChat({
 
   //  ADD NEW STATE FOR ADMIN INFO
   const [adminInfo, setAdminInfo] = useState(null);
+
+  // ✅ E2EE: members whose pinned public key changed since we last saw it
+  // (see crypto.service.js storePublicKey / KEY_CHANGED_EVENT)
+  const [keyWarnings, setKeyWarnings] = useState({});
+
+  // ═══════════════════════════════════════════════════════════════════
+  // HELPER FUNCTION: E2EE keypair check (mirrors Chat.jsx's getEncryptionKey)
+  // ═══════════════════════════════════════════════════════════════════
+  const getEncryptionKey = useCallback(() => {
+    if (cryptoService.myKeypair) {
+      return true;
+    }
+
+    const restored = cryptoService.restoreMyKeypairFromSession(currentUserId);
+    if (restored) {
+      return true;
+    }
+
+    console.warn("❌ Keypair not initialized!");
+    return false;
+  }, [currentUserId]);
 
   // ═══════════════════════════════════════════════════════════════════
   // HELPER FUNCTION: Format time
@@ -241,6 +264,17 @@ export default function GroupChat({
     };
   }, [selectedGroup]);
 
+  // ✅ E2EE: warnings for members of the currently selected group only
+  const activeKeyWarnings = useMemo(() => {
+    return members
+      .map((m) => {
+        const memberId = m._id || m.userId;
+        const warning = keyWarnings[memberId];
+        return warning ? { memberId, name: m.name || 'A member', ...warning } : null;
+      })
+      .filter(Boolean);
+  }, [members, keyWarnings]);
+
   //  FIXED: Now uses debouncedSearchQuery (which is defined above)
   const filteredGroups = useMemo(() => {
     const safeGroups = Array.isArray(groups) ? groups : [];
@@ -329,7 +363,20 @@ export default function GroupChat({
       const groupMembers = groupDetails.members || groupDetails.participants || [];
       setMembers(groupMembers);
       setOnlineCount(groupMembers.length);
-      
+
+      // E2EE: pre-load every member's public key so we can encrypt to them
+      // on send and decrypt messages from them on receive.
+      groupMembers.forEach((member) => {
+        if (member?.publicKey) {
+          try {
+            cryptoService.storePublicKey(member._id, member.publicKey);
+          } catch (keyError) {
+            console.warn('⚠️ Could not pre-load public key for', member._id, ':', keyError.message);
+          }
+        }
+      });
+
+
       //  SET ADMIN INFO
       setAdminInfo({
         adminId: groupDetails.adminId,
@@ -361,17 +408,47 @@ export default function GroupChat({
       );
 
       if (response.data.success) {
-        const formattedMessages = (response.data.data || []).map((msg) => ({
-          _id: msg._id,
-          message: msg.message,
-          fromUserId: msg.fromUserId || msg.senderId,
-          fromUserName: msg.senderName,
-          time: msg.time || msg.createdAt,
-          pending: false,
-          read: msg.read,
-          readBy: msg.readBy || [],
-          createdAt: msg.createdAt,
-        }));
+        const formattedMessages = await Promise.all(
+          (response.data.data || []).map(async (msg) => {
+            const fromUserId = msg.fromUserId || msg.senderId;
+            let messageText = msg.message;
+            let decrypted = !msg.isEncrypted;
+
+            // E2EE: getGroupMessages already resolved `message` to our own
+            // ciphertext for this message — decrypt it using the sender's
+            // public key (works even for our own past sent messages, since
+            // NaCl box's shared secret is symmetric either direction).
+            if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
+              try {
+                if (!getEncryptionKey()) {
+                  messageText = "[Decryption failed - keypair not initialized]";
+                } else if (!cryptoService.getPublicKey(fromUserId)) {
+                  messageText = "[Decryption failed - sender key unavailable]";
+                } else {
+                  messageText = await cryptoService.decryptMessage(msg.message, fromUserId);
+                  decrypted = true;
+                }
+              } catch (error) {
+                console.error("❌ Group message decryption failed:", error.message);
+                messageText = "[Decryption failed]";
+              }
+            }
+
+            return {
+              _id: msg._id,
+              message: messageText,
+              isEncrypted: msg.isEncrypted,
+              decrypted,
+              fromUserId,
+              fromUserName: msg.senderName,
+              time: msg.time || msg.createdAt,
+              pending: false,
+              read: msg.read,
+              readBy: msg.readBy || [],
+              createdAt: msg.createdAt,
+            };
+          })
+        );
         setMessages(formattedMessages);
         setHasMore(response.data.hasMore);
         setNextCursor(response.data.nextCursor);
@@ -444,17 +521,43 @@ export default function GroupChat({
       );
 
       if (response.data.success) {
-        const olderMessages = (response.data.data || []).map((msg) => ({
-          _id: msg._id,
-          message: msg.message,
-          fromUserId: msg.fromUserId || msg.senderId,
-          fromUserName: msg.senderName,
-          time: msg.time || msg.createdAt,
-          pending: false,
-          read: msg.read,
-          readBy: msg.readBy || [],
-          createdAt: msg.createdAt,
-        }));
+        const olderMessages = await Promise.all(
+          (response.data.data || []).map(async (msg) => {
+            const fromUserId = msg.fromUserId || msg.senderId;
+            let messageText = msg.message;
+            let decrypted = !msg.isEncrypted;
+
+            if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
+              try {
+                if (!getEncryptionKey()) {
+                  messageText = "[Decryption failed - keypair not initialized]";
+                } else if (!cryptoService.getPublicKey(fromUserId)) {
+                  messageText = "[Decryption failed - sender key unavailable]";
+                } else {
+                  messageText = await cryptoService.decryptMessage(msg.message, fromUserId);
+                  decrypted = true;
+                }
+              } catch (error) {
+                console.error("❌ Group message decryption failed:", error.message);
+                messageText = "[Decryption failed]";
+              }
+            }
+
+            return {
+              _id: msg._id,
+              message: messageText,
+              isEncrypted: msg.isEncrypted,
+              decrypted,
+              fromUserId,
+              fromUserName: msg.senderName,
+              time: msg.time || msg.createdAt,
+              pending: false,
+              read: msg.read,
+              readBy: msg.readBy || [],
+              createdAt: msg.createdAt,
+            };
+          })
+        );
 
         setMessages(prev => [...olderMessages, ...prev]);
         setHasMore(response.data.hasMore);
@@ -498,23 +601,48 @@ export default function GroupChat({
 
     const messageText = newMessage.trim();
     setNewMessage("");
-    
+
     try {
-      
+      if (!getEncryptionKey()) {
+        setError("🔐 Encryption key not initialized. Please log in again.");
+        setNewMessage(messageText);
+        return;
+      }
+
+      // Fan out to every current member (including ourselves, so we can
+      // re-read our own sent message later from history) — same
+      // encryptMessage() already used for private chat, just called once
+      // per member instead of once.
+      const memberIds = Array.from(new Set([
+        ...members.map((m) => m._id),
+        currentUserId,
+      ]));
+
+      const missingKeyMember = members.find((m) => !cryptoService.getPublicKey(m._id));
+      if (missingKeyMember) {
+        setError(`🔐 Missing encryption key for ${missingKeyMember.name || 'a member'} — they may need to log in again so their key can be published.`);
+        setNewMessage(messageText);
+        return;
+      }
+
+      const ciphertexts = await cryptoService.encryptForGroup(messageText, memberIds);
+
       socket.emit(SOCKET_EVENTS.GROUP_MESSAGE, {
         groupId: selectedGroup.id,
-        message: messageText,
+        isEncrypted: true,
+        ciphertexts,
         fromUserId: currentUserId,
         fromUserName: currentUserName,
       });
 
       messageInputRef.current?.focus();
-      
+
     } catch (err) {
       console.error("❌ Failed to send message:", err);
+      setError(`🔒 Encryption error: ${err.message}`);
       setNewMessage(messageText);
     }
-  }, [selectedGroup, newMessage, currentUserId, currentUserName]);
+  }, [selectedGroup, newMessage, currentUserId, currentUserName, members, getEncryptionKey]);
 
   const togglePinGroup = useCallback((groupId) => {
     setPinnedGroups((prev) =>
@@ -808,6 +936,30 @@ export default function GroupChat({
     fetchAllGroups();
   }, [token, fetchAllGroups]);
 
+  // ✅ E2EE: Listen for pinned-key mismatches (see crypto.service.js storePublicKey)
+  useEffect(() => {
+    const handleKeyChanged = (e) => {
+      const { userId, oldPublicKey, newPublicKey } = e.detail || {};
+      if (!userId) return;
+      setKeyWarnings((prev) => ({ ...prev, [userId]: { oldPublicKey, newPublicKey } }));
+    };
+
+    window.addEventListener(cryptoService.KEY_CHANGED_EVENT, handleKeyChanged);
+    return () => window.removeEventListener(cryptoService.KEY_CHANGED_EVENT, handleKeyChanged);
+  }, []);
+
+  const handleTrustKeyChange = useCallback((userId) => {
+    setKeyWarnings((prev) => {
+      const warning = prev[userId];
+      if (!warning) return prev;
+
+      cryptoService.trustKeyChange(userId, warning.newPublicKey);
+      const updated = { ...prev };
+      delete updated[userId];
+      return updated;
+    });
+  }, []);
+
   useEffect(() => {
     if (!token) {
       return;
@@ -864,10 +1016,32 @@ export default function GroupChat({
     const socket = getSocket();
     if (!socket) return;
 
-    socket.on(SOCKET_EVENTS.GROUP_MESSAGE, (data) => {
-      
+    socket.on(SOCKET_EVENTS.GROUP_MESSAGE, async (data) => {
+
       if (!data?.groupId) {
         return;
+      }
+
+      let messageText = data.message;
+      let decrypted = !data.isEncrypted;
+
+      if (data.isEncrypted) {
+        const myCiphertext = data.ciphertexts?.[currentUserId];
+        try {
+          if (!myCiphertext) {
+            messageText = "[Decryption failed - no ciphertext for you]";
+          } else if (!getEncryptionKey()) {
+            messageText = "[Decryption failed - keypair not initialized]";
+          } else if (!cryptoService.getPublicKey(data.fromUserId)) {
+            messageText = "[Decryption failed - sender key unavailable]";
+          } else {
+            messageText = await cryptoService.decryptMessage(myCiphertext, data.fromUserId);
+            decrypted = true;
+          }
+        } catch (error) {
+          console.error("❌ Live group message decryption failed:", error.message);
+          messageText = "[Decryption failed]";
+        }
       }
 
       if (data.groupId === selectedGroup?.id) {
@@ -875,7 +1049,9 @@ export default function GroupChat({
           _id: data._id || `msg_${Date.now()}`,
           fromUserId: data.fromUserId,
           fromUserName: data.fromUserName || 'Unknown',
-          message: data.message,
+          message: messageText,
+          isEncrypted: data.isEncrypted,
+          decrypted,
           time: data.createdAt || new Date().toISOString(),
           pending: false,
           read: false,
@@ -883,11 +1059,11 @@ export default function GroupChat({
         };
 
         setMessages((prev) => [...prev, newMsg]);
-        
+
         setLastMessages((prev) => ({
           ...prev,
           [data.groupId]: {
-            message: data.message,
+            message: messageText,
             userName: data.fromUserName,
           }
         }));
@@ -903,6 +1079,103 @@ export default function GroupChat({
       socket.off(SOCKET_EVENTS.GROUP_MESSAGE);
     };
   }, [selectedGroup?.id]);
+
+  // ✅ Real-time: group creation and membership changes (add/remove/leave/
+  // delete) used to be pure REST with no live notification to anyone but
+  // the actor. Refresh the groups list on any of these, and react
+  // immediately if the change affects whatever group is currently open.
+  useEffect(() => {
+    let socketInitInterval;
+    let cleanup;
+
+    const refreshSelectedGroupMembers = async (groupId) => {
+      if (selectedGroup?.id !== groupId) return;
+      try {
+        const groupDetails = await groupService.getGroup(groupId);
+        const groupMembers = groupDetails.members || groupDetails.participants || [];
+        setMembers(groupMembers);
+        setOnlineCount(groupMembers.length);
+      } catch (err) {
+        console.error('❌ Failed to refresh group members:', err.message);
+      }
+    };
+
+    const exitSelectedGroup = (groupId) => {
+      if (selectedGroup?.id !== groupId) return;
+      setSelectedGroup(null);
+      setMessages([]);
+      setMembers([]);
+      setAdminInfo(null);
+    };
+
+    const registerListeners = (socket) => {
+      const handleGroupCreated = () => {
+        fetchAllGroups();
+      };
+
+      const handleMemberAdded = (data) => {
+        fetchAllGroups();
+        refreshSelectedGroupMembers(data.groupId);
+      };
+
+      const handleMemberRemoved = (data) => {
+        fetchAllGroups();
+        if (String(data.member?._id) === String(currentUserId)) {
+          exitSelectedGroup(data.groupId);
+          setError(`You were removed from "${data.name}"`);
+        } else {
+          refreshSelectedGroupMembers(data.groupId);
+        }
+      };
+
+      const handleMemberLeft = (data) => {
+        fetchAllGroups();
+        refreshSelectedGroupMembers(data.groupId);
+      };
+
+      const handleGroupDeleted = (data) => {
+        fetchAllGroups();
+        if (selectedGroup?.id === data.groupId) {
+          exitSelectedGroup(data.groupId);
+          setError(`"${data.name}" was deleted`);
+        }
+      };
+
+      socket.on(SOCKET_EVENTS.GROUP_CREATED, handleGroupCreated);
+      socket.on(SOCKET_EVENTS.GROUP_MEMBER_ADDED, handleMemberAdded);
+      socket.on(SOCKET_EVENTS.GROUP_MEMBER_REMOVED, handleMemberRemoved);
+      socket.on(SOCKET_EVENTS.GROUP_MEMBER_LEFT, handleMemberLeft);
+      socket.on(SOCKET_EVENTS.GROUP_DELETED, handleGroupDeleted);
+
+      return () => {
+        socket.off(SOCKET_EVENTS.GROUP_CREATED, handleGroupCreated);
+        socket.off(SOCKET_EVENTS.GROUP_MEMBER_ADDED, handleMemberAdded);
+        socket.off(SOCKET_EVENTS.GROUP_MEMBER_REMOVED, handleMemberRemoved);
+        socket.off(SOCKET_EVENTS.GROUP_MEMBER_LEFT, handleMemberLeft);
+        socket.off(SOCKET_EVENTS.GROUP_DELETED, handleGroupDeleted);
+      };
+    };
+
+    const init = () => {
+      const s = getSocket();
+      if (s) {
+        cleanup = registerListeners(s);
+        return true;
+      }
+      return false;
+    };
+
+    if (!init()) {
+      socketInitInterval = setInterval(() => {
+        if (init()) clearInterval(socketInitInterval);
+      }, 100);
+    }
+
+    return () => {
+      if (socketInitInterval) clearInterval(socketInitInterval);
+      if (cleanup) cleanup();
+    };
+  }, [selectedGroup?.id, currentUserId, fetchAllGroups]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -1097,6 +1370,7 @@ useEffect(() => {
               onClick={() => setShowCreateGroupModal(true)}
               className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400"
               title="Create Group"
+              aria-label="Create group"
             >
               <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
@@ -1207,7 +1481,9 @@ useEffect(() => {
                         e.stopPropagation();
                         togglePinGroup(id);
                       }}
-                      className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
+                      title={isPinned ? "Unpin group" : "Pin group"}
+                      aria-label={isPinned ? "Unpin group" : "Pin group"}
+                      className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-all ${
                         isPinned
                           ? "text-green-400 bg-green-500/20"
                           : "text-[rgb(var(--text-muted))] hover:bg-[rgb(var(--bg-hover))] hover:text-green-400"
@@ -1240,6 +1516,7 @@ useEffect(() => {
                   }}
                   className="p-1.5 xs:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
                   title="Back"
+                  aria-label="Back to groups list"
                 >
                   <ChevronLeft className="w-4 xs:w-4.5 sm:w-5 h-4 xs:h-4.5 sm:h-5" />
                 </button>
@@ -1284,6 +1561,8 @@ useEffect(() => {
                   }}
                   className="p-1.5 xs:p-2 sm:p-3 hover:bg-red-500/20 rounded-lg transition-all text-red-400 hover:text-red-300 shrink-0 border border-red-500/30 hover:border-red-400/50"
                   title="Group Options"
+                  aria-label="Group options"
+                  aria-expanded={showOptionsMenu}
                 >
                   <MoreVertical className="w-4 xs:w-5 sm:w-6 h-4 xs:h-5 sm:h-6" />
                 </button>
@@ -1477,6 +1756,7 @@ useEffect(() => {
                                 disabled={removeMemberLoading === memberId}
                                 className="p-2 sm:p-2.5 rounded-lg transition-all shrink-0 font-bold text-white bg-red-600 hover:bg-red-700 shadow-lg hover:shadow-red-500/50 border border-red-400/50 hover:border-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Remove Member"
+                                aria-label="Remove member"
                               >
                                 {removeMemberLoading === memberId ? (
                                   <Loader className="w-4 h-4 sm:w-5 sm:h-5 animate-spin text-white" />
@@ -1490,6 +1770,26 @@ useEffect(() => {
                     })
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* ✅ E2EE: Security key changed warnings */}
+            {activeKeyWarnings.length > 0 && (
+              <div className="px-3 sm:px-4 py-2.5 bg-red-500/10 border-b border-red-500/30 text-red-400 space-y-2 text-xs sm:text-sm flex-shrink-0">
+                {activeKeyWarnings.map((warning) => (
+                  <div key={warning.memberId} className="flex items-start sm:items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5 sm:mt-0" />
+                    <span className="flex-1">
+                      {warning.name}'s security key changed. This could mean they reinstalled/reset their account — or someone is intercepting this chat. Verify with them before trusting it.
+                    </span>
+                    <button
+                      onClick={() => handleTrustKeyChange(warning.memberId)}
+                      className="shrink-0 px-2.5 py-1 rounded-md bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 font-medium transition-colors"
+                    >
+                      Trust new key
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -1542,10 +1842,20 @@ useEffect(() => {
               <div className="flex items-end gap-1 xs:gap-1.5 sm:gap-3">
                 {/* Emoji & Attachment - Hidden on mobile */}
                 <div className="hidden xs:flex gap-0.5 xs:gap-1">
-                  <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400">
+                  <button
+                    disabled
+                    title="Emoji picker (coming soon)"
+                    aria-label="Emoji picker (coming soon)"
+                    className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
+                  >
                     <Smile className="w-5 h-5" />
                   </button>
-                  <button className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400">
+                  <button
+                    disabled
+                    title="Attach file (coming soon)"
+                    aria-label="Attach file (coming soon)"
+                    className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
+                  >
                     <Paperclip className="w-5 h-5" />
                   </button>
                 </div>
@@ -1573,6 +1883,8 @@ useEffect(() => {
                 <button
                   onClick={handleSendMessage}
                   disabled={!newMessage.trim()}
+                  title="Send message"
+                  aria-label="Send message"
                   className={`p-2 sm:p-3 rounded-xl transition-all shadow-lg shrink-0 ${
                     newMessage.trim()
                       ? "bg-linear-to-br from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-black glow-green"
@@ -1616,6 +1928,8 @@ useEffect(() => {
                   setSelectedMembers([]);
                   setSearchUsers("");
                 }}
+                title="Close"
+                aria-label="Close create group dialog"
                 className="p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-red-400"
               >
                 <X className="w-5 h-5" />
@@ -1674,6 +1988,8 @@ useEffect(() => {
                           <span className="truncate">{member?.name}</span>
                           <button
                             onClick={() => toggleMemberSelection(memberId)}
+                            title={`Remove ${member?.name || "member"} from selection`}
+                            aria-label={`Remove ${member?.name || "member"} from selection`}
                             className="hover:text-green-100"
                           >
                             <X className="w-3 h-3" />
@@ -1805,6 +2121,8 @@ useEffect(() => {
                   setSelectedUsersToAdd([]);
                   setSearchUsersToAdd('');
                 }}
+                title="Close"
+                aria-label="Close add members dialog"
                 className="text-slate-400 hover:text-white"
               >
                 ✕

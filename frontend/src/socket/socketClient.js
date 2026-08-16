@@ -9,6 +9,20 @@ export const isSocketConnected = () => {
 };
 
 export const connectSocket = (token) => {
+    // `socket.active` is true while the socket is connected *or* still
+    // auto-retrying a drop — i.e. still a live, usable connection. Layoute
+    // calls connectSocket() again every time the REST access token rotates
+    // (routine, happens on every silent refresh), which used to tear down
+    // and recreate a perfectly healthy socket on every single one of those
+    // — Socket.IO only checks the token once at handshake time, so a
+    // rotated REST token is not a reason to reconnect. Only build a new
+    // socket when there truly isn't a usable one (first connect, after an
+    // explicit disconnectSocket() at logout, or once reconnection attempts
+    // are actually exhausted).
+    if (socket?.active) {
+        return socket;
+    }
+
     if (socket) socket.disconnect();
 
     let socketUrl = 'http://localhost:5000';

@@ -52,6 +52,19 @@ export const SOCKET_EVENTS = {
   JOIN_GROUP: "join_group",
   LEAVE_GROUP: "leave_group",
   READ_RECEIPT: "read_receipt",
-  USER_CAME_ONLINE: "user_came_online",    
-  USER_WENT_OFFLINE: "user_went_offline",  
+  USER_CAME_ONLINE: "user_came_online",
+  USER_WENT_OFFLINE: "user_went_offline",
+
+  // Friend-graph and group-membership changes were REST-only — no live
+  // notification to the other party. These close that gap.
+  FRIEND_REQUEST_RECEIVED: "friend_request_received",
+  FRIEND_REQUEST_ACCEPTED: "friend_request_accepted",
+  FRIEND_REQUEST_REJECTED: "friend_request_rejected",
+  FRIEND_REMOVED: "friend_removed",
+
+  GROUP_CREATED: "group_created",
+  GROUP_MEMBER_ADDED: "group_member_added",
+  GROUP_MEMBER_REMOVED: "group_member_removed",
+  GROUP_MEMBER_LEFT: "group_member_left",
+  GROUP_DELETED: "group_deleted",
 };

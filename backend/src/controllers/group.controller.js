@@ -1,8 +1,11 @@
-import Group from "../models/Group";
-import User from "../models/User"
+import Group from "../models/Group.js";
+import User from "../models/User.js";
 import Message from '../models/Message.js';
-import Friend from "../models/Friend";
-import mongoose from 'mongoose';  
+import Friend from "../models/Friend.js";
+import mongoose from 'mongoose';
+import { sendServerError } from '../utils/errorResponse.js';
+import { emitToUser } from '../utils/socketEmit.js';
+import { SOCKET_EVENTS } from '../constant/response.messages.js';
 
 //  Validate MongoDB ObjectId (handles both string and ObjectId)
 const isValidObjectId = (id) => {
@@ -34,6 +37,13 @@ export const createGroup = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: "At least one member is required"
+            });
+        }
+
+        if (memberIds.length > 200) {
+            return res.status(400).json({
+                success: false,
+                message: "A group cannot have more than 200 members"
             });
         }
 
@@ -103,8 +113,21 @@ export const createGroup = async (req, res) => {
             adminId: toObjectId(userIdStr)
         });
 
-        await group.populate('participants', 'name email');
+        await group.populate('participants', 'name email publicKey');
         await group.populate('adminId', 'name email');
+
+        // Notify every invited member (not the creator, who already has the
+        // REST response) so the group shows up in their list live instead
+        // of only after their next unrelated refetch.
+        for (const memberId of otherMemberIds) {
+            emitToUser(req, memberId, SOCKET_EVENTS.GROUP_CREATED, {
+                groupId: group._id,
+                name: group.name,
+                adminId: group.adminId._id,
+                adminName: group.adminId.name,
+                participants: group.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email })),
+            });
+        }
 
         return res.status(201).json({
             success: true,
@@ -114,11 +137,7 @@ export const createGroup = async (req, res) => {
 
     } catch (error) {
         console.error('Create group error:', error.message);
-        return res.status(500).json({
-            success: false,
-            message: "Failed to create group",
-            error: error.message
-        });
+        return sendServerError(res, error, 'Failed to create group');
     }
 };
 
@@ -126,21 +145,27 @@ export const createGroup = async (req, res) => {
 export const getMyGroups = async (req, res) => {
     try {
         const userId = toObjectId(req.user.userId);
+        const { skip, limit, page } = req.pagination || { skip: 0, limit: 50, page: 1 };
 
-        const groups = await Group.find({
-            participants: { $in: [userId] }
-        })
-            .populate('participants', 'name email _id')
-            .populate('adminId', 'name email _id')  
-            .sort({ createdAt: -1 });
+        const query = { participants: { $in: [userId] } };
+
+        const [groups, total] = await Promise.all([
+            Group.find(query)
+                .populate('participants', 'name email publicKey _id')
+                .populate('adminId', 'name email _id')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+            Group.countDocuments(query)
+        ]);
 
         const formattedGroups = groups.map(group => ({
             _id: group._id,
             id: group._id,
             name: group.name,
             participants: group.participants,
-            adminId: group.adminId?._id || group.adminId,  
-            adminName: group.adminId?.name, 
+            adminId: group.adminId?._id || group.adminId,
+            adminName: group.adminId?.name,
             adminEmail: group.adminId?.email,
             createdAt: group.createdAt,
             updatedAt: group.updatedAt
@@ -149,15 +174,15 @@ export const getMyGroups = async (req, res) => {
         return res.status(200).json({
             success: true,
             data: formattedGroups,
-            count: formattedGroups.length
+            count: formattedGroups.length,
+            total,
+            page,
+            limit,
+            pages: Math.ceil(total / limit)
         });
     } catch (error) {
         console.error('Get groups error:', error.message);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to fetch groups',
-            error: error.message
-        });
+        return sendServerError(res, error, 'Failed to fetch groups');
     }
 };
 
@@ -175,8 +200,8 @@ export const getGroup = async (req, res) => {
         }
 
         const group = await Group.findById(groupId)
-            .populate('participants', 'name email _id')
-            .populate('adminId', 'name email _id');  
+            .populate('participants', 'name email publicKey _id')
+            .populate('adminId', 'name email _id');
 
         if (!group) {
             return res.status(404).json({
@@ -211,11 +236,7 @@ export const getGroup = async (req, res) => {
         });
     } catch (error) {
         console.error('Get group error:', error.message);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to fetch group',
-            error: error.message
-        });
+        return sendServerError(res, error, 'Failed to fetch group');
     }
 };
 
@@ -292,24 +313,38 @@ export const addMember = async (req, res) => {
         }
 
 
-        group.participants.push(newMemberObjId);
-        await group.save();
-        await group.populate('participants', 'name email');
-        await group.populate('adminId', 'name email');
+        const updatedGroup = await Group.findByIdAndUpdate(
+            groupId,
+            { $addToSet: { participants: newMemberObjId } },
+            { new: true }
+        )
+            .populate('participants', 'name email publicKey')
+            .populate('adminId', 'name email');
+
+        // Notify every current member, including the one just added — the
+        // new member needs the group to appear in their list; existing
+        // members (who may not have this group's chat open, and so aren't
+        // in its socket.io room) need their member list to stay accurate.
+        const addedPayload = {
+            groupId: updatedGroup._id,
+            name: updatedGroup.name,
+            member: { _id: userExists._id, name: userExists.name, email: userExists.email },
+            addedBy: { _id: req.user.userId, name: req.user.name },
+            participants: updatedGroup.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email })),
+        };
+        for (const participant of updatedGroup.participants) {
+            emitToUser(req, participant._id, SOCKET_EVENTS.GROUP_MEMBER_ADDED, addedPayload);
+        }
 
         return res.status(200).json({
             success: true,
             message: 'Member added successfully',
-            data: group
+            data: updatedGroup
         });
 
     } catch (error) {
         console.error('Add member error:', error.message);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to add member',
-            error: error.message
-        });
+        return sendServerError(res, error, 'Failed to add member');
     }
 };
 
@@ -363,27 +398,40 @@ export const removeMember = async (req, res) => {
             });
         }
 
-        group.participants = group.participants.filter(
-            p => p.toString() !== memberObjIdToRemove.toString()
-        );
+        const removedUser = await User.findById(memberId).select('name email');
 
-        await group.save();
-        await group.populate('participants', 'name email');
-        await group.populate('adminId', 'name email');
+        const updatedGroup = await Group.findByIdAndUpdate(
+            groupId,
+            { $pull: { participants: memberObjIdToRemove } },
+            { new: true }
+        )
+            .populate('participants', 'name email publicKey')
+            .populate('adminId', 'name email');
+
+        // Notify the removed member specifically (their UI needs to drop
+        // the group / exit the chat view if it's open) and everyone still
+        // in the group (their member list needs to stay accurate).
+        const removedPayload = {
+            groupId: updatedGroup._id,
+            name: updatedGroup.name,
+            member: { _id: memberId, name: removedUser?.name, email: removedUser?.email },
+            removedBy: { _id: req.user.userId, name: req.user.name },
+            participants: updatedGroup.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email })),
+        };
+        emitToUser(req, memberId, SOCKET_EVENTS.GROUP_MEMBER_REMOVED, removedPayload);
+        for (const participant of updatedGroup.participants) {
+            emitToUser(req, participant._id, SOCKET_EVENTS.GROUP_MEMBER_REMOVED, removedPayload);
+        }
 
         return res.status(200).json({
             success: true,
             message: 'Member removed successfully',
-            data: group
+            data: updatedGroup
         });
 
     } catch (error) {
         console.error('Remove member error:', error.message);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to remove member',
-            error: error.message
-        });
+        return sendServerError(res, error, 'Failed to remove member');
     }
 };
 
@@ -445,24 +493,34 @@ export const getGroupMessages = async (req, res) => {
             deleted: { $ne: true }
         });
 
-        const formattedMessages = results.map(msg => ({
-            _id: msg._id,
-            fromUserId: msg.senderId._id,
-            senderName: msg.senderId.name,
-            senderEmail: msg.senderId.email,
-            message: msg.message,
-            time: msg.createdAt,
-            read: msg.read,
-            readBy: msg.readBy ? msg.readBy.map(r => ({
-                userId: r.userId?._id || r.userId,
-                userName: r.userId?.name || 'Unknown',
-                readAt: r.readAt,
-            })) : [],
-            readCount: msg.readBy?.length || 0,
-            chatType: msg.chatType,
-            createdAt: msg.createdAt,
-            delivered: msg.delivered,
-        }));
+        const formattedMessages = results.map(msg => {
+            // Encrypted group messages carry one ciphertext per member in
+            // groupCiphertexts; hand back only the requester's own entry —
+            // matches the shape the client already expects in `message`.
+            const messageContent = msg.isEncrypted
+                ? (msg.groupCiphertexts?.[userId.toString()] ?? null)
+                : msg.message;
+
+            return {
+                _id: msg._id,
+                fromUserId: msg.senderId._id,
+                senderName: msg.senderId.name,
+                senderEmail: msg.senderId.email,
+                message: messageContent,
+                isEncrypted: msg.isEncrypted,
+                time: msg.createdAt,
+                read: msg.read,
+                readBy: msg.readBy ? msg.readBy.map(r => ({
+                    userId: r.userId?._id || r.userId,
+                    userName: r.userId?.name || 'Unknown',
+                    readAt: r.readAt,
+                })) : [],
+                readCount: msg.readBy?.length || 0,
+                chatType: msg.chatType,
+                createdAt: msg.createdAt,
+                delivered: msg.delivered,
+            };
+        });
 
         return res.status(200).json({
             success: true,
@@ -475,11 +533,7 @@ export const getGroupMessages = async (req, res) => {
         });
     } catch (error) {
         console.error('Get group messages error:', error.message);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to fetch group messages',
-            error: error.message
-        });
+        return sendServerError(res, error, 'Failed to fetch group messages');
     }
 };
 
@@ -540,31 +594,51 @@ export const leaveGroup = async (req, res) => {
             });
         }
 
-        group.participants = group.participants.filter(
-            p => p.toString() !== userId.toString()
-        );
-
-        if (isAdmin && group.participants.length > 0) {
-            group.adminId = group.participants[0];
+        const update = { $pull: { participants: userId } };
+        if (isAdmin && otherMembers.length > 0) {
+            update.$set = { adminId: otherMembers[0] };
         }
 
-        await group.save();
-        await group.populate('participants', 'name email');
-        await group.populate('adminId', 'name email');
+        // Matching on participants: userId in the filter (not just _id) means
+        // this only applies if the user was still a member at update time —
+        // avoids a lost-update race with a concurrent leave/removal.
+        const updatedGroup = await Group.findOneAndUpdate(
+            { _id: groupId, participants: userId },
+            update,
+            { new: true }
+        )
+            .populate('participants', 'name email publicKey')
+            .populate('adminId', 'name email');
+
+        if (!updatedGroup) {
+            return res.status(400).json({
+                success: false,
+                message: 'You are not a member of this group'
+            });
+        }
+
+        // Notify the members who are still in the group — the leaver already
+        // has their own REST response, and doesn't need this back.
+        const leftPayload = {
+            groupId: updatedGroup._id,
+            name: updatedGroup.name,
+            member: { _id: req.user.userId, name: req.user.name },
+            newAdminId: updatedGroup.adminId?._id,
+            participants: updatedGroup.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email })),
+        };
+        for (const participant of updatedGroup.participants) {
+            emitToUser(req, participant._id, SOCKET_EVENTS.GROUP_MEMBER_LEFT, leftPayload);
+        }
 
         return res.status(200).json({
             success: true,
             message: 'You have left the group successfully',
-            data: group
+            data: updatedGroup
         });
 
     } catch (error) {
         console.error('Leave group error:', error.message);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to leave group',
-            error: error.message
-        });
+        return sendServerError(res, error, 'Failed to leave group');
     }
 };
 
@@ -616,6 +690,20 @@ export const deleteGroup = async (req, res) => {
 
         const deletedGroup = await Group.findByIdAndDelete(groupId);
 
+        // Notify former members (the admin already has their own REST
+        // response) so their group list / open chat view reacts immediately
+        // instead of erroring the next time they try to use it.
+        const otherParticipants = deletedGroup.participants.filter(
+            (p) => p.toString() !== userId.toString()
+        );
+        for (const participantId of otherParticipants) {
+            emitToUser(req, participantId, SOCKET_EVENTS.GROUP_DELETED, {
+                groupId: deletedGroup._id,
+                name: deletedGroup.name,
+                deletedBy: { _id: req.user.userId, name: req.user.name },
+            });
+        }
+
         return res.status(200).json({
             success: true,
             message: 'Group deleted successfully',
@@ -628,10 +716,6 @@ export const deleteGroup = async (req, res) => {
 
     } catch (error) {
         console.error('Delete group error:', error.message);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to delete group',
-            error: error.message
-        });
+        return sendServerError(res, error, 'Failed to delete group');
     }
 };
