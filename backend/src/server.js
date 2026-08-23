@@ -8,6 +8,7 @@ import { connectDB } from "./config/db.js";
 import { ensureIndexes } from "./config/indexes.js";
 import { initRedis } from "./config/redis.js";
 import { createSocketServer } from "./socket/socket.server.js";
+import User from "./models/User.js";
 
 const PORT = process.env.PORT || 5000;
 
@@ -18,6 +19,20 @@ const startServer = async () => {
     console.log("📡 Connecting to MongoDB...");
     await connectDB();
     console.log("✅ MongoDB Connected\n");
+
+    // Presence tracking lives in an in-memory Map that starts empty on every
+    // boot — if the previous process died without a clean socket disconnect
+    // (crash, `bun --watch` restart, kill -9), any users it had marked
+    // isOnline:true are now stuck that way with no live socket to correct
+    // it. Reconcile DB state with reality: nobody is connected to this
+    // fresh process yet, so nobody should show as online.
+    const staleOnlineReset = await User.updateMany(
+      { isOnline: true },
+      { isOnline: false }
+    );
+    if (staleOnlineReset.modifiedCount > 0) {
+      console.log(`🧹 Reset ${staleOnlineReset.modifiedCount} stale isOnline flag(s) from previous process\n`);
+    }
 
     // ✅ Create indexes
     console.log("📊 Syncing indexes...");

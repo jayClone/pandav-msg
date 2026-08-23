@@ -1,12 +1,12 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
-import Friend from '../models/Friend.js';
 import OTP from '../models/OTP.js';
 import EmailService from '../services/email.service.js';
 import { deleteCache } from '../config/redis.js';
 import logger from '../config/logger.js';
 import { sendServerError } from '../utils/errorResponse.js';
+import { invalidateFriendGraphCaches } from '../utils/friendCache.js';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_REGEX = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])[A-Za-z0-9!@#$%^&*]{8,}$/;
@@ -118,7 +118,8 @@ const buildAuthResponse = (user, accessToken) => ({
     _id: user._id,
     name: user.name,
     email: user.email,
-    publicKey: user.publicKey || null
+    publicKey: user.publicKey || null,
+    avatar: user.avatar || null
   }
 });
 
@@ -134,40 +135,6 @@ const issueSession = async (res, user) => {
   setRefreshCookie(res, refreshToken);
 
   return accessToken;
-};
-
-const invalidateUserPublicKeyCaches = async (userId) => {
-  if (!userId) {
-    return;
-  }
-
-  const userIdStr = userId.toString();
-  const friendships = await Friend.find({
-    status: 'accepted',
-    $or: [
-      { senderId: userId },
-      { receiverId: userId }
-    ]
-  })
-    .select('senderId receiverId')
-    .lean();
-
-  const affectedUserIds = new Set([userIdStr]);
-
-  friendships.forEach((friendship) => {
-    const senderId = friendship.senderId?.toString();
-    const receiverId = friendship.receiverId?.toString();
-
-    if (senderId) affectedUserIds.add(senderId);
-    if (receiverId) affectedUserIds.add(receiverId);
-  });
-
-  await Promise.all(
-    Array.from(affectedUserIds).flatMap((id) => ([
-      deleteCache(`friends:v2:${id}`),
-      deleteCache(`friendship:summary:v2:${id}`)
-    ]))
-  );
 };
 
 const revokeStoredRefreshToken = async (userId) => {
@@ -324,7 +291,7 @@ export const login = async (req, res) => {
     if (publicKey && publicKey !== user.publicKey) {
       user.publicKey = publicKey;
       await user.save();
-      await invalidateUserPublicKeyCaches(user._id);
+      await invalidateFriendGraphCaches(user._id);
     }
 
     const accessToken = await issueSession(res, user);
@@ -532,6 +499,8 @@ export const getCurrentUser = async (req, res) => {
         _id: user._id,
         name: user.name,
         email: user.email,
+        avatar: user.avatar || null,
+        publicKey: user.publicKey || null,
         createdAt: user.createdAt
       }
     });

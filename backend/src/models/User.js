@@ -36,6 +36,17 @@ const userSchema = new mongoose.Schema({
     trim: true
   },
 
+  // A data: URL (base64), stored directly rather than on disk/object
+  // storage — no new infra required, and unlike chat messages a profile
+  // picture isn't secret, so it doesn't need the E2EE treatment those get.
+  // Client-side compression keeps this small before it ever reaches here;
+  // maxlength is still enforced server-side as a hard backstop.
+  avatar: {
+    type: String,
+    default: null,
+    maxlength: [700_000, 'Avatar image is too large']
+  },
+
   isOnline: {
     type: Boolean,
     default: false,

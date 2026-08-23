@@ -2,11 +2,15 @@ import express from 'express';
 import {
   getAllUsers,
   getUserProfile,
-  searchUsers
+  searchUsers,
+  updateAvatar,
+  removeAvatar
 } from '../../controllers/user.controller.js';
 import { protect } from '../../middlewares/auth.js';
-import { pagination } from '../../middlewares/pagination.js';  
+import { pagination } from '../../middlewares/pagination.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
+import { validate } from '../../middlewares/validate.js';
+import { UpdateAvatarSchema } from '../../validators/user.validator.js';
 
 
 const router = express.Router();
@@ -26,6 +30,20 @@ router.get('/', protect,pagination, asyncHandler(getAllUsers));
  * Query: q=searchTerm
  */
 router.get('/search', protect, pagination, asyncHandler(searchUsers));
+
+/**
+ * @route PUT /api/v1/users/me/avatar
+ * @desc Set/replace the current user's profile picture
+ * @access Private
+ */
+router.put('/me/avatar', protect, validate(UpdateAvatarSchema, 'body'), asyncHandler(updateAvatar));
+
+/**
+ * @route DELETE /api/v1/users/me/avatar
+ * @desc Remove the current user's profile picture
+ * @access Private
+ */
+router.delete('/me/avatar', protect, asyncHandler(removeAvatar));
 
 /**
  * @route GET /api/v1/users/:userId

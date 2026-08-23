@@ -8,18 +8,27 @@ import Group from '../../models/Group.js';
  */
 export async function handleGroupMessage(socket, io, payload, userId, name) {
   try {
-    const { groupId, message, isEncrypted, ciphertexts } = payload;
+    const {
+      groupId, message, isEncrypted, ciphertexts,
+      messageType, imageCiphertext, imageNonce, imageMimeType
+    } = payload;
+    const isMedia = messageType === 'image' || messageType === 'video';
 
     if (!groupId) {
       return;
     }
 
-    if (!isEncrypted && !message?.trim()) {
+    if (!isEncrypted && !isMedia && !message?.trim()) {
       return;
     }
 
     if (isEncrypted && (!ciphertexts || Object.keys(ciphertexts).length === 0)) {
       socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { message: 'ciphertexts is required for encrypted group messages' });
+      return;
+    }
+
+    if (isMedia && (!imageCiphertext || !imageNonce || !imageMimeType)) {
+      socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { message: `imageCiphertext, imageNonce, and imageMimeType are required for ${messageType} messages` });
       return;
     }
 
@@ -59,9 +68,10 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
       isEncrypted: !!isEncrypted,
       delivered: true,
       readBy: [],
+      ...(isMedia && { messageType, imageCiphertext, imageNonce, imageMimeType }),
       ...(isEncrypted
         ? { groupCiphertexts: ciphertexts }
-        : { message: message.trim() })
+        : (!isMedia && { message: message.trim() }))
     });
 
     const populatedMessage = await Message.findById(savedMessage._id)
@@ -73,13 +83,16 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
     // Simpler than restructuring this into per-user room emits, and no
     // security cost: a NaCl box ciphertext reveals nothing without the
     // matching private key, so other members' entries are opaque to you.
+    // For images/video, ciphertexts carries only the small wrapped
+    // content-keys (one per member) — the one shared imageCiphertext blob
+    // is included separately below, not duplicated per member.
     io.to(groupId.toString()).emit(SOCKET_EVENTS.GROUP_MESSAGE, {
       _id: populatedMessage._id,
       groupId: groupId,
       fromUserId: userId,
       fromUserName: name,
       isEncrypted: !!isEncrypted,
-      message: isEncrypted ? undefined : message.trim(),
+      message: (isEncrypted || isMedia) ? undefined : message.trim(),
       ciphertexts: isEncrypted ? ciphertexts : undefined,
       createdAt: populatedMessage.createdAt,
       delivered: true,
@@ -87,6 +100,7 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
       readBy: [],
       senderId: userId,
       senderName: name,
+      ...(isMedia && { messageType, imageCiphertext, imageNonce, imageMimeType })
     });
 
   } catch (error) {

@@ -112,7 +112,14 @@ export const getChatHistory = async (req, res) => {
       read: msg.read,
       chatType: msg.chatType,
       createdAt: msg.createdAt,
-      isEncrypted: msg.isEncrypted // Include encryption flag
+      isEncrypted: msg.isEncrypted, // Include encryption flag
+      messageType: msg.messageType || 'text',
+      reactions: (msg.reactions || []).map(r => ({ userId: r.userId, emoji: r.emoji })),
+      ...((msg.messageType === 'image' || msg.messageType === 'video') && {
+        imageCiphertext: msg.imageCiphertext,
+        imageNonce: msg.imageNonce,
+        imageMimeType: msg.imageMimeType
+      })
     }));
 
     return res.status(200).json({

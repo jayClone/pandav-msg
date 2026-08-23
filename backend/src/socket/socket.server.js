@@ -29,7 +29,12 @@ export async function createSocketServer(httpServer) {
       concurrencyLimit: 10,
     },
 
-    maxHttpBufferSize: 1e6,
+    // Was 1e6 (1MB) — too small for an image message, then raised to 8MB;
+    // now 16MB to match Message.js's imageCiphertext ceiling for video.
+    // Safe to raise: unlike text, an encrypted image/video is never fanned
+    // out per-recipient (see Message.js), so this bound doesn't multiply
+    // with group size the way a per-member text payload would.
+    maxHttpBufferSize: 16 * 1024 * 1024,
     pingInterval: 25000,
     pingTimeout: 90000,
     reconnection: true,

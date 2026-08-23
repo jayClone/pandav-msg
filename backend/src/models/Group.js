@@ -28,7 +28,13 @@ const groupSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Admin is required"],
-      index: true, 
+      index: true,
+    },
+
+    avatar: {
+      type: String,
+      default: null,
+      maxlength: [700_000, "Avatar image is too large"],
     },
 
     onlineMembers: {

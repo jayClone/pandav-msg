@@ -7,7 +7,11 @@ import { getCache, setCache } from '../../config/redis.js';
  * Handle private messages
  */
 export async function handlePrivateMessage(socket, io, payload, userId, name, onlineUsers) {
-    const { toUserId, message, isEncrypted, uniqueId } = payload;
+    const {
+        toUserId, message, isEncrypted, uniqueId,
+        messageType, imageCiphertext, imageNonce, imageMimeType
+    } = payload;
+    const isMedia = messageType === 'image' || messageType === 'video';
 
     try {
         if (!toUserId || typeof toUserId !== "string") {
@@ -15,6 +19,18 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
                 message: MESSAGES.SOCKET.TO_USER_REQUIRED
             });
             return;
+        }
+
+        if (isMedia) {
+            if (!imageCiphertext || !imageNonce || !imageMimeType) {
+                socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+                    message: `imageCiphertext, imageNonce, and imageMimeType are required for ${messageType} messages`
+                });
+                return;
+            }
+            // `message` still carries the wrapped content-key for the
+            // recipient (same field private text ciphertext uses) — still
+            // required for images/video too.
         }
 
         if (!message || typeof message !== "string" || message.length === 0) {
@@ -26,9 +42,9 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
 
         // For encrypted messages, don't trim (preserves encryption format)
         // For plaintext messages, trim whitespace
-        const processedMessage = isEncrypted ? message : message.trim();
+        const processedMessage = (isEncrypted || isMedia) ? message : message.trim();
 
-        if (!isEncrypted && processedMessage.length === 0) {
+        if (!isEncrypted && !isMedia && processedMessage.length === 0) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
                 message: MESSAGES.SOCKET.MESSAGE_EMPTY
             });
@@ -66,7 +82,8 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
                 receiverId: toUserId,
                 message: processedMessage,
                 chatType: 'private',
-                isEncrypted: isEncrypted || false // Store encryption flag
+                isEncrypted: isEncrypted || false, // Store encryption flag
+                ...(isMedia && { messageType, imageCiphertext, imageNonce, imageMimeType })
             });
         } catch (dbError) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
@@ -83,7 +100,8 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             message: processedMessage,
             time: savedMessage.createdAt.toISOString(),
             delivered: false,
-            isEncrypted: isEncrypted || false // Include encryption flag in payload
+            isEncrypted: isEncrypted || false, // Include encryption flag in payload
+            ...(isMedia && { messageType, imageCiphertext, imageNonce, imageMimeType })
         };
 
         io.to(toUserId.toString()).emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
@@ -114,7 +132,8 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             time: savedMessage.createdAt.toISOString(),
             delivered: !!receiverUser,
             saved: true,
-            isEncrypted: isEncrypted || false
+            isEncrypted: isEncrypted || false,
+            ...(isMedia && { messageType, imageCiphertext, imageNonce, imageMimeType })
         });
 
     } catch (error) {

@@ -278,8 +278,8 @@ export const getSentRequests = async (req, res) => {
         senderId: userId,
         status: 'pending',
       })
-        .populate('senderId', 'name email publicKey isOnline lastSeen _id')
-        .populate('receiverId', 'name email publicKey isOnline lastSeen _id')
+        .populate('senderId', 'name email publicKey avatar isOnline lastSeen _id')
+        .populate('receiverId', 'name email publicKey avatar isOnline lastSeen _id')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -332,8 +332,8 @@ export const getPendingRequests = async (req, res) => {
         receiverId: userId,
         status: 'pending',
       })
-        .populate('senderId', 'name email _id')
-        .populate('receiverId', 'name email _id')
+        .populate('senderId', 'name email avatar _id')
+        .populate('receiverId', 'name email avatar _id')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -387,8 +387,8 @@ export const getFriends = async (req, res) => {
           { receiverId: userId, status: 'accepted' },
         ],
       })
-        .populate('senderId', 'name email publicKey _id')
-        .populate('receiverId', 'name email publicKey _id')
+        .populate('senderId', 'name email publicKey avatar isOnline lastSeen _id')
+        .populate('receiverId', 'name email publicKey avatar isOnline lastSeen _id')
         .sort({ acceptedAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -411,6 +411,7 @@ export const getFriends = async (req, res) => {
         name: friendUser.name,
         email: friendUser.email,
         publicKey: friendUser.publicKey || null,
+        avatar: friendUser.avatar || null,
         isOnline: !!friendUser.isOnline,
         lastSeen: friendUser.lastSeen || null,
         friendshipId: friend._id,
@@ -554,7 +555,7 @@ export const getFriendshipSummary = async (req, res) => {
 
     const [allUsers, friends, pending, sent] = await Promise.all([
       User.find({ _id: { $ne: userId } })
-        .select('_id name email publicKey isOnline lastSeen')
+        .select('_id name email publicKey avatar isOnline lastSeen')
         .sort({ name: 1 })
         .limit(50)
         .lean(),
@@ -565,8 +566,8 @@ export const getFriendshipSummary = async (req, res) => {
           { receiverId: userId, status: 'accepted' },
         ],
       })
-        .populate('senderId', 'name email publicKey _id')
-        .populate('receiverId', 'name email publicKey _id')
+        .populate('senderId', 'name email publicKey avatar _id')
+        .populate('receiverId', 'name email publicKey avatar _id')
         .sort({ acceptedAt: -1 })
         .limit(SUMMARY_LIST_LIMIT)
         .lean(),
@@ -575,8 +576,8 @@ export const getFriendshipSummary = async (req, res) => {
         receiverId: userId,
         status: 'pending',
       })
-        .populate('senderId', 'name email publicKey _id')
-        .populate('receiverId', 'name email publicKey _id')
+        .populate('senderId', 'name email publicKey avatar _id')
+        .populate('receiverId', 'name email publicKey avatar _id')
         .sort({ createdAt: -1 })
         .limit(SUMMARY_LIST_LIMIT)
         .lean(),
@@ -585,8 +586,8 @@ export const getFriendshipSummary = async (req, res) => {
         senderId: userId,
         status: 'pending',
       })
-        .populate('senderId', 'name email publicKey _id')
-        .populate('receiverId', 'name email publicKey _id')
+        .populate('senderId', 'name email publicKey avatar _id')
+        .populate('receiverId', 'name email publicKey avatar _id')
         .sort({ createdAt: -1 })
         .limit(SUMMARY_LIST_LIMIT)
         .lean()
@@ -594,7 +595,7 @@ export const getFriendshipSummary = async (req, res) => {
 
     const friendsList = friends.map((f) => {
       const friendUser = f.senderId._id.toString() === userId.toString() ? f.receiverId : f.senderId;
-      return { _id: friendUser._id, name: friendUser.name, email: friendUser.email, publicKey: friendUser.publicKey || null };
+      return { _id: friendUser._id, name: friendUser.name, email: friendUser.email, publicKey: friendUser.publicKey || null, avatar: friendUser.avatar || null };
     });
 
     const summaryData = {

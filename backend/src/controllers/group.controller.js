@@ -113,8 +113,8 @@ export const createGroup = async (req, res) => {
             adminId: toObjectId(userIdStr)
         });
 
-        await group.populate('participants', 'name email publicKey');
-        await group.populate('adminId', 'name email');
+        await group.populate('participants', 'name email publicKey avatar');
+        await group.populate('adminId', 'name email avatar');
 
         // Notify every invited member (not the creator, who already has the
         // REST response) so the group shows up in their list live instead
@@ -125,7 +125,7 @@ export const createGroup = async (req, res) => {
                 name: group.name,
                 adminId: group.adminId._id,
                 adminName: group.adminId.name,
-                participants: group.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email })),
+                participants: group.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email, avatar: p.avatar || null})),
             });
         }
 
@@ -151,8 +151,8 @@ export const getMyGroups = async (req, res) => {
 
         const [groups, total] = await Promise.all([
             Group.find(query)
-                .populate('participants', 'name email publicKey _id')
-                .populate('adminId', 'name email _id')
+                .populate('participants', 'name email publicKey avatar _id')
+                .populate('adminId', 'name email avatar _id')
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(limit),
@@ -163,10 +163,12 @@ export const getMyGroups = async (req, res) => {
             _id: group._id,
             id: group._id,
             name: group.name,
+            avatar: group.avatar || null,
             participants: group.participants,
             adminId: group.adminId?._id || group.adminId,
             adminName: group.adminId?.name,
             adminEmail: group.adminId?.email,
+            adminAvatar: group.adminId?.avatar || null,
             createdAt: group.createdAt,
             updatedAt: group.updatedAt
         }));
@@ -200,8 +202,8 @@ export const getGroup = async (req, res) => {
         }
 
         const group = await Group.findById(groupId)
-            .populate('participants', 'name email publicKey _id')
-            .populate('adminId', 'name email _id');
+            .populate('participants', 'name email publicKey avatar _id')
+            .populate('adminId', 'name email avatar _id');
 
         if (!group) {
             return res.status(404).json({
@@ -221,11 +223,13 @@ export const getGroup = async (req, res) => {
             _id: group._id,
             id: group._id,
             name: group.name,
+            avatar: group.avatar || null,
             participants: group.participants,
-            members: group.participants,  
-            adminId: group.adminId?._id || group.adminId, 
-            adminName: group.adminId?.name, 
+            members: group.participants,
+            adminId: group.adminId?._id || group.adminId,
+            adminName: group.adminId?.name,
             adminEmail: group.adminId?.email,
+            adminAvatar: group.adminId?.avatar || null,
             createdAt: group.createdAt,
             updatedAt: group.updatedAt
         };
@@ -237,6 +241,103 @@ export const getGroup = async (req, res) => {
     } catch (error) {
         console.error('Get group error:', error.message);
         return sendServerError(res, error, 'Failed to fetch group');
+    }
+};
+
+// update group avatar (admin only)
+export const updateGroupAvatar = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const { avatarData } = req.body;
+        const userId = toObjectId(req.user.userId);
+
+        if (!isValidObjectId(groupId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid group ID format'
+            });
+        }
+
+        const group = await Group.findById(groupId);
+
+        if (!group) {
+            return res.status(404).json({
+                success: false,
+                message: 'Group not found'
+            });
+        }
+
+        if (group.adminId.toString() !== userId.toString()) {
+            return res.status(403).json({
+                success: false,
+                message: 'Only admin can change the group picture'
+            });
+        }
+
+        group.avatar = avatarData;
+        await group.save();
+
+        const payload = { groupId: group._id, avatar: group.avatar };
+        for (const participantId of group.participants) {
+            emitToUser(req, participantId, SOCKET_EVENTS.GROUP_AVATAR_UPDATED, payload);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Group picture updated successfully',
+            data: { avatar: group.avatar }
+        });
+    } catch (error) {
+        console.error('Update group avatar error:', error.message);
+        return sendServerError(res, error, 'Failed to update group picture');
+    }
+};
+
+// remove group avatar (admin only)
+export const removeGroupAvatar = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const userId = toObjectId(req.user.userId);
+
+        if (!isValidObjectId(groupId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid group ID format'
+            });
+        }
+
+        const group = await Group.findById(groupId);
+
+        if (!group) {
+            return res.status(404).json({
+                success: false,
+                message: 'Group not found'
+            });
+        }
+
+        if (group.adminId.toString() !== userId.toString()) {
+            return res.status(403).json({
+                success: false,
+                message: 'Only admin can change the group picture'
+            });
+        }
+
+        group.avatar = null;
+        await group.save();
+
+        const payload = { groupId: group._id, avatar: null };
+        for (const participantId of group.participants) {
+            emitToUser(req, participantId, SOCKET_EVENTS.GROUP_AVATAR_UPDATED, payload);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Group picture removed successfully',
+            data: { avatar: null }
+        });
+    } catch (error) {
+        console.error('Remove group avatar error:', error.message);
+        return sendServerError(res, error, 'Failed to remove group picture');
     }
 };
 
@@ -318,8 +419,8 @@ export const addMember = async (req, res) => {
             { $addToSet: { participants: newMemberObjId } },
             { new: true }
         )
-            .populate('participants', 'name email publicKey')
-            .populate('adminId', 'name email');
+            .populate('participants', 'name email publicKey avatar')
+            .populate('adminId', 'name email avatar');
 
         // Notify every current member, including the one just added — the
         // new member needs the group to appear in their list; existing
@@ -330,7 +431,7 @@ export const addMember = async (req, res) => {
             name: updatedGroup.name,
             member: { _id: userExists._id, name: userExists.name, email: userExists.email },
             addedBy: { _id: req.user.userId, name: req.user.name },
-            participants: updatedGroup.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email })),
+            participants: updatedGroup.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email, avatar: p.avatar || null})),
         };
         for (const participant of updatedGroup.participants) {
             emitToUser(req, participant._id, SOCKET_EVENTS.GROUP_MEMBER_ADDED, addedPayload);
@@ -405,8 +506,8 @@ export const removeMember = async (req, res) => {
             { $pull: { participants: memberObjIdToRemove } },
             { new: true }
         )
-            .populate('participants', 'name email publicKey')
-            .populate('adminId', 'name email');
+            .populate('participants', 'name email publicKey avatar')
+            .populate('adminId', 'name email avatar');
 
         // Notify the removed member specifically (their UI needs to drop
         // the group / exit the chat view if it's open) and everyone still
@@ -416,7 +517,7 @@ export const removeMember = async (req, res) => {
             name: updatedGroup.name,
             member: { _id: memberId, name: removedUser?.name, email: removedUser?.email },
             removedBy: { _id: req.user.userId, name: req.user.name },
-            participants: updatedGroup.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email })),
+            participants: updatedGroup.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email, avatar: p.avatar || null})),
         };
         emitToUser(req, memberId, SOCKET_EVENTS.GROUP_MEMBER_REMOVED, removedPayload);
         for (const participant of updatedGroup.participants) {
@@ -519,6 +620,16 @@ export const getGroupMessages = async (req, res) => {
                 chatType: msg.chatType,
                 createdAt: msg.createdAt,
                 delivered: msg.delivered,
+                messageType: msg.messageType || 'text',
+                reactions: (msg.reactions || []).map(r => ({ userId: r.userId, emoji: r.emoji })),
+                // The imageCiphertext blob itself isn't fanned out per member
+                // (see Message.js) — every requester gets the same one, only
+                // `message` above (their wrapped content-key) differs.
+                ...((msg.messageType === 'image' || msg.messageType === 'video') && {
+                    imageCiphertext: msg.imageCiphertext,
+                    imageNonce: msg.imageNonce,
+                    imageMimeType: msg.imageMimeType
+                })
             };
         });
 
@@ -607,8 +718,8 @@ export const leaveGroup = async (req, res) => {
             update,
             { new: true }
         )
-            .populate('participants', 'name email publicKey')
-            .populate('adminId', 'name email');
+            .populate('participants', 'name email publicKey avatar')
+            .populate('adminId', 'name email avatar');
 
         if (!updatedGroup) {
             return res.status(400).json({
@@ -624,7 +735,7 @@ export const leaveGroup = async (req, res) => {
             name: updatedGroup.name,
             member: { _id: req.user.userId, name: req.user.name },
             newAdminId: updatedGroup.adminId?._id,
-            participants: updatedGroup.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email })),
+            participants: updatedGroup.participants.map((p) => ({ _id: p._id, name: p.name, email: p.email, avatar: p.avatar || null})),
         };
         for (const participant of updatedGroup.participants) {
             emitToUser(req, participant._id, SOCKET_EVENTS.GROUP_MEMBER_LEFT, leftPayload);

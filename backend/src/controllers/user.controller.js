@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import mongoose from 'mongoose';
 import { getCache, setCache } from '../config/redis.js';
 import { sendServerError } from '../utils/errorResponse.js';
+import { invalidateFriendGraphCaches } from '../utils/friendCache.js';
 
 /**
  * Get all registered users with pagination and caching
@@ -24,7 +25,7 @@ export const getAllUsers = async (req, res) => {
 
     const [users, total] = await Promise.all([
       User.find({ _id: { $ne: currentUserId } })
-        .select('_id name email isOnline lastSeen createdAt')
+        .select('_id name email avatar isOnline lastSeen createdAt')
         .sort({ name: 1 })
         .skip(skip)
         .limit(limit)
@@ -37,6 +38,7 @@ export const getAllUsers = async (req, res) => {
       userId: user._id,
       name: user.name,
       email: user.email,
+      avatar: user.avatar || null,
       isOnline: user.isOnline,
       lastSeen: user.lastSeen,
       createdAt: user.createdAt,
@@ -85,7 +87,7 @@ export const getUserProfile = async (req, res) => {
     }
 
     const user = await User.findById(userId)
-      .select('_id name email isOnline lastSeen createdAt')
+      .select('_id name email avatar isOnline lastSeen createdAt')
       .lean();
 
     if (!user) {
@@ -100,6 +102,7 @@ export const getUserProfile = async (req, res) => {
       userId: user._id,
       name: user.name,
       email: user.email,
+      avatar: user.avatar || null,
       isOnline: user.isOnline,
       lastSeen: user.lastSeen,
       createdAt: user.createdAt,
@@ -158,7 +161,7 @@ export const searchUsers = async (req, res) => {
     const total = await User.countDocuments(textFilter);
 
     const users = await User.find(textFilter)
-      .select('_id name email isOnline lastSeen')
+      .select('_id name email avatar isOnline lastSeen')
       .lean()
       .skip(skip)
       .limit(limit)
@@ -170,6 +173,7 @@ export const searchUsers = async (req, res) => {
         _id: user._id,
         name: user.name,
         email: user.email,
+        avatar: user.avatar || null,
         status: user.isOnline ? 'online' : 'offline'
       })),
       count: users.length,
@@ -184,5 +188,72 @@ export const searchUsers = async (req, res) => {
       success: false,
       message: 'Search failed'
     });
+  }
+};
+
+/**
+ * Set/replace the current user's avatar
+ *
+ * @route PUT /api/v1/users/me/avatar
+ * @access Private
+ * @body { avatarData: string } — a base64 image data URL (validated + size
+ *   capped by UpdateAvatarSchema; the client is expected to have already
+ *   compressed the image before this point)
+ */
+export const updateAvatar = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { avatarData } = req.body;
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { avatar: avatarData },
+      { new: true, runValidators: true }
+    ).select('_id name email avatar');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Friends' cached friend-lists embed a snapshot of this user's fields
+    // (see auth.Controller.js's login handler, which does the same for
+    // publicKey changes) — invalidate so the new avatar shows up promptly
+    // instead of waiting out the cache TTL.
+    await invalidateFriendGraphCaches(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Avatar updated successfully',
+      data: { avatar: user.avatar }
+    });
+  } catch (error) {
+    console.error('❌ Update avatar error:', error.message);
+    return sendServerError(res, error, 'Failed to update avatar');
+  }
+};
+
+/**
+ * Remove the current user's avatar (revert to the default initial-letter look)
+ *
+ * @route DELETE /api/v1/users/me/avatar
+ * @access Private
+ */
+export const removeAvatar = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    await User.findByIdAndUpdate(userId, { avatar: null });
+    await invalidateFriendGraphCaches(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Avatar removed successfully'
+    });
+  } catch (error) {
+    console.error('❌ Remove avatar error:', error.message);
+    return sendServerError(res, error, 'Failed to remove avatar');
   }
 };

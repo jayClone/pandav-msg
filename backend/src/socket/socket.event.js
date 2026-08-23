@@ -6,6 +6,7 @@ import { handleUserConnect, handleUserDisconnect } from './handlers/user-status.
 import { handleReadReceipt } from './handlers/read-receipt.handler.js';
 import { handleTyping } from './handlers/typing.handler.js';
 import { handleMessageDeleted } from './handlers/message-deleted.handler.js';
+import { handleMessageReaction } from './handlers/reaction.handler.js';
 
 /**
  * Register all socket events
@@ -86,6 +87,13 @@ export function registerSocketEvents(io, socket, onlineUsers) {
   // ═══════════════════════════════════════════════════════════════════
   socket.on(SOCKET_EVENTS.MESSAGE_DELETED, (data) => {
     handleMessageDeleted(socket, io, data, userId, onlineUsers);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  MESSAGE REACTION
+  // ═══════════════════════════════════════════════════════════════════
+  socket.on(SOCKET_EVENTS.MESSAGE_REACTION, (data) => {
+    handleMessageReaction(socket, io, data, userId);
   });
 
   // ═══════════════════════════════════════════════════════════════════
