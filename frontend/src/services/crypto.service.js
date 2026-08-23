@@ -377,6 +377,119 @@ class CryptoService {
   }
 
   /**
+   * Encrypt raw image bytes exactly once with a random per-message
+   * symmetric key (NaCl secretbox) — not per-recipient like
+   * encryptMessage/encryptForGroup. Only that small key gets wrapped via
+   * the existing box encryption, once per recipient. This is what keeps a
+   * group image message's payload size independent of group size: the
+   * (potentially large) image ciphertext is never duplicated, only the
+   * 32-byte key is fanned out.
+   */
+  async _encryptImageBlob(imageBytes) {
+    const contentKey = nacl.randomBytes(32);
+    const nonce = nacl.randomBytes(24);
+    const ciphertext = nacl.secretbox(imageBytes, nonce, contentKey);
+
+    if (!ciphertext) {
+      throw new Error('Image encryption failed');
+    }
+
+    return {
+      contentKey,
+      imageCiphertext: encodeBase64(ciphertext),
+      imageNonce: encodeBase64(nonce)
+    };
+  }
+
+  /**
+   * Encrypt an image for a single private-chat recipient.
+   * @param {Uint8Array} imageBytes - Raw (already-compressed) image bytes
+   * @param {string} mimeType - e.g. 'image/jpeg'
+   * @param {string} recipientUserId
+   * @returns {Promise<{wrappedKey: string, imageCiphertext: string, imageNonce: string, imageMimeType: string}>}
+   */
+  async encryptImageForRecipient(imageBytes, mimeType, recipientUserId) {
+    if (!(imageBytes instanceof Uint8Array) || imageBytes.length === 0) {
+      throw new Error('imageBytes must be a non-empty Uint8Array');
+    }
+
+    const { contentKey, imageCiphertext, imageNonce } = await this._encryptImageBlob(imageBytes);
+    const wrappedKey = await this.encryptMessage(encodeBase64(contentKey), recipientUserId);
+
+    return { wrappedKey, imageCiphertext, imageNonce, imageMimeType: mimeType };
+  }
+
+  /**
+   * Encrypt an image for every current group member (sender included),
+   * mirroring encryptForGroup's fan-out — except here it's only the tiny
+   * content key that's fanned out, not the image itself.
+   * @param {Uint8Array} imageBytes
+   * @param {string} mimeType
+   * @param {string[]} memberUserIds
+   * @returns {Promise<{wrappedKeys: Object, imageCiphertext: string, imageNonce: string, imageMimeType: string}>}
+   */
+  async encryptImageForGroup(imageBytes, mimeType, memberUserIds) {
+    if (!Array.isArray(memberUserIds) || memberUserIds.length === 0) {
+      throw new Error('memberUserIds must be a non-empty array');
+    }
+    if (!(imageBytes instanceof Uint8Array) || imageBytes.length === 0) {
+      throw new Error('imageBytes must be a non-empty Uint8Array');
+    }
+
+    const { contentKey, imageCiphertext, imageNonce } = await this._encryptImageBlob(imageBytes);
+    const contentKeyB64 = encodeBase64(contentKey);
+
+    const entries = await Promise.all(
+      memberUserIds.map(async (memberId) => [memberId, await this.encryptMessage(contentKeyB64, memberId)])
+    );
+
+    return { wrappedKeys: Object.fromEntries(entries), imageCiphertext, imageNonce, imageMimeType: mimeType };
+  }
+
+  /**
+   * Decrypt an image message. `wrappedKey` is the caller's own entry from
+   * whichever field carried it — `message` for a private image, or
+   * `ciphertexts`/`groupCiphertexts[myUserId]` for a group one — same
+   * wrapped-content-key convention text messages already use.
+   * @param {string} wrappedKey
+   * @param {string} imageCiphertextB64
+   * @param {string} imageNonceB64
+   * @param {string} senderUserId
+   * @returns {Promise<Uint8Array>} raw decrypted image bytes
+   */
+  async decryptImage(wrappedKey, imageCiphertextB64, imageNonceB64, senderUserId) {
+    // Let decryptMessage's own descriptive error propagate as-is on failure
+    // (wrong/missing sender key, tampered wrapped key, etc).
+    const contentKeyB64 = await this.decryptMessage(wrappedKey, senderUserId);
+
+    try {
+      const contentKey = decodeBase64(contentKeyB64);
+      const nonce = decodeBase64(imageNonceB64);
+      const ciphertext = decodeBase64(imageCiphertextB64);
+
+      const imageBytes = nacl.secretbox.open(ciphertext, nonce, contentKey);
+
+      if (!imageBytes) {
+        throw new Error('Image data is corrupted or was tampered with');
+      }
+
+      return imageBytes;
+    } catch (error) {
+      console.error('Image decryption failed:', error.message);
+      throw new Error(`Image decryption failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * @param {Uint8Array} imageBytes
+   * @param {string} mimeType
+   * @returns {string} a data: URL suitable for an <img src>
+   */
+  imageBytesToDataUrl(imageBytes, mimeType) {
+    return `data:${mimeType};base64,${encodeBase64(imageBytes)}`;
+  }
+
+  /**
    * Check if a message is encrypted (has version prefix)
    * @param {string} messageText - Message text to check
    * @returns {boolean} True if message is encrypted

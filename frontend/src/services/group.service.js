@@ -143,6 +143,28 @@ class GroupService {
 
     return data.data
   }
+
+  async updateAvatar(groupId, avatarData) {
+    const response = await groupApi.updateAvatar(groupId, avatarData)
+    const { data } = response
+
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to update group picture')
+    }
+
+    return data.data
+  }
+
+  async removeAvatar(groupId) {
+    const response = await groupApi.removeAvatar(groupId)
+    const { data } = response
+
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to remove group picture')
+    }
+
+    return data.data
+  }
 }
 
 export default new GroupService()

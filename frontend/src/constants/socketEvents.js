@@ -5,6 +5,7 @@ export const SOCKET_EVENTS = {
   USER_OFFLINE: "user_offline",
   ERROR_MESSAGE: "error_message",
   MESSAGE_DELETED: "message_deleted",
+  MESSAGE_REACTION: "message_reaction",
   TYPING: "typing",
   MESSAGE_READ: "message_read",
   GROUP_MESSAGE: "group_message",
@@ -24,4 +25,5 @@ export const SOCKET_EVENTS = {
   GROUP_MEMBER_REMOVED: "group_member_removed",
   GROUP_MEMBER_LEFT: "group_member_left",
   GROUP_DELETED: "group_deleted",
+  GROUP_AVATAR_UPDATED: "group_avatar_updated",
 };

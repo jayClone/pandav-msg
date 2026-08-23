@@ -118,4 +118,99 @@ describe('CryptoService', () => {
       expect(cryptoService.getPublicKey('bob-id')).toEqual(bobNew.publicKey);
     });
   });
+
+  describe('image messages', () => {
+    // A tiny fake "image" — the actual bytes don't matter for these tests,
+    // only that they round-trip correctly.
+    const fakeImageBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4, 5]);
+
+    it('encrypts and decrypts an image for a single private-chat recipient', async () => {
+      const alice = await cryptoService.deriveKeypairFromPassword('alice@example.com', 'alice-pass');
+      const bob = await cryptoService.deriveKeypairFromPassword('bob@example.com', 'bob-pass');
+
+      cryptoService.storeMyKeypair('alice-id', alice.publicKey, alice.secretKey);
+      cryptoService.storePublicKey('bob-id', bob.publicKey);
+
+      const result = await cryptoService.encryptImageForRecipient(fakeImageBytes, 'image/png', 'bob-id');
+
+      expect(result.imageMimeType).toBe('image/png');
+      expect(cryptoService.isEncrypted(result.wrappedKey)).toBe(true);
+
+      cryptoService.clearAllKeys();
+      cryptoService.storeMyKeypair('bob-id', bob.publicKey, bob.secretKey);
+      cryptoService.storePublicKey('alice-id', alice.publicKey);
+
+      const decrypted = await cryptoService.decryptImage(
+        result.wrappedKey,
+        result.imageCiphertext,
+        result.imageNonce,
+        'alice-id'
+      );
+
+      expect(Array.from(decrypted)).toEqual(Array.from(fakeImageBytes));
+    });
+
+    it('fans out only the small content key for a group image, not the image itself', async () => {
+      const alice = await cryptoService.deriveKeypairFromPassword('alice@example.com', 'alice-pass');
+      const bob = await cryptoService.deriveKeypairFromPassword('bob@example.com', 'bob-pass');
+      const carol = await cryptoService.deriveKeypairFromPassword('carol@example.com', 'carol-pass');
+
+      cryptoService.storeMyKeypair('alice-id', alice.publicKey, alice.secretKey);
+      cryptoService.storePublicKey('bob-id', bob.publicKey);
+      cryptoService.storePublicKey('carol-id', carol.publicKey);
+
+      const result = await cryptoService.encryptImageForGroup(
+        fakeImageBytes,
+        'image/jpeg',
+        ['alice-id', 'bob-id', 'carol-id']
+      );
+
+      expect(Object.keys(result.wrappedKeys).sort()).toEqual(['alice-id', 'bob-id', 'carol-id']);
+      // each member's wrapped key is a small, distinct ciphertext — nowhere
+      // near the size of a real (or even this fake) image blob duplicated
+      // per member.
+      expect(result.wrappedKeys['alice-id']).not.toBe(result.wrappedKeys['bob-id']);
+      Object.values(result.wrappedKeys).forEach((wrappedKey) => {
+        expect(wrappedKey.length).toBeLessThan(200);
+      });
+
+      // Bob decrypts using his own wrapped-key entry.
+      cryptoService.clearAllKeys();
+      cryptoService.storeMyKeypair('bob-id', bob.publicKey, bob.secretKey);
+      cryptoService.storePublicKey('alice-id', alice.publicKey);
+
+      const decrypted = await cryptoService.decryptImage(
+        result.wrappedKeys['bob-id'],
+        result.imageCiphertext,
+        result.imageNonce,
+        'alice-id'
+      );
+
+      expect(Array.from(decrypted)).toEqual(Array.from(fakeImageBytes));
+    });
+
+    it('fails to decrypt with the wrong sender key', async () => {
+      const alice = await cryptoService.deriveKeypairFromPassword('alice@example.com', 'alice-pass');
+      const mallory = await cryptoService.deriveKeypairFromPassword('mallory@example.com', 'mallory-pass');
+      const bob = await cryptoService.deriveKeypairFromPassword('bob@example.com', 'bob-pass');
+
+      cryptoService.storeMyKeypair('alice-id', alice.publicKey, alice.secretKey);
+      cryptoService.storePublicKey('bob-id', bob.publicKey);
+
+      const result = await cryptoService.encryptImageForRecipient(fakeImageBytes, 'image/png', 'bob-id');
+
+      cryptoService.clearAllKeys();
+      cryptoService.storeMyKeypair('bob-id', bob.publicKey, bob.secretKey);
+      cryptoService.storePublicKey('mallory-id', mallory.publicKey); // wrong sender key on file
+
+      await expect(
+        cryptoService.decryptImage(result.wrappedKey, result.imageCiphertext, result.imageNonce, 'mallory-id')
+      ).rejects.toThrow();
+    });
+
+    it('imageBytesToDataUrl produces a usable data: URL', () => {
+      const url = cryptoService.imageBytesToDataUrl(fakeImageBytes, 'image/png');
+      expect(url.startsWith('data:image/png;base64,')).toBe(true);
+    });
+  });
 });

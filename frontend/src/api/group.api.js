@@ -69,6 +69,26 @@ const groupApi = {
     }
     return API.delete(`/groups/${String(groupId)}`)
   },
+
+  /**
+   * Update group picture (admin only)
+   */
+  updateAvatar: (groupId, avatarData) => {
+    if (!groupId) {
+      throw new Error('Group ID is required')
+    }
+    return API.put(`/groups/${String(groupId)}/avatar`, { avatarData })
+  },
+
+  /**
+   * Remove group picture (admin only)
+   */
+  removeAvatar: (groupId) => {
+    if (!groupId) {
+      throw new Error('Group ID is required')
+    }
+    return API.delete(`/groups/${String(groupId)}/avatar`)
+  },
 }
 
 
