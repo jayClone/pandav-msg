@@ -9,6 +9,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // ffmpeg.wasm spawns a Worker via `new Worker(new URL("./worker.js", import.meta.url))`
+  // inside its own package code. Vite's esbuild-based dependency pre-bundling
+  // doesn't preserve that pattern correctly (it rewrites the module into a
+  // single pre-bundled file, breaking the relative worker URL) — the worker
+  // then either fails to start or never posts back, so every ffmpeg call
+  // hangs indefinitely instead of erroring. Excluding it from optimizeDeps
+  // makes Vite serve the package's own files as-is, where the pattern works.
+  optimizeDeps: {
+    exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

@@ -4,6 +4,13 @@ import groupService from '@services/group.service.js'
 import cryptoService from '@services/crypto.service.js'
 import { SOCKET_EVENTS } from '@constants/socketEvents.js'
 import { getSocket } from '@socket/socketClient.js'
+import { compressImageFile } from '@utils/imageCompression.js'
+import { compressVideoFile } from '@utils/videoCompression.js'
+import Avatar from '@/components/Avatar'
+import GroupAvatarModal from '@/components/GroupAvatarModal'
+import EmojiPicker from '@/components/EmojiPicker'
+import ReactionBar from '@/components/ReactionBar'
+import { showDesktopNotification } from '@utils/notifications.js'
 import {
   Plus,
   Search,
@@ -31,6 +38,7 @@ export default function GroupChat({
   token,
   currentUserName,
   currentUserId,
+  notificationsEnabled,
   onChatOpen,
   isChatOpen,
 }) {
@@ -46,6 +54,7 @@ export default function GroupChat({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showMembersPreview, setShowMembersPreview] = useState(false);
+  const [showGroupAvatarModal, setShowGroupAvatarModal] = useState(false);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -82,9 +91,14 @@ export default function GroupChat({
 
   const messageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const lastTypingTimeRef = useRef(0);
 
   //  ADD NEW STATE FOR ADMIN INFO
   const [adminInfo, setAdminInfo] = useState(null);
+
+  //  who's currently typing in the open group, keyed by userId
+  const [typingUsers, setTypingUsers] = useState({});
 
   // ✅ E2EE: members whose pinned public key changed since we last saw it
   // (see crypto.service.js storePublicKey / KEY_CHANGED_EVENT)
@@ -148,6 +162,13 @@ export default function GroupChat({
     );
   }, []);
 
+  //  REACT TO MESSAGE
+  const sendReaction = useCallback((messageId, emoji) => {
+    const socket = getSocket();
+    if (!socket?.connected) return;
+    socket.emit(SOCKET_EVENTS.MESSAGE_REACTION, { messageId, emoji });
+  }, []);
+
   // ═══════════════════════════════════════════════════════════════════
   // HELPER FUNCTION: Render message with ticks (RESPONSIVE)
   // ═══════════════════════════════════════════════════════════════════
@@ -175,9 +196,12 @@ export default function GroupChat({
       >
         {/* Avatar - Only show for other users' messages */}
         {!isOwnMessage && (
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1 shadow-lg">
-            {msg.fromUserName?.charAt(0).toUpperCase() || '?'}
-          </div>
+          <Avatar
+            src={members.find((m) => (m._id || m.userId) === msg.fromUserId)?.avatar}
+            name={msg.fromUserName}
+            size="sm"
+            className="mt-1"
+          />
         )}
 
         {/* Message Container */}
@@ -190,15 +214,41 @@ export default function GroupChat({
           )}
 
           {/* Message Box */}
-          <div
-            className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl shadow-lg text-sm sm:text-base ${
-              isOwnMessage
-                ? 'bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm'
-                : 'bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-primary))] rounded-tl-sm'
-            }`}
-          >
-            <p className="leading-relaxed break-words">{msg.message}</p>
-          </div>
+          {msg.messageType === 'image' ? (
+            msg.message ? (
+              <img
+                src={msg.message}
+                alt="Shared image"
+                className="max-w-[220px] xs:max-w-[260px] sm:max-w-xs rounded-2xl shadow-lg object-cover"
+              />
+            ) : (
+              <div className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl shadow-lg text-sm sm:text-base bg-[rgb(var(--bg-tertiary))] text-red-400">
+                [Image could not be decrypted]
+              </div>
+            )
+          ) : msg.messageType === 'video' ? (
+            msg.message ? (
+              <video
+                src={msg.message}
+                controls
+                className="max-w-[220px] xs:max-w-[260px] sm:max-w-xs rounded-2xl shadow-lg"
+              />
+            ) : (
+              <div className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl shadow-lg text-sm sm:text-base bg-[rgb(var(--bg-tertiary))] text-red-400">
+                [Video could not be decrypted]
+              </div>
+            )
+          ) : (
+            <div
+              className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl shadow-lg text-sm sm:text-base ${
+                isOwnMessage
+                  ? 'bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm'
+                  : 'bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-primary))] rounded-tl-sm'
+              }`}
+            >
+              <p className="leading-relaxed break-words">{msg.message}</p>
+            </div>
+          )}
 
           {/* Time & Read Status Row */}
           <div className={`flex items-center gap-1 sm:gap-2 mt-1 px-3 text-xs sm:text-sm ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
@@ -228,6 +278,17 @@ export default function GroupChat({
             )}
           </div>
 
+          {msg._id && !String(msg._id).startsWith('msg_') && (
+            <div className="mt-1 px-3">
+              <ReactionBar
+                reactions={msg.reactions}
+                currentUserId={currentUserId}
+                onToggle={(emoji) => sendReaction(msg._id, emoji)}
+                align={isOwnMessage ? 'end' : 'start'}
+              />
+            </div>
+          )}
+
           {/* Show who read it - Visible on hover (RESPONSIVE) */}
           {isOwnMessage && readStatus && readStatus.readBy?.length > 0 && (
             <div className="mt-2 text-xs text-[rgb(var(--text-muted))] bg-[rgb(var(--bg-secondary))] px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg hidden group-hover:block whitespace-nowrap max-w-xs">
@@ -250,11 +311,15 @@ export default function GroupChat({
         </div>
       </div>
     );
-  }, [currentUserId, messageReadStatus, members, formatTime]);
+  }, [currentUserId, messageReadStatus, members, formatTime, sendReaction]);
 
   // ═══════════════════════════════════════════════════════════════════
   // MEMOIZED VALUES (SECOND)
   // ═══════════════════════════════════════════════════════════════════
+
+  const typingNames = useMemo(() => {
+    return Object.values(typingUsers).filter(Boolean);
+  }, [typingUsers]);
 
   const safeSelectedGroup = useMemo(() => {
     if (!selectedGroup || !selectedGroup.id) return null;
@@ -331,6 +396,7 @@ export default function GroupChat({
             groupId: groupId,
             id: groupId,
             name: groupName.trim() || 'Unnamed Group',
+            avatar: g.avatar || null,
             description: g.description || '',
             membersCount: g.members?.length || g.participants?.length || 0,
             createdAt: g.createdAt,
@@ -348,8 +414,9 @@ export default function GroupChat({
 
   const handleSelectGroup = useCallback(async (group) => {
     setSelectedGroup(group);
-    setMembers([]); 
+    setMembers([]);
     setMessageReadStatus({});
+    setTypingUsers({});
     
     //  ONLY CLOSE SIDEBAR ON MOBILE, NOT ON DESKTOP
     if (window.innerWidth < 768) {
@@ -383,12 +450,13 @@ export default function GroupChat({
         adminName: groupDetails.adminName,
         adminEmail: groupDetails.adminEmail
       });
-      
+
       //  ADD THIS: Update selectedGroup with adminId
       setSelectedGroup(prev => ({
         ...prev,
         adminId: groupDetails.adminId,
-        adminName: groupDetails.adminName
+        adminName: groupDetails.adminName,
+        avatar: groupDetails.avatar || null
       }));
       
     } catch (err) {
@@ -413,12 +481,30 @@ export default function GroupChat({
             const fromUserId = msg.fromUserId || msg.senderId;
             let messageText = msg.message;
             let decrypted = !msg.isEncrypted;
+            const isMedia = msg.messageType === 'image' || msg.messageType === 'video';
 
-            // E2EE: getGroupMessages already resolved `message` to our own
-            // ciphertext for this message — decrypt it using the sender's
-            // public key (works even for our own past sent messages, since
-            // NaCl box's shared secret is symmetric either direction).
-            if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
+            if (isMedia) {
+              try {
+                if (!getEncryptionKey()) {
+                  messageText = "[Decryption failed - keypair not initialized]";
+                } else if (!cryptoService.getPublicKey(fromUserId)) {
+                  messageText = "[Decryption failed - sender key unavailable]";
+                } else {
+                  const imageBytes = await cryptoService.decryptImage(
+                    msg.message, msg.imageCiphertext, msg.imageNonce, fromUserId
+                  );
+                  messageText = cryptoService.imageBytesToDataUrl(imageBytes, msg.imageMimeType);
+                  decrypted = true;
+                }
+              } catch (error) {
+                console.error("❌ Group image decryption failed:", error.message);
+                messageText = null;
+              }
+            } else if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
+              // E2EE: getGroupMessages already resolved `message` to our own
+              // ciphertext for this message — decrypt it using the sender's
+              // public key (works even for our own past sent messages, since
+              // NaCl box's shared secret is symmetric either direction).
               try {
                 if (!getEncryptionKey()) {
                   messageText = "[Decryption failed - keypair not initialized]";
@@ -437,6 +523,8 @@ export default function GroupChat({
             return {
               _id: msg._id,
               message: messageText,
+              messageType: msg.messageType || 'text',
+              reactions: msg.reactions || [],
               isEncrypted: msg.isEncrypted,
               decrypted,
               fromUserId,
@@ -470,7 +558,7 @@ export default function GroupChat({
           setLastMessages((prev) => ({
             ...prev,
             [group.id]: {
-              message: lastMsg.message,
+              message: lastMsg.messageType === 'video' ? '🎥 Video' : lastMsg.messageType === 'image' ? '📷 Photo' : lastMsg.message,
               userName: lastMsg.fromUserName,
             }
           }));
@@ -526,8 +614,26 @@ export default function GroupChat({
             const fromUserId = msg.fromUserId || msg.senderId;
             let messageText = msg.message;
             let decrypted = !msg.isEncrypted;
+            const isMedia = msg.messageType === 'image' || msg.messageType === 'video';
 
-            if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
+            if (isMedia) {
+              try {
+                if (!getEncryptionKey()) {
+                  messageText = "[Decryption failed - keypair not initialized]";
+                } else if (!cryptoService.getPublicKey(fromUserId)) {
+                  messageText = "[Decryption failed - sender key unavailable]";
+                } else {
+                  const imageBytes = await cryptoService.decryptImage(
+                    msg.message, msg.imageCiphertext, msg.imageNonce, fromUserId
+                  );
+                  messageText = cryptoService.imageBytesToDataUrl(imageBytes, msg.imageMimeType);
+                  decrypted = true;
+                }
+              } catch (error) {
+                console.error("❌ Group image decryption failed:", error.message);
+                messageText = null;
+              }
+            } else if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
               try {
                 if (!getEncryptionKey()) {
                   messageText = "[Decryption failed - keypair not initialized]";
@@ -546,6 +652,8 @@ export default function GroupChat({
             return {
               _id: msg._id,
               message: messageText,
+              messageType: msg.messageType || 'text',
+              reactions: msg.reactions || [],
               isEncrypted: msg.isEncrypted,
               decrypted,
               fromUserId,
@@ -643,6 +751,188 @@ export default function GroupChat({
       setNewMessage(messageText);
     }
   }, [selectedGroup, newMessage, currentUserId, currentUserName, members, getEncryptionKey]);
+
+  //  SEND IMAGE TO GROUP
+  const [sendingImage, setSendingImage] = useState(false);
+  const handleSendGroupImage = useCallback(async (file) => {
+    const socket = getSocket();
+    if (!socket?.connected) {
+      setError("🔴 Not connected. Please refresh.");
+      return;
+    }
+    if (!selectedGroup || !file) return;
+
+    setSendingImage(true);
+    try {
+      if (!getEncryptionKey()) {
+        setError("🔐 Encryption key not initialized. Please log in again.");
+        return;
+      }
+
+      const memberIds = Array.from(new Set([
+        ...members.map((m) => m._id),
+        currentUserId,
+      ]));
+
+      const missingKeyMember = members.find((m) => !cryptoService.getPublicKey(m._id));
+      if (missingKeyMember) {
+        setError(`🔐 Missing encryption key for ${missingKeyMember.name || 'a member'} — they may need to log in again so their key can be published.`);
+        return;
+      }
+
+      const { bytes, mimeType } = await compressImageFile(file, { maxDimension: 1280, quality: 0.7 });
+      const { wrappedKeys, imageCiphertext, imageNonce, imageMimeType } =
+        await cryptoService.encryptImageForGroup(bytes, mimeType, memberIds);
+
+      socket.emit(SOCKET_EVENTS.GROUP_MESSAGE, {
+        groupId: selectedGroup.id,
+        isEncrypted: true,
+        ciphertexts: wrappedKeys,
+        messageType: "image",
+        imageCiphertext,
+        imageNonce,
+        imageMimeType,
+        fromUserId: currentUserId,
+        fromUserName: currentUserName,
+      });
+    } catch (err) {
+      console.error("❌ Failed to send image:", err);
+      setError(`🔒 Image send error: ${err.message}`);
+    } finally {
+      setSendingImage(false);
+    }
+  }, [selectedGroup, currentUserId, currentUserName, members, getEncryptionKey]);
+
+  //  SEND VIDEO TO GROUP
+  const [sendingVideo, setSendingVideo] = useState(false);
+  const [videoStatus, setVideoStatus] = useState("");
+  const handleSendGroupVideo = useCallback(async (file) => {
+    const socket = getSocket();
+    if (!socket?.connected) {
+      setError("🔴 Not connected. Please refresh.");
+      return;
+    }
+    if (!selectedGroup || !file) return;
+
+    setSendingVideo(true);
+    try {
+      if (!getEncryptionKey()) {
+        setError("🔐 Encryption key not initialized. Please log in again.");
+        return;
+      }
+
+      const memberIds = Array.from(new Set([
+        ...members.map((m) => m._id),
+        currentUserId,
+      ]));
+
+      const missingKeyMember = members.find((m) => !cryptoService.getPublicKey(m._id));
+      if (missingKeyMember) {
+        setError(`🔐 Missing encryption key for ${missingKeyMember.name || 'a member'} — they may need to log in again so their key can be published.`);
+        return;
+      }
+
+      const { bytes, mimeType } = await compressVideoFile(file, { onStatus: setVideoStatus });
+      setVideoStatus("Encrypting…");
+      const { wrappedKeys, imageCiphertext, imageNonce, imageMimeType } =
+        await cryptoService.encryptImageForGroup(bytes, mimeType, memberIds);
+
+      socket.emit(SOCKET_EVENTS.GROUP_MESSAGE, {
+        groupId: selectedGroup.id,
+        isEncrypted: true,
+        ciphertexts: wrappedKeys,
+        messageType: "video",
+        imageCiphertext,
+        imageNonce,
+        imageMimeType,
+        fromUserId: currentUserId,
+        fromUserName: currentUserName,
+      });
+    } catch (err) {
+      console.error("❌ Failed to send video:", err);
+      setError(`🔒 Video send error: ${err.message}`);
+    } finally {
+      setSendingVideo(false);
+      setVideoStatus("");
+    }
+  }, [selectedGroup, currentUserId, currentUserName, members, getEncryptionKey]);
+
+  const fileInputRef = useRef(null);
+  const handleGroupFileSelected = useCallback((e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.type.startsWith("video/")) {
+      handleSendGroupVideo(file);
+    } else {
+      handleSendGroupImage(file);
+    }
+  }, [handleSendGroupImage, handleSendGroupVideo]);
+
+  //  TYPING INDICATOR
+  const handleGroupTyping = useCallback((isTyping) => {
+    const socket = getSocket();
+    if (!socket || !selectedGroup) return;
+
+    const now = Date.now();
+    const timeSinceLastTyping = now - lastTypingTimeRef.current;
+    if (timeSinceLastTyping < 300 && isTyping) return;
+    lastTypingTimeRef.current = now;
+
+    if (isTyping) {
+      socket.emit(SOCKET_EVENTS.TYPING, {
+        groupId: selectedGroup.id,
+        isTyping: true,
+      });
+
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        socket.emit(SOCKET_EVENTS.TYPING, {
+          groupId: selectedGroup.id,
+          isTyping: false,
+        });
+      }, 2000);
+    }
+  }, [selectedGroup]);
+
+  //  EMOJI PICKER
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const insertEmoji = useCallback((emoji) => {
+    const textarea = messageInputRef.current;
+    if (textarea && typeof textarea.selectionStart === "number") {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      setNewMessage((prev) => prev.slice(0, start) + emoji + prev.slice(end));
+      requestAnimationFrame(() => {
+        textarea.focus();
+        const cursorPos = start + emoji.length;
+        textarea.setSelectionRange(cursorPos, cursorPos);
+      });
+    } else {
+      setNewMessage((prev) => prev + emoji);
+    }
+  }, []);
+
+  //  PASTE IMAGE/VIDEO FROM CLIPBOARD (e.g. screenshot copy -> Ctrl+V)
+  const handleGroupPaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith("video/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) handleSendGroupVideo(file);
+        return;
+      }
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) handleSendGroupImage(file);
+        return;
+      }
+    }
+  }, [handleSendGroupImage, handleSendGroupVideo]);
 
   const togglePinGroup = useCallback((groupId) => {
     setPinnedGroups((prev) =>
@@ -1024,8 +1314,29 @@ export default function GroupChat({
 
       let messageText = data.message;
       let decrypted = !data.isEncrypted;
+      const isMedia = data.messageType === 'image' || data.messageType === 'video';
 
-      if (data.isEncrypted) {
+      if (isMedia) {
+        const myCiphertext = data.ciphertexts?.[currentUserId];
+        try {
+          if (!myCiphertext) {
+            messageText = "[Decryption failed - no ciphertext for you]";
+          } else if (!getEncryptionKey()) {
+            messageText = "[Decryption failed - keypair not initialized]";
+          } else if (!cryptoService.getPublicKey(data.fromUserId)) {
+            messageText = "[Decryption failed - sender key unavailable]";
+          } else {
+            const imageBytes = await cryptoService.decryptImage(
+              myCiphertext, data.imageCiphertext, data.imageNonce, data.fromUserId
+            );
+            messageText = cryptoService.imageBytesToDataUrl(imageBytes, data.imageMimeType);
+            decrypted = true;
+          }
+        } catch (error) {
+          console.error("❌ Live group media decryption failed:", error.message);
+          messageText = null;
+        }
+      } else if (data.isEncrypted) {
         const myCiphertext = data.ciphertexts?.[currentUserId];
         try {
           if (!myCiphertext) {
@@ -1044,12 +1355,16 @@ export default function GroupChat({
         }
       }
 
-      if (data.groupId === selectedGroup?.id) {
+      const isInCurrentGroup = data.groupId === selectedGroup?.id;
+
+      if (isInCurrentGroup) {
         const newMsg = {
           _id: data._id || `msg_${Date.now()}`,
           fromUserId: data.fromUserId,
           fromUserName: data.fromUserName || 'Unknown',
           message: messageText,
+          messageType: data.messageType || 'text',
+          reactions: [],
           isEncrypted: data.isEncrypted,
           decrypted,
           time: data.createdAt || new Date().toISOString(),
@@ -1063,7 +1378,7 @@ export default function GroupChat({
         setLastMessages((prev) => ({
           ...prev,
           [data.groupId]: {
-            message: messageText,
+            message: data.messageType === 'video' ? '🎥 Video' : data.messageType === 'image' ? '📷 Photo' : messageText,
             userName: data.fromUserName,
           }
         }));
@@ -1073,12 +1388,25 @@ export default function GroupChat({
           [data.groupId]: (prev[data.groupId] || 0) + 1,
         }));
       }
+
+      // Skip our own echo (groups fan out to every member, sender included);
+      // otherwise notify unless this group is already open and focused.
+      if (
+        notificationsEnabled &&
+        String(data.fromUserId) !== String(currentUserId) &&
+        (!isInCurrentGroup || document.hidden)
+      ) {
+        showDesktopNotification(data.fromUserName || 'New group message', {
+          body: data.messageType === 'video' ? '🎥 Sent a video' : data.messageType === 'image' ? '📷 Sent a photo' : (decrypted ? messageText : 'New message'),
+          tag: `group-${data.groupId}`,
+        });
+      }
     });
 
     return () => {
       socket.off(SOCKET_EVENTS.GROUP_MESSAGE);
     };
-  }, [selectedGroup?.id]);
+  }, [selectedGroup?.id, currentUserId, notificationsEnabled]);
 
   // ✅ Real-time: group creation and membership changes (add/remove/leave/
   // delete) used to be pure REST with no live notification to anyone but
@@ -1141,11 +1469,21 @@ export default function GroupChat({
         }
       };
 
+      const handleGroupAvatarUpdated = (data) => {
+        setGroups((prev) => prev.map((g) => (
+          g.id === data.groupId ? { ...g, avatar: data.avatar } : g
+        )));
+        if (selectedGroup?.id === data.groupId) {
+          setSelectedGroup((prev) => (prev ? { ...prev, avatar: data.avatar } : prev));
+        }
+      };
+
       socket.on(SOCKET_EVENTS.GROUP_CREATED, handleGroupCreated);
       socket.on(SOCKET_EVENTS.GROUP_MEMBER_ADDED, handleMemberAdded);
       socket.on(SOCKET_EVENTS.GROUP_MEMBER_REMOVED, handleMemberRemoved);
       socket.on(SOCKET_EVENTS.GROUP_MEMBER_LEFT, handleMemberLeft);
       socket.on(SOCKET_EVENTS.GROUP_DELETED, handleGroupDeleted);
+      socket.on(SOCKET_EVENTS.GROUP_AVATAR_UPDATED, handleGroupAvatarUpdated);
 
       return () => {
         socket.off(SOCKET_EVENTS.GROUP_CREATED, handleGroupCreated);
@@ -1153,6 +1491,7 @@ export default function GroupChat({
         socket.off(SOCKET_EVENTS.GROUP_MEMBER_REMOVED, handleMemberRemoved);
         socket.off(SOCKET_EVENTS.GROUP_MEMBER_LEFT, handleMemberLeft);
         socket.off(SOCKET_EVENTS.GROUP_DELETED, handleGroupDeleted);
+        socket.off(SOCKET_EVENTS.GROUP_AVATAR_UPDATED, handleGroupAvatarUpdated);
       };
     };
 
@@ -1192,6 +1531,39 @@ export default function GroupChat({
       socket.off('message_read');
     };
   }, [handleMessageRead]);
+
+  //  TYPING INDICATOR (receive)
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleTypingEvent = (data) => {
+      if (!data.groupId || data.groupId !== selectedGroup?.id) return;
+      setTypingUsers((prev) => ({ ...prev, [data.fromUserId]: data.isTyping ? data.userName : false }));
+    };
+
+    socket.on(SOCKET_EVENTS.TYPING, handleTypingEvent);
+    return () => {
+      socket.off(SOCKET_EVENTS.TYPING, handleTypingEvent);
+    };
+  }, [selectedGroup?.id]);
+
+  //  MESSAGE REACTIONS (receive)
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleReactionEvent = (data) => {
+      setMessages((prev) => prev.map((m) => (
+        String(m._id) === String(data.messageId) ? { ...m, reactions: data.reactions } : m
+      )));
+    };
+
+    socket.on(SOCKET_EVENTS.MESSAGE_REACTION, handleReactionEvent);
+    return () => {
+      socket.off(SOCKET_EVENTS.MESSAGE_REACTION, handleReactionEvent);
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedGroup?.id && !selectedGroup?.name) return;
@@ -1437,12 +1809,7 @@ useEffect(() => {
                   >
                     <div className="flex items-center gap-2 sm:gap-3">
                       {/* Avatar */}
-                      <div className="relative shrink-0">
-                        <div className="w-10 sm:w-12 h-10 sm:h-12 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base shadow-lg bg-linear-to-br from-green-500 to-emerald-600 glow-green">
-                          {(group?.name || 'G').charAt(0).toUpperCase()}
-                        </div>
-                        <div className="absolute bottom-0 right-0 w-2.5 sm:w-3 h-2.5 sm:h-3 bg-green-400 border-2 border-[rgb(var(--bg-secondary))] rounded-full animate-pulse"></div>
-                      </div>
+                      <Avatar src={group?.avatar} name={group?.name || 'G'} size="md" />
 
                       {/* Group Info */}
                       <div className="flex-1 min-w-0">
@@ -1521,6 +1888,20 @@ useEffect(() => {
                   <ChevronLeft className="w-4 xs:w-4.5 sm:w-5 h-4 xs:h-4.5 sm:h-5" />
                 </button>
 
+                {/* Group Avatar - clickable for admin to change the picture */}
+                {String(selectedGroup?.adminId) === String(currentUserId) ? (
+                  <button
+                    onClick={() => setShowGroupAvatarModal(true)}
+                    title="Change group picture"
+                    aria-label="Change group picture"
+                    className="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500/60"
+                  >
+                    <Avatar src={selectedGroup?.avatar} name={selectedGroup?.name} size="sm" />
+                  </button>
+                ) : (
+                  <Avatar src={selectedGroup?.avatar} name={selectedGroup?.name} size="sm" />
+                )}
+
                 {/* Group Info - Mobile Optimized */}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 xs:gap-2 sm:gap-3 flex-wrap">
@@ -1535,18 +1916,26 @@ useEffect(() => {
                   </div>
                   
                   {/* Mobile: Compact | Desktop: Full Info */}
-                  <div className="flex items-center gap-1 xs:gap-1.5 sm:gap-4 mt-0.5 xs:mt-1 text-xs sm:text-sm text-[rgb(var(--text-muted))] flex-wrap">
-                    <p className="hidden sm:block text-xs">
-                      Admin: <span className="text-green-400 font-bold glow-green">{adminInfo?.adminName || 'Loading...'}</span>
+                  {typingNames.length > 0 ? (
+                    <p className="text-xs sm:text-sm text-green-400 font-medium mt-0.5 xs:mt-1 truncate">
+                      {typingNames.length === 1
+                        ? `${typingNames[0]} is typing...`
+                        : `${typingNames.length} people are typing...`}
                     </p>
-                    <p className={`font-medium text-xs sm:text-sm ${onlineCount > 0 ? 'text-green-400' : 'text-[rgb(var(--text-muted))]'}`}>
-                      {onlineCount > 0 ? (
-                        <>🟢 {onlineCount} · {members.length}</>
-                      ) : (
-                        <>🔴 {members.length}</>
-                      )}
-                    </p>
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-1 xs:gap-1.5 sm:gap-4 mt-0.5 xs:mt-1 text-xs sm:text-sm text-[rgb(var(--text-muted))] flex-wrap">
+                      <p className="hidden sm:block text-xs">
+                        Admin: <span className="text-green-400 font-bold glow-green">{adminInfo?.adminName || 'Loading...'}</span>
+                      </p>
+                      <p className={`font-medium text-xs sm:text-sm ${onlineCount > 0 ? 'text-green-400' : 'text-[rgb(var(--text-muted))]'}`}>
+                        {onlineCount > 0 ? (
+                          <>🟢 {onlineCount} · {members.length}</>
+                        ) : (
+                          <>🔴 {members.length}</>
+                        )}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1839,39 +2228,68 @@ useEffect(() => {
                   {error}
                 </div>
               )}
+              {sendingVideo && videoStatus && (
+                <div className="mb-2 sm:mb-3 p-2 sm:p-3 bg-green-500/10 border border-green-500/30 text-green-400 rounded-xl text-xs flex items-center gap-1.5">
+                  <Loader className="w-3.5 h-3.5 shrink-0 animate-spin" />
+                  {videoStatus}
+                </div>
+              )}
               <div className="flex items-end gap-1 xs:gap-1.5 sm:gap-3">
-                {/* Emoji & Attachment - Hidden on mobile */}
-                <div className="hidden xs:flex gap-0.5 xs:gap-1">
+                <div className="relative hidden xs:flex gap-0.5 xs:gap-1">
                   <button
-                    disabled
-                    title="Emoji picker (coming soon)"
-                    aria-label="Emoji picker (coming soon)"
-                    className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
+                    onClick={() => setShowEmojiPicker((v) => !v)}
+                    title="Emoji picker"
+                    aria-label="Emoji picker"
+                    className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400"
                   >
                     <Smile className="w-5 h-5" />
                   </button>
-                  <button
-                    disabled
-                    title="Attach file (coming soon)"
-                    aria-label="Attach file (coming soon)"
-                    className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
-                  >
-                    <Paperclip className="w-5 h-5" />
-                  </button>
+                  {showEmojiPicker && (
+                    <EmojiPicker
+                      onSelect={insertEmoji}
+                      onClose={() => setShowEmojiPicker(false)}
+                    />
+                  )}
                 </div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sendingImage || sendingVideo || !selectedGroup}
+                  title="Attach image or video"
+                  aria-label="Attach image or video"
+                  className="p-2.5 hover:bg-[rgb(var(--bg-hover))] rounded-xl transition-all text-[rgb(var(--text-muted))] hover:text-green-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
+                >
+                  {sendingImage || sendingVideo ? (
+                    <Loader className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Paperclip className="w-5 h-5" />
+                  )}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/*,video/*"
+                  onChange={handleGroupFileSelected}
+                />
 
                 {/* Input Box - RESPONSIVE & THEME AWARE */}
                 <div className="flex-1 rounded-2xl border border-[rgb(var(--border-secondary))]/60 bg-[rgb(var(--bg-tertiary))]/40 backdrop-blur-md focus-within:border-green-500/80 focus-within:ring-2 focus-within:ring-green-500/40 transition-all duration-200 hover:border-[rgb(var(--border-secondary))]/80">
                   <textarea
                     ref={messageInputRef}
                     value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
+                    onChange={(e) => {
+                      setNewMessage(e.target.value);
+                      handleGroupTyping(e.target.value.length > 0);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         handleSendMessage();
+                        handleGroupTyping(false);
                       }
                     }}
+                    onBlur={() => handleGroupTyping(false)}
+                    onPaste={handleGroupPaste}
                     placeholder="Message..."
                     rows={1}
                     className="w-full px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 md:py-3 bg-transparent text-sm sm:text-base md:text-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))]/70 resize-none focus:outline-none max-h-32 custom-scrollbar transition-colors"
@@ -1881,7 +2299,10 @@ useEffect(() => {
 
                 {/* Send Button - RESPONSIVE */}
                 <button
-                  onClick={handleSendMessage}
+                  onClick={() => {
+                    handleSendMessage();
+                    handleGroupTyping(false);
+                  }}
                   disabled={!newMessage.trim()}
                   title="Send message"
                   aria-label="Send message"
@@ -1913,6 +2334,18 @@ useEffect(() => {
       </div>
       {/*  CLOSE MAIN CONTENT WRAPPER */}
       </div>
+
+      <GroupAvatarModal
+        isOpen={showGroupAvatarModal}
+        onClose={() => setShowGroupAvatarModal(false)}
+        groupId={selectedGroup?.id}
+        groupName={selectedGroup?.name}
+        avatar={selectedGroup?.avatar}
+        onAvatarChange={(avatar) => {
+          setSelectedGroup((prev) => (prev ? { ...prev, avatar } : prev));
+          setGroups((prev) => prev.map((g) => (g.id === selectedGroup?.id ? { ...g, avatar } : g)));
+        }}
+      />
 
       {/*  CREATE GROUP MODAL - RESPONSIVE */}
       {showCreateGroupModal && (

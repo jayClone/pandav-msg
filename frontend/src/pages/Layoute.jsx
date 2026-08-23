@@ -13,6 +13,9 @@ import authService from "@services/auth.service";
 import cryptoService from "@services/crypto.service";
 import { applyTheme } from "@utils/themeUtils.js";
 import ThemeChanger from "@components/ThemeChanger";
+import ProfileSettingsModal from "@components/ProfileSettingsModal";
+import UnlockEncryptionModal from "@components/UnlockEncryptionModal";
+import Avatar from "@components/Avatar";
 import Chat from "./Chat";
 import GroupChat from "./GroupChat";
 import GroupChatErrorBoundary from '@components/GroupChatErrorBoundary';
@@ -84,6 +87,11 @@ export default function Layoute({ initialTab = "chats" }) {
     }
   }, [token]);
 
+  // The keypair only ever lives in sessionStorage (tab-scoped) — a valid
+  // login token in localStorage doesn't mean the keypair survived (new tab,
+  // browser restart, cleared session storage). Try to restore it locally
+  // first; if that fails, the getCurrentUser effect below decides whether
+  // to prompt for the password (see needsUnlock).
   useEffect(() => {
     if (!token || !currentUserId || cryptoService.myKeypair) {
       return;
@@ -92,9 +100,60 @@ export default function Layoute({ initialTab = "chats" }) {
     cryptoService.restoreMyKeypairFromSession(currentUserId);
   }, [token, currentUserId]);
 
+  const [needsUnlock, setNeedsUnlock] = useState(false);
+  const [unlockInfo, setUnlockInfo] = useState(null);
+
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabledState] = useState(() => {
+    return localStorage.getItem("notificationsEnabled") !== "false";
+  });
+
+  // Desktop notifications need explicit browser permission — request it the
+  // moment the user opts in via the toggle (a click is a user gesture,
+  // required for requestPermission to work in most browsers). If they deny
+  // it, flip the toggle back off so the UI doesn't claim it's on when
+  // nothing will actually show.
+  const setNotificationsEnabled = useCallback((enabled) => {
+    if (enabled && typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission().then((permission) => {
+        const granted = permission === "granted";
+        localStorage.setItem("notificationsEnabled", String(granted));
+        setNotificationsEnabledState(granted);
+      });
+      return;
+    }
+    localStorage.setItem("notificationsEnabled", String(enabled));
+    setNotificationsEnabledState(enabled);
+  }, []);
   const [showSettings, setShowSettings] = useState(false);
+  const [avatar, setAvatar] = useState(null);
+
+  // Avatar isn't in the JWT (bloats the token, and would need re-issuing on
+  // every change) — fetch it once on mount instead. Also doubles as the
+  // check for whether the E2EE keypair actually made it into memory: if
+  // not (see the restore-from-session effect above), prompt to unlock
+  // rather than let every message silently fail to decrypt.
+  useEffect(() => {
+    if (!token) return;
+    let isMounted = true;
+
+    authService.getCurrentUser()
+      .then((response) => {
+        if (!isMounted) return;
+        if (response?.data?.avatar) {
+          setAvatar(response.data.avatar);
+        }
+        if (!cryptoService.myKeypair && response?.data?.email && response?.data?.publicKey) {
+          setUnlockInfo({ email: response.data.email, publicKey: response.data.publicKey });
+          setNeedsUnlock(true);
+        }
+      })
+      .catch(() => {
+        // ProtectedRoute already handles auth failures; nothing more to do here.
+      });
+
+    return () => { isMounted = false; };
+  }, [token]);
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
   const [showFriendModal, setShowFriendModal] = useState(false);
@@ -168,12 +227,14 @@ export default function Layoute({ initialTab = "chats" }) {
       
       {/* DESKTOP SIDEBAR - Navigation Icons */}
       <div className={`hidden md:flex md:w-16 lg:w-20 glass-effect bg-[rgb(var(--bg-secondary))] md:bg-transparent border-r border-[rgb(var(--border-secondary))] flex-col items-center py-4 gap-6 transition-colors duration-300`}>
-        <div
-          className="w-10 lg:w-12 h-10 lg:h-12 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm lg:text-lg shadow-lg glow-green cursor-pointer hover:scale-110 transition-transform flex-shrink-0"
-          title={currentUserName}
+        <button
+          onClick={() => setShowSettings(true)}
+          title={`${currentUserName} — edit profile picture`}
+          aria-label="Edit profile picture"
+          className="cursor-pointer hover:scale-110 transition-transform flex-shrink-0"
         >
-          {currentUserName.charAt(0).toUpperCase()}
-        </div>
+          <Avatar src={avatar} name={currentUserName} />
+        </button>
 
         <nav className="flex flex-col gap-4">
           {navItems.map((item) => {
@@ -257,6 +318,7 @@ export default function Layoute({ initialTab = "chats" }) {
             setAllUsers={setAllUsers}
             currentUserName={currentUserName}
             currentUserId={currentUserId}
+            avatar={avatar}
             theme={theme}
             bgImage={bgImage}
             bgImages={bgImages}
@@ -280,6 +342,7 @@ export default function Layoute({ initialTab = "chats" }) {
               token={token}
               currentUserName={currentUserName}
               currentUserId={currentUserId}
+              notificationsEnabled={notificationsEnabled}
               onChatOpen={setIsChatOpen}
               isChatOpen={isChatOpen}
             />
@@ -358,7 +421,22 @@ export default function Layoute({ initialTab = "chats" }) {
           <div className="md:hidden fixed bottom-16 left-0 right-0 bg-[rgb(var(--bg-secondary))] border-t border-[rgb(var(--border-secondary))] rounded-t-2xl z-40 animate-in slide-in-from-bottom max-h-[50vh] overflow-y-auto">
             <div className="p-4 space-y-2">
               <h3 className="text-sm font-bold text-[rgb(var(--text-primary))] uppercase tracking-wider mb-4">More Options</h3>
-              
+
+              {/* Profile Picture */}
+              <button
+                onClick={() => {
+                  setShowSettings(true);
+                  setMobileBottomSheetOpen(false);
+                }}
+                className="w-full flex items-center justify-between p-3 bg-[rgb(var(--bg-hover))] rounded-lg hover:bg-[rgb(var(--bg-hover))]/80 transition-all"
+              >
+                <span className="text-sm text-[rgb(var(--text-muted))] flex items-center gap-3">
+                  <Avatar src={avatar} name={currentUserName} size="sm" />
+                  Profile Picture
+                </span>
+                <ChevronRight className="w-4 h-4 text-[rgb(var(--text-muted))]" />
+              </button>
+
               {/* Sound Toggle */}
               <div className="flex items-center justify-between p-3 bg-[rgb(var(--bg-hover))] rounded-lg">
                 <span className="text-sm text-[rgb(var(--text-muted))] flex items-center gap-2">
@@ -450,6 +528,33 @@ export default function Layoute({ initialTab = "chats" }) {
         onClose={() => setShowThemeModal(false)}
         onThemeChange={setBgImage}
       />
+
+      <ProfileSettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        currentUserName={currentUserName}
+        avatar={avatar}
+        onAvatarChange={setAvatar}
+      />
+
+      {needsUnlock && unlockInfo && (
+        <UnlockEncryptionModal
+          userId={currentUserId}
+          email={unlockInfo.email}
+          expectedPublicKey={unlockInfo.publicKey}
+          onUnlocked={() => {
+            // Messages already rendered as "decryption failed" won't
+            // retry on their own now that the keypair exists — a reload
+            // is the simplest way to get everything to refetch and
+            // decrypt correctly from a clean slate.
+            window.location.reload();
+          }}
+          onLogout={() => {
+            disconnectSocket();
+            navigate("/login");
+          }}
+        />
+      )}
     </div>
   );
 }

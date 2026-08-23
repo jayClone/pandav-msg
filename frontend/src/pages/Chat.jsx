@@ -12,6 +12,8 @@ import { getAuthUser } from "@/utils/authStorage.js";
 import friendAPI from '@api/friend.api.js';
 import { SOCKET_EVENTS } from "@constants/socketEvents.js";
 import { applyTheme, saveTheme } from "@utils/themeUtils.js";
+import { compressImageFile } from "@utils/imageCompression.js";
+import { compressVideoFile } from "@utils/videoCompression.js";
 import {
   getSocket,
   isSocketConnected,
@@ -38,16 +40,22 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import ThemeChanger from "@/components/ThemeChanger";
+import Avatar from "@/components/Avatar";
+import EmojiPicker from "@/components/EmojiPicker";
+import ReactionBar from "@/components/ReactionBar";
+import { showDesktopNotification } from "@utils/notifications.js";
 import { useDebounce } from '@hooks/useDebounce';
 
 export default function Chat({
   currentUserName,
   currentUserId,
+  avatar: myAvatar,
   token,
   allUsers,
   setAllUsers,
   sidebarOpen,
   setSidebarOpen,
+  notificationsEnabled,
   onChatOpen,
   isChatOpen,
 }) {
@@ -157,7 +165,6 @@ export default function Chat({
   
   //  NEW: Socket connection status
   const [socketStatus, setSocketStatus] = useState('connecting');
-  const [socketError, setSocketError] = useState('');
 
   // ✅ E2EE: peers whose public key changed since we last pinned it
   // (either a legit key rotation on their end, or the server swapping in
@@ -178,16 +185,6 @@ export default function Chat({
       }, 5000);
     }
   }, [error]);
-
-  //  AUTO-CLEAR SOCKET ERRORS AFTER 5 SECONDS
-  useEffect(() => {
-    if (socketError) {
-      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
-      errorTimeoutRef.current = setTimeout(() => {
-        setSocketError("");
-      }, 5000);
-    }
-  }, [socketError]);
 
   //  APPLY SAVED THEME ON MOUNT
   useEffect(() => {
@@ -312,6 +309,7 @@ export default function Chat({
           userId: u._id || u.userId,
           name: u.name,
           email: u.email,
+          avatar: u.avatar || null,
           publicKey: u.publicKey || null,
           online: !!u.isOnline,
           lastSeen: u.lastSeen || null,
@@ -402,8 +400,30 @@ export default function Chat({
       // ✅ E2EE: Decrypt encrypted messages BEFORE state update
       let messageText = data.message;
       let decrypted = false;
+      const isMedia = data.messageType === 'image' || data.messageType === 'video';
 
-      if (data.isEncrypted && cryptoService.isEncrypted(data.message)) {
+      if (isMedia) {
+        try {
+          if (!getEncryptionKey()) {
+            messageText = "[Decryption failed - keypair not initialized]";
+          } else {
+            const hasKey = await ensureSenderPublicKey(data.fromUserId);
+            if (!hasKey) {
+              messageText = "[Decryption failed - sender public key unavailable]";
+            } else {
+              const imageBytes = await cryptoService.decryptImage(
+                data.message, data.imageCiphertext, data.imageNonce, data.fromUserId
+              );
+              messageText = cryptoService.imageBytesToDataUrl(imageBytes, data.imageMimeType);
+              decrypted = true;
+            }
+          }
+        } catch (error) {
+          console.error("❌ Media decryption failed:", error.message);
+          messageText = null;
+          decrypted = false;
+        }
+      } else if (data.isEncrypted && cryptoService.isEncrypted(data.message)) {
         try {
           if (!getEncryptionKey()) {
             messageText = "[Decryption failed - keypair not initialized]";
@@ -438,6 +458,8 @@ export default function Chat({
           fromUserName: data.fromUserName || "Unknown",
           toUserId: data.toUserId || currentUserId,
           message: messageText,
+          messageType: data.messageType || 'text',
+          reactions: data.reactions || [],
           time: data.time || new Date().toISOString(),
           read: isInCurrentChat,
           delivered: true,
@@ -461,6 +483,17 @@ export default function Chat({
           ...prev,
           [data.fromUserId]: (prev[data.fromUserId] || 0) + 1,
         }));
+      }
+
+      // Only notify for messages the user isn't already looking at — either
+      // a different chat is open, or this one is but the tab itself isn't focused.
+      if (notificationsEnabled && (!isInCurrentChat || document.hidden)) {
+        const senderAvatar = allUsers.find((u) => u.userId === data.fromUserId)?.avatar;
+        showDesktopNotification(data.fromUserName || "New message", {
+          body: data.messageType === 'video' ? "🎥 Sent a video" : data.messageType === 'image' ? "📷 Sent a photo" : (decrypted ? messageText : "New message"),
+          icon: senderAvatar || undefined,
+          tag: `chat-${data.fromUserId}`,
+        });
       }
     };
 
@@ -494,6 +527,8 @@ export default function Chat({
             toUserId: data.toUserId,
             fromUserName: data.fromUserName || currentUserName,
             message: data.message, // Keep original (already plaintext from our send)
+            messageType: data.messageType || 'text',
+            reactions: [],
             time: data.time,
             delivered: true,
             read: false,
@@ -534,6 +569,13 @@ export default function Chat({
       setMessages((prev) => prev.filter((m) => String(m._id) !== String(data.messageId)));
     };
 
+    //  MESSAGE REACTION HANDLER
+    const handleMessageReactionEvent = (data) => {
+      setMessages((prev) => prev.map((m) => (
+        String(m._id) === String(data.messageId) ? { ...m, reactions: data.reactions } : m
+      )));
+    };
+
     // ✅ Real-time: someone accepting your friend request (or removing you)
     // used to only be reflected here after a manual refresh. Refetch the
     // friends list live instead.
@@ -544,18 +586,18 @@ export default function Chat({
     const registerListeners = (socket) => {
       const onConnect = () => {
         setSocketStatus('connected');
-        setSocketError('');
+        setError('');
       };
 
       const onDisconnect = (reason) => {
         setSocketStatus('disconnected');
-        setSocketError(`📴 Connection lost: ${reason}`);
+        setError(`📴 Connection lost: ${reason}`);
       };
 
       const onConnectError = (error) => {
         console.error('🔴 Socket error:', error.message);
         setSocketStatus('error');
-        setSocketError(`🔴 Connection Error: ${error.message}`);
+        setError(`🔴 Connection Error: ${error.message}`);
       };
 
       socket.on('connect', onConnect);
@@ -568,6 +610,7 @@ export default function Chat({
       socket.on(SOCKET_EVENTS.TYPING, handleTyping);
       socket.on(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
       socket.on(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
+      socket.on(SOCKET_EVENTS.MESSAGE_REACTION, handleMessageReactionEvent);
       socket.on(SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, handleFriendListChanged);
       socket.on(SOCKET_EVENTS.FRIEND_REMOVED, handleFriendListChanged);
 
@@ -589,6 +632,7 @@ export default function Chat({
         socket.off(SOCKET_EVENTS.TYPING, handleTyping);
         socket.off(SOCKET_EVENTS.MESSAGE_READ, handleMessageRead);
         socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handleMessageDeleted);
+        socket.off(SOCKET_EVENTS.MESSAGE_REACTION, handleMessageReactionEvent);
         socket.off(SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, handleFriendListChanged);
         socket.off(SOCKET_EVENTS.FRIEND_REMOVED, handleFriendListChanged);
       };
@@ -613,7 +657,7 @@ export default function Chat({
       if (socketInitInterval) clearInterval(socketInitInterval);
       if (cleanup) cleanup();
     };
-  }, [token, navigate, currentUserId, currentUserName, setAllUsers, fetchFriends]);
+  }, [token, navigate, currentUserId, currentUserName, setAllUsers, fetchFriends, notificationsEnabled]);
 
   //  FETCH CHAT HISTORY
   useEffect(() => {
@@ -644,8 +688,29 @@ export default function Chat({
           data.messages.map(async (msg) => {
             let messageText = msg.message;
             let decrypted = false;
+            const isMedia = msg.messageType === 'image' || msg.messageType === 'video';
 
-            if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
+            if (isMedia) {
+              try {
+                if (!getEncryptionKey()) {
+                  messageText = "[Decryption failed - keypair not initialized]";
+                } else {
+                  const peerId = await ensureMessagePeerKey(msg);
+                  if (!peerId) {
+                    messageText = "[Decryption failed - peer key unavailable]";
+                  } else {
+                    const imageBytes = await cryptoService.decryptImage(
+                      msg.message, msg.imageCiphertext, msg.imageNonce, peerId
+                    );
+                    messageText = cryptoService.imageBytesToDataUrl(imageBytes, msg.imageMimeType);
+                    decrypted = true;
+                  }
+                }
+              } catch (error) {
+                console.error("❌ Image decryption failed for history message:", error.message);
+                messageText = null;
+              }
+            } else if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
               try {
                 if (!getEncryptionKey()) {
                   messageText = "[Decryption failed - keypair not initialized]";
@@ -672,6 +737,8 @@ export default function Chat({
               toUserId: msg.toUserId,
               fromUserName: msg.senderName || "Unknown",
               message: messageText,
+              messageType: msg.messageType || 'text',
+              reactions: msg.reactions || [],
               time: msg.time,
               read: msg.read,
               createdAt: msg.createdAt,
@@ -744,8 +811,29 @@ export default function Chat({
         data.messages.map(async (msg) => {
           let messageText = msg.message;
           let decrypted = false;
+          const isMedia = msg.messageType === 'image' || msg.messageType === 'video';
 
-          if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
+          if (isMedia) {
+            try {
+              if (!getEncryptionKey()) {
+                messageText = "[Decryption failed - keypair not initialized]";
+              } else {
+                const peerId = await ensureMessagePeerKey(msg);
+                if (!peerId) {
+                  messageText = "[Decryption failed - peer key unavailable]";
+                } else {
+                  const imageBytes = await cryptoService.decryptImage(
+                    msg.message, msg.imageCiphertext, msg.imageNonce, peerId
+                  );
+                  messageText = cryptoService.imageBytesToDataUrl(imageBytes, msg.imageMimeType);
+                  decrypted = true;
+                }
+              }
+            } catch (error) {
+              console.error("❌ Image decryption failed for older message:", error.message);
+              messageText = null;
+            }
+          } else if (msg.isEncrypted && cryptoService.isEncrypted(msg.message)) {
             try {
               if (!getEncryptionKey()) {
                 messageText = "[Decryption failed - keypair not initialized]";
@@ -772,6 +860,8 @@ export default function Chat({
             toUserId: msg.toUserId,
             fromUserName: msg.senderName || "Unknown",
             message: messageText,
+            messageType: msg.messageType || 'text',
+            reactions: msg.reactions || [],
             time: msg.time,
             read: msg.read,
             createdAt: msg.createdAt,
@@ -876,7 +966,7 @@ export default function Chat({
   const handleSendMessage = useCallback(async () => {
     const socket = getSocket();
     if (!socket || !isSocketConnected()) {
-      setSocketError("🔴 Not connected. Please refresh.");
+      setError("🔴 Not connected. Please refresh.");
       return;
     }
 
@@ -888,7 +978,7 @@ export default function Chat({
       // ✅ E2EE: Check keypair is initialized
       if (!getEncryptionKey()) {
         console.error("❌ Encryption keypair not initialized");
-        setSocketError("🔓 Encryption not ready. Please refresh and log in again.");
+        setError("🔓 Encryption not ready. Please refresh and log in again.");
         return;
       }
 
@@ -906,7 +996,7 @@ export default function Chat({
 
       if (!recipientPublicKey) {
         console.warn("⚠️ Recipient public key is missing for selected user:", selectedUserId);
-        setSocketError("🔐 Recipient encryption key is missing. Ask them to log in again once so their key can be published.");
+        setError("🔐 Recipient encryption key is missing. Ask them to log in again once so their key can be published.");
         return;
       }
 
@@ -937,11 +1027,200 @@ export default function Chat({
       ]);
     } catch (err) {
       console.error("❌ Encryption failed:", err.message);
-      setSocketError(`🔒 Encryption error: ${err.message}`);
+      setError(`🔒 Encryption error: ${err.message}`);
     }
 
     setMessageInput("");
   }, [selectedUserId, messageInput, currentUserId, currentUserName, allUsers, getEncryptionKey]);
+
+  //  SEND IMAGE MESSAGE
+  const [sendingImage, setSendingImage] = useState(false);
+  const handleSendImage = useCallback(async (file) => {
+    const socket = getSocket();
+    if (!socket || !isSocketConnected()) {
+      setError("🔴 Not connected. Please refresh.");
+      return;
+    }
+    if (!selectedUserId || !file) return;
+
+    setSendingImage(true);
+    try {
+      if (!getEncryptionKey()) {
+        setError("🔓 Encryption not ready. Please refresh and log in again.");
+        return;
+      }
+
+      let recipientPublicKey = cryptoService.getPublicKey(selectedUserId);
+      if (!recipientPublicKey) {
+        const selectedUser = allUsers.find((user) => String(user.userId) === String(selectedUserId));
+        if (selectedUser?.publicKey) {
+          cryptoService.storePublicKey(selectedUserId, selectedUser.publicKey);
+          recipientPublicKey = cryptoService.getPublicKey(selectedUserId);
+        }
+      }
+      if (!recipientPublicKey) {
+        setError("🔐 Recipient encryption key is missing. Ask them to log in again once so their key can be published.");
+        return;
+      }
+
+      const { bytes, mimeType, dataUrl } = await compressImageFile(file, { maxDimension: 1280, quality: 0.7 });
+      const { wrappedKey, imageCiphertext, imageNonce, imageMimeType } =
+        await cryptoService.encryptImageForRecipient(bytes, mimeType, selectedUserId);
+
+      socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
+        toUserId: selectedUserId,
+        message: wrappedKey,
+        messageType: "image",
+        imageCiphertext,
+        imageNonce,
+        imageMimeType,
+        isEncrypted: true,
+      });
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          _id: `temp_${Date.now()}`,
+          fromUserId: currentUserId,
+          toUserId: selectedUserId,
+          fromUserName: currentUserName,
+          message: dataUrl,
+          messageType: "image",
+          time: new Date().toISOString(),
+          read: false,
+          delivered: true,
+          isEncrypted: true,
+          decrypted: true,
+        },
+      ]);
+    } catch (err) {
+      console.error("❌ Image send failed:", err.message);
+      setError(`🔒 Image send error: ${err.message}`);
+    } finally {
+      setSendingImage(false);
+    }
+  }, [selectedUserId, currentUserId, currentUserName, allUsers, getEncryptionKey]);
+
+  //  SEND VIDEO MESSAGE
+  const [sendingVideo, setSendingVideo] = useState(false);
+  const [videoStatus, setVideoStatus] = useState("");
+  const handleSendVideo = useCallback(async (file) => {
+    const socket = getSocket();
+    if (!socket || !isSocketConnected()) {
+      setError("🔴 Not connected. Please refresh.");
+      return;
+    }
+    if (!selectedUserId || !file) return;
+
+    setSendingVideo(true);
+    try {
+      if (!getEncryptionKey()) {
+        setError("🔓 Encryption not ready. Please refresh and log in again.");
+        return;
+      }
+
+      let recipientPublicKey = cryptoService.getPublicKey(selectedUserId);
+      if (!recipientPublicKey) {
+        const selectedUser = allUsers.find((user) => String(user.userId) === String(selectedUserId));
+        if (selectedUser?.publicKey) {
+          cryptoService.storePublicKey(selectedUserId, selectedUser.publicKey);
+          recipientPublicKey = cryptoService.getPublicKey(selectedUserId);
+        }
+      }
+      if (!recipientPublicKey) {
+        setError("🔐 Recipient encryption key is missing. Ask them to log in again once so their key can be published.");
+        return;
+      }
+
+      const { bytes, mimeType, dataUrl } = await compressVideoFile(file, { onStatus: setVideoStatus });
+      setVideoStatus("Encrypting…");
+      const { wrappedKey, imageCiphertext, imageNonce, imageMimeType } =
+        await cryptoService.encryptImageForRecipient(bytes, mimeType, selectedUserId);
+
+      socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
+        toUserId: selectedUserId,
+        message: wrappedKey,
+        messageType: "video",
+        imageCiphertext,
+        imageNonce,
+        imageMimeType,
+        isEncrypted: true,
+      });
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          _id: `temp_${Date.now()}`,
+          fromUserId: currentUserId,
+          toUserId: selectedUserId,
+          fromUserName: currentUserName,
+          message: dataUrl,
+          messageType: "video",
+          time: new Date().toISOString(),
+          read: false,
+          delivered: true,
+          isEncrypted: true,
+          decrypted: true,
+        },
+      ]);
+    } catch (err) {
+      console.error("❌ Video send failed:", err.message);
+      setError(`🔒 Video send error: ${err.message}`);
+    } finally {
+      setSendingVideo(false);
+      setVideoStatus("");
+    }
+  }, [selectedUserId, currentUserId, currentUserName, allUsers, getEncryptionKey]);
+
+  const handleFileSelected = useCallback((e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.type.startsWith("video/")) {
+      handleSendVideo(file);
+    } else {
+      handleSendImage(file);
+    }
+  }, [handleSendImage, handleSendVideo]);
+
+  //  EMOJI PICKER
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const insertEmoji = useCallback((emoji) => {
+    const textarea = messageInputRef.current;
+    if (textarea && typeof textarea.selectionStart === "number") {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      setMessageInput((prev) => prev.slice(0, start) + emoji + prev.slice(end));
+      requestAnimationFrame(() => {
+        textarea.focus();
+        const cursorPos = start + emoji.length;
+        textarea.setSelectionRange(cursorPos, cursorPos);
+      });
+    } else {
+      setMessageInput((prev) => prev + emoji);
+    }
+  }, []);
+
+  //  PASTE IMAGE/VIDEO FROM CLIPBOARD (e.g. screenshot copy -> Ctrl+V)
+  const handlePaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith("video/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) handleSendVideo(file);
+        return;
+      }
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) handleSendImage(file);
+        return;
+      }
+    }
+  }, [handleSendImage, handleSendVideo]);
 
   // Handle typing
   const handleChatTyping = useCallback(
@@ -1006,6 +1285,13 @@ export default function Chat({
   };
 
   //  DELETE MESSAGE HANDLER
+  //  REACT TO MESSAGE
+  const sendReaction = useCallback((messageId, emoji) => {
+    const socket = getSocket();
+    if (!socket || !isSocketConnected()) return;
+    socket.emit(SOCKET_EVENTS.MESSAGE_REACTION, { messageId, emoji });
+  }, []);
+
   const handleDeleteMessage = useCallback(
     async (messageId) => {
       const confirmed = window.confirm("Are you sure you want to delete this message?");
@@ -1016,7 +1302,7 @@ export default function Chat({
 
         const socket = getSocket();
         if (!socket || !isSocketConnected()) {
-          setSocketError("🔴 Not connected. Please refresh.");
+          setError("🔴 Not connected. Please refresh.");
           return;
         }
 
@@ -1177,22 +1463,7 @@ export default function Chat({
                     >
                       <div className="flex items-center gap-2 sm:gap-3">
                         {/* Avatar */}
-                        <div className="relative shrink-0">
-                          <div
-                            className={`w-10 sm:w-12 h-10 sm:h-12 rounded-full flex items-center justify-center text-white font-bold text-sm sm:text-base shadow-lg ${
-                              isOnline
-                                ? "bg-linear-to-br from-green-500 to-teal-600"
-                                : "bg-linear-to-br from-gray-500 to-gray-600"
-                            }`}
-                          >
-                            {name.charAt(0).toUpperCase()}
-                          </div>
-                          <div
-                            className={`absolute bottom-0 right-0 w-2.5 sm:w-3 h-2.5 sm:h-3 border-2 border-[rgb(var(--bg-secondary))] rounded-full ${
-                              isOnline ? "bg-green-400 pulse-glow" : "bg-gray-400"
-                            }`}
-                          ></div>
-                        </div>
+                        <Avatar src={user.avatar} name={name} online={isOnline} size="md" />
 
                         {/* User Info */}
                         <div className={`flex-1 min-w-0 ${unreadCount > 0 ? 'sm:flex-1' : 'flex-1'}`}>
@@ -1276,18 +1547,12 @@ export default function Chat({
                   </button>
 
                   {/* User Avatar & Info - Mobile Safe */}
-                  <div className="relative shrink-0">
-                    <div className="w-8 xs:w-9 sm:w-10 md:w-11 h-8 xs:h-9 sm:h-10 md:h-11 rounded-full bg-linear-to-br from-green-500 to-teal-600 flex items-center justify-center text-white font-bold shadow-lg glow-green text-xs sm:text-sm md:text-base">
-                      {getDisplayName(selectedUserId).charAt(0).toUpperCase()}
-                    </div>
-                    <div
-                      className={`absolute bottom-0 right-0 w-1.5 sm:w-2.5 md:w-3 h-1.5 sm:h-2.5 md:h-3 border-2 border-[rgb(var(--bg-secondary))] rounded-full pulse-glow ${
-                        allUsers.find(u => u.userId === selectedUserId)?.online 
-                          ? 'bg-green-400' 
-                          : 'bg-gray-400'
-                      }`}
-                    ></div>
-                  </div>
+                  <Avatar
+                    src={allUsers.find(u => u.userId === selectedUserId)?.avatar}
+                    name={getDisplayName(selectedUserId)}
+                    online={allUsers.find(u => u.userId === selectedUserId)?.online}
+                    size="sm"
+                  />
 
                   {/* User Name & Status */}
                   <div className="min-w-0 flex-1">
@@ -1372,17 +1637,11 @@ export default function Chat({
                         className={`flex gap-2 sm:gap-3 ${isOwn ? "flex-row-reverse" : "flex-row"} group animate-in fade-in slide-in-from-bottom-2 duration-300`}
                       >
                         {showAvatar ? (
-                          <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg shrink-0 ${
-                              isOwn
-                                ? "bg-linear-to-br from-blue-500 to-purple-600"
-                                : "bg-linear-to-br from-green-500 to-teal-600 glow-green"
-                            }`}
-                          >
-                            {(isOwn ? currentUserName : m.fromUserName)
-                              .charAt(0)
-                              .toUpperCase()}
-                          </div>
+                          <Avatar
+                            src={isOwn ? myAvatar : allUsers.find((u) => u.userId === m.fromUserId)?.avatar}
+                            name={isOwn ? currentUserName : m.fromUserName}
+                            size="sm"
+                          />
                         ) : (
                           <div className="w-8 shrink-0"></div>
                         )}
@@ -1392,15 +1651,41 @@ export default function Chat({
                           className={`flex flex-col ${isOwn ? "items-end" : "items-start"} w-full max-w-xs sm:max-w-sm md:max-w-md`}
                         >
                           {/* Message Box - Mobile Optimized */}
-                          <div
-                            className={`px-3 xs:px-3.5 sm:px-4 py-1.5 xs:py-2 sm:py-2.5 rounded-2xl shadow-lg transition-all group/message hover:shadow-xl text-xs sm:text-sm leading-relaxed break-words overflow-wrap-break-word ${
-                              isOwn
-                                ? "bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm"
-                                : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-primary))] rounded-tl-sm border border-[rgb(var(--border-secondary))]"
-                            }`}
-                          >
-                            {m.message}
-                          </div>
+                          {m.messageType === 'image' ? (
+                            m.message ? (
+                              <img
+                                src={m.message}
+                                alt="Shared image"
+                                className="max-w-[220px] xs:max-w-[260px] sm:max-w-xs rounded-2xl shadow-lg object-cover"
+                              />
+                            ) : (
+                              <div className="px-3 xs:px-3.5 sm:px-4 py-1.5 xs:py-2 sm:py-2.5 rounded-2xl shadow-lg text-xs sm:text-sm leading-relaxed bg-[rgb(var(--bg-tertiary))] text-red-400 border border-[rgb(var(--border-secondary))]">
+                                [Image could not be decrypted]
+                              </div>
+                            )
+                          ) : m.messageType === 'video' ? (
+                            m.message ? (
+                              <video
+                                src={m.message}
+                                controls
+                                className="max-w-[220px] xs:max-w-[260px] sm:max-w-xs rounded-2xl shadow-lg"
+                              />
+                            ) : (
+                              <div className="px-3 xs:px-3.5 sm:px-4 py-1.5 xs:py-2 sm:py-2.5 rounded-2xl shadow-lg text-xs sm:text-sm leading-relaxed bg-[rgb(var(--bg-tertiary))] text-red-400 border border-[rgb(var(--border-secondary))]">
+                                [Video could not be decrypted]
+                              </div>
+                            )
+                          ) : (
+                            <div
+                              className={`px-3 xs:px-3.5 sm:px-4 py-1.5 xs:py-2 sm:py-2.5 rounded-2xl shadow-lg transition-all group/message hover:shadow-xl text-xs sm:text-sm leading-relaxed break-words overflow-wrap-break-word ${
+                                isOwn
+                                  ? "bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm"
+                                  : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-primary))] rounded-tl-sm border border-[rgb(var(--border-secondary))]"
+                              }`}
+                            >
+                              {m.message}
+                            </div>
+                          )}
 
                           {/* Time, Status & Delete Button */}
                           <div
@@ -1447,6 +1732,17 @@ export default function Chat({
                               </button>
                             )}
                           </div>
+
+                          {m._id && !String(m._id).startsWith("temp_") && (
+                            <div className="mt-1 px-1">
+                              <ReactionBar
+                                reactions={m.reactions}
+                                currentUserId={currentUserId}
+                                onToggle={(emoji) => sendReaction(m._id, emoji)}
+                                align={isOwn ? "end" : "start"}
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1464,31 +1760,48 @@ export default function Chat({
                     <span className="line-clamp-1">{error}</span>
                   </div>
                 )}
+                {sendingVideo && videoStatus && (
+                  <div className="mb-1.5 sm:mb-2 p-2 sm:p-2.5 bg-green-500/10 border border-green-500/30 text-green-400 rounded-lg text-xs flex items-center gap-1.5 animate-in fade-in slide-in-from-top duration-200">
+                    <Loader className="w-3.5 sm:w-4 h-3.5 sm:h-4 flex-shrink-0 animate-spin" />
+                    <span className="line-clamp-1">{videoStatus}</span>
+                  </div>
+                )}
                 <div className="flex items-end gap-1 xs:gap-1.5 sm:gap-2">
-                  {/* Hidden on mobile, visible on xs+ */}
-                  <div className="hidden xs:flex gap-0.5 xs:gap-1">
+                  <div className="relative hidden xs:flex gap-0.5 xs:gap-1">
                     <button
-                      disabled
-                      title="Emoji picker (coming soon)"
-                      aria-label="Emoji picker (coming soon)"
-                      className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
+                      onClick={() => setShowEmojiPicker((v) => !v)}
+                      title="Emoji picker"
+                      aria-label="Emoji picker"
+                      className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
                     >
                       <Smile className="w-4 sm:w-5 h-4 sm:h-5" />
                     </button>
-                    <button
-                      disabled
-                      title="Attach file (coming soon)"
-                      aria-label="Attach file (coming soon)"
-                      className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
-                    >
-                      <Paperclip className="w-4 sm:w-5 h-4 sm:h-5" />
-                    </button>
+                    {showEmojiPicker && (
+                      <EmojiPicker
+                        onSelect={insertEmoji}
+                        onClose={() => setShowEmojiPicker(false)}
+                      />
+                    )}
                   </div>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sendingImage || sendingVideo || !selectedUserId}
+                    title="Attach image or video"
+                    aria-label="Attach image or video"
+                    className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
+                  >
+                    {sendingImage || sendingVideo ? (
+                      <Loader className="w-4 sm:w-5 h-4 sm:h-5 animate-spin" />
+                    ) : (
+                      <Paperclip className="w-4 sm:w-5 h-4 sm:h-5" />
+                    )}
+                  </button>
                   <input
                     ref={fileInputRef}
                     type="file"
                     className="hidden"
-                    accept="image/*"
+                    accept="image/*,video/*"
+                    onChange={handleFileSelected}
                   />
 
                   {/* Message Input - Theme Aware & Mobile Responsive */}
@@ -1508,6 +1821,7 @@ export default function Chat({
                         }
                       }}
                       onBlur={() => handleChatTyping(false)}
+                      onPaste={handlePaste}
                       placeholder="Type a message..."
                       rows={1}
                       className="w-full px-2.5 sm:px-3.5 md:px-4 py-2 sm:py-2.5 md:py-3 bg-transparent text-xs sm:text-sm md:text-base text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))]/70 resize-none focus:outline-none max-h-32 custom-scrollbar transition-colors"
