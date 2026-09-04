@@ -7,6 +7,14 @@ import { handleReadReceipt } from './handlers/read-receipt.handler.js';
 import { handleTyping } from './handlers/typing.handler.js';
 import { handleMessageDeleted } from './handlers/message-deleted.handler.js';
 import { handleMessageReaction } from './handlers/reaction.handler.js';
+import {
+  handleCallOffer,
+  handleCallAnswer,
+  handleCallIceCandidate,
+  handleCallReject,
+  handleCallEnd,
+  cleanupCallOnDisconnect,
+} from './handlers/call.handler.js';
 
 /**
  * Register all socket events
@@ -109,11 +117,55 @@ export function registerSocketEvents(io, socket, onlineUsers) {
   });
 
   // ═══════════════════════════════════════════════════════════════════
+  //  1:1 CALLING (WebRTC signaling relay)
+  // ═══════════════════════════════════════════════════════════════════
+  socket.on(SOCKET_EVENTS.CALL_OFFER, async (payload) => {
+    try {
+      await handleCallOffer(socket, io, payload, userId, name, onlineUsers);
+    } catch (error) {
+      console.error(" [SOCKET] Error handling call offer:", error.message);
+    }
+  });
+
+  socket.on(SOCKET_EVENTS.CALL_ANSWER, async (payload) => {
+    try {
+      await handleCallAnswer(socket, io, payload, userId);
+    } catch (error) {
+      console.error(" [SOCKET] Error handling call answer:", error.message);
+    }
+  });
+
+  socket.on(SOCKET_EVENTS.CALL_ICE_CANDIDATE, async (payload) => {
+    try {
+      await handleCallIceCandidate(socket, io, payload, userId);
+    } catch (error) {
+      console.error(" [SOCKET] Error handling call ICE candidate:", error.message);
+    }
+  });
+
+  socket.on(SOCKET_EVENTS.CALL_REJECT, async (payload) => {
+    try {
+      await handleCallReject(socket, io, payload, userId);
+    } catch (error) {
+      console.error(" [SOCKET] Error handling call reject:", error.message);
+    }
+  });
+
+  socket.on(SOCKET_EVENTS.CALL_END, async (payload) => {
+    try {
+      await handleCallEnd(socket, io, payload, userId);
+    } catch (error) {
+      console.error(" [SOCKET] Error handling call end:", error.message);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
   //  DISCONNECT
   // ═══════════════════════════════════════════════════════════════════
   socket.on("disconnect", async () => {
     try {
       handleUserDisconnect(socket, io, userId, name, onlineUsers);
+      cleanupCallOnDisconnect(io, userId);
     } catch (error) {
       console.error(" Error handling disconnect:", error.message);
     }

@@ -24,6 +24,8 @@ import {
   Pin,
   Circle,
   MoreVertical,
+  Phone,
+  Video,
   Send,
   Check,
   CheckCheck,
@@ -58,6 +60,8 @@ export default function Chat({
   notificationsEnabled,
   onChatOpen,
   isChatOpen,
+  onStartCall,
+  callStatus,
 }) {
   const navigate = useNavigate();
 
@@ -1568,6 +1572,33 @@ export default function Chat({
                     </p>
                   </div>
                 </div>
+
+                {/* Call Buttons */}
+                {(() => {
+                  const canCall = allUsers.find(u => u.userId === selectedUserId)?.online && callStatus === 'idle';
+                  return (
+                    <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => canCall && onStartCall?.(selectedUserId, getDisplayName(selectedUserId), 'audio')}
+                        disabled={!canCall}
+                        title="Voice call"
+                        aria-label="Voice call"
+                        className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 disabled:opacity-40 disabled:pointer-events-none"
+                      >
+                        <Phone className="w-4 sm:w-5 h-4 sm:h-5" />
+                      </button>
+                      <button
+                        onClick={() => canCall && onStartCall?.(selectedUserId, getDisplayName(selectedUserId), 'video')}
+                        disabled={!canCall}
+                        title="Video call"
+                        aria-label="Video call"
+                        className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 disabled:opacity-40 disabled:pointer-events-none"
+                      >
+                        <Video className="w-4 sm:w-5 h-4 sm:h-5" />
+                      </button>
+                    </div>
+                  );
+                })()}
 
                 {/* More Options Button */}
                 <button

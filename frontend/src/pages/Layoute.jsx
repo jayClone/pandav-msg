@@ -15,7 +15,9 @@ import { applyTheme } from "@utils/themeUtils.js";
 import ThemeChanger from "@components/ThemeChanger";
 import ProfileSettingsModal from "@components/ProfileSettingsModal";
 import UnlockEncryptionModal from "@components/UnlockEncryptionModal";
+import CallModal from "@components/CallModal";
 import Avatar from "@components/Avatar";
+import { useCall } from "@hooks/useCall.js";
 import Chat from "./Chat";
 import GroupChat from "./GroupChat";
 import GroupChatErrorBoundary from '@components/GroupChatErrorBoundary';
@@ -102,6 +104,8 @@ export default function Layoute({ initialTab = "chats" }) {
 
   const [needsUnlock, setNeedsUnlock] = useState(false);
   const [unlockInfo, setUnlockInfo] = useState(null);
+
+  const call = useCall(currentUserId);
 
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [notificationsEnabled, setNotificationsEnabledState] = useState(() => {
@@ -331,6 +335,8 @@ export default function Layoute({ initialTab = "chats" }) {
             token={token}
             onChatOpen={setIsChatOpen}
             isChatOpen={isChatOpen}
+            onStartCall={call.startCall}
+            callStatus={call.status}
           />
         ) : (
           <GroupChatErrorBoundary>
@@ -536,6 +542,8 @@ export default function Layoute({ initialTab = "chats" }) {
         avatar={avatar}
         onAvatarChange={setAvatar}
       />
+
+      <CallModal call={call} />
 
       {needsUnlock && unlockInfo && (
         <UnlockEncryptionModal

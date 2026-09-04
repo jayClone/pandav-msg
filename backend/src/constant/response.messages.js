@@ -35,6 +35,7 @@ export const MESSAGES = {
     NOT_FRIENDS: "You are not friends",
     FRIEND_REMOVED: "Friend removed successfully",
     CANNOT_MESSAGE: "You can only message friends",
+    CANNOT_CALL: "You can only call friends",
   },
 };
 
@@ -69,4 +70,13 @@ export const SOCKET_EVENTS = {
   GROUP_MEMBER_LEFT: "group_member_left",
   GROUP_DELETED: "group_deleted",
   GROUP_AVATAR_UPDATED: "group_avatar_updated",
+
+  // 1:1 voice/video calling — WebRTC signaling relay only, no media
+  // touches the server.
+  CALL_OFFER: "call_offer",
+  CALL_ANSWER: "call_answer",
+  CALL_ICE_CANDIDATE: "call_ice_candidate",
+  CALL_REJECT: "call_reject",
+  CALL_END: "call_end",
+  CALL_UNAVAILABLE: "call_unavailable",
 };
