@@ -103,13 +103,22 @@ export function useCall(currentUserId) {
       setLocalStream(stream);
 
       const pc = createPeerConnection(pending.fromUserId);
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
+      // Order matters: setRemoteDescription MUST happen before addTrack
+      // here. addTrack-before-setRemoteDescription makes the browser
+      // create fresh local transceivers with no offer to match against;
+      // when the offer is applied afterward, createAnswer() can pair its
+      // m-lines with the wrong transceiver, leaving one media direction
+      // silently recv-only (the exact "they hear me but I can't hear
+      // them" bug). Applying the offer first lets addTrack correctly
+      // reuse the transceivers the offer already implied.
       await pc.setRemoteDescription(new RTCSessionDescription(pending.offer));
       for (const candidate of pendingCandidatesRef.current) {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
       }
       pendingCandidatesRef.current = [];
+
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);

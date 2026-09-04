@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Avatar from '@components/Avatar';
 import {
   Phone,
@@ -10,12 +10,17 @@ import {
   AlertCircle,
 } from 'lucide-react';
 
+// A callback ref, not useRef+useEffect: the ring/incoming screen renders no
+// <video> tags at all, so the real element only mounts once the call
+// reaches "connected" — by which point localStream/remoteStream were
+// usually already set and don't change again, so a useEffect keyed on
+// [stream] would never re-fire to attach it (this was the black-video bug).
+// A callback ref re-runs on every mount AND whenever `stream` changes
+// (since its identity is tied to `stream`), so it can't miss either case.
 function useStreamRef(stream) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (ref.current) ref.current.srcObject = stream || null;
+  return useCallback((node) => {
+    if (node) node.srcObject = stream || null;
   }, [stream]);
-  return ref;
 }
 
 // Global call UI — rendered once from Layoute so an incoming call can be
