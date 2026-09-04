@@ -8,6 +8,12 @@ COPY bun.lock* ./
 RUN npm install -g bun && bun install
 
 COPY . .
+
+# Vite inlines VITE_* vars into the bundle at build time (this image builds
+# static files, then serves them with `serve` — there's no runtime env
+# injection), so it must be passed as a build arg, not a compose `environment:`.
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
 RUN bun run build
 
 FROM node:20-alpine
