@@ -12,6 +12,7 @@ import {
   Radio,
   CheckCircle,
   ArrowRight,
+  Download,
   X,
 } from 'lucide-react';
 
@@ -211,6 +212,12 @@ export default function Index() {
                         Login Here
                       </Button>
                     </Link>
+                    <a href="/downloads/pandav-msg.apk" download className="transform transition-all duration-300 hover:scale-105 w-full sm:w-auto">
+                      <Button className="w-full sm:w-auto px-6 sm:px-8 py-2.5 sm:py-3 bg-gradient-to-r from-green-600 to-green-700 text-white text-sm sm:text-base font-semibold hover:shadow-2xl transition-all duration-300">
+                        <Download className="w-4 h-4 sm:w-5 sm:h-5" />
+                        Download for Android
+                      </Button>
+                    </a>
                   </div>
 
                   <p className="text-xs sm:text-sm text-gray-500">
