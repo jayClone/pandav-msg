@@ -13,6 +13,11 @@ export const allowedOrigins = [
   'https://pandav-msg-frontend.vercel.app',
   'https://pandav.jaychaudhari.me',
   'https://www.pandav.jaychaudhari.me',
+  // The Capacitor Android app's WebView serves its bundled files from its
+  // own local virtual host — "https://localhost", not the real site's
+  // origin — so requests from the packaged app carry this as Origin.
+  'https://localhost',
+  'capacitor://localhost',
 ].filter(Boolean);
 
 export default allowedOrigins;

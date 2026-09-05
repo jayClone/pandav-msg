@@ -1,6 +1,7 @@
 import io from 'socket.io-client';
+import { Capacitor } from '@capacitor/core';
 
-const IS_DEV = import.meta.env.DEV; 
+const IS_DEV = import.meta.env.DEV;
 
 let socket = null;
 
@@ -26,7 +27,15 @@ export const connectSocket = (token) => {
     if (socket) socket.disconnect();
 
     let socketUrl = 'http://localhost:5000';
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    // The Capacitor Android app's WebView hostname is ALSO "localhost"
+    // (its own local virtual host, not a real dev server) — check the
+    // native platform explicitly rather than relying on hostname alone,
+    // or the packaged app silently tries to reach a socket server on the
+    // phone itself instead of the real backend.
+    const isRealWebDeployment = !Capacitor.isNativePlatform()
+        && window.location.hostname !== 'localhost'
+        && window.location.hostname !== '127.0.0.1';
+    if (Capacitor.isNativePlatform() || isRealWebDeployment) {
         socketUrl = import.meta.env.VITE_API_URL;
     }
 

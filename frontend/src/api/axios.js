@@ -1,4 +1,5 @@
 import axios from "axios";
+import { Capacitor } from "@capacitor/core";
 import {
   clearStoredToken,
   getStoredToken,
@@ -6,7 +7,14 @@ import {
 } from "@/utils/authStorage.js";
 
 const API_VERSION = "v1";
-const API_BASE_URL = `/api/${API_VERSION}`;
+// A relative path only works on the actual website, where nginx proxies
+// /api on the same origin the page was served from. Inside the Capacitor
+// Android app, the WebView serves the bundled files from its own local
+// "https://localhost" host — a relative path resolves against THAT, not
+// the real backend, so every API call silently hits nothing.
+const API_BASE_URL = Capacitor.isNativePlatform() && import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api/${API_VERSION}`
+  : `/api/${API_VERSION}`;
 
 const API = axios.create({
   baseURL: API_BASE_URL,
