@@ -21,6 +21,18 @@ export const connectSocket = (token) => {
     // explicit disconnectSocket() at logout, or once reconnection attempts
     // are actually exhausted).
     if (socket?.active) {
+        // Keep the live socket's auth payload current even though we're not
+        // rebuilding the connection — Socket.IO reads `socket.auth` fresh
+        // right before each (re)connection attempt (the documented pattern
+        // for updating credentials: https://socket.io/docs/v4/client-options/#auth).
+        // Without this, the access token captured at the original io() call
+        // just sits there until this socket eventually needs to reconnect
+        // (a network blip, phone sleep/wake, server restart) — and since
+        // JWT_ACCESS_EXPIRE is only 15 minutes, any session older than that
+        // would retry all 3 reconnection attempts with an already-expired
+        // token and permanently fail, silently killing every real-time
+        // feature until a manual page reload.
+        socket.auth.token = token;
         return socket;
     }
 

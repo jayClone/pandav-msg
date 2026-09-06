@@ -8,6 +8,11 @@ const createFakeSocket = () => {
   return {
     active: true,
     connected: true,
+    // Real socket.io-client stores the `auth` connection option on the
+    // Socket instance itself (and re-reads it before every reconnection
+    // attempt) — mirror that here so connectSocket's `socket.auth.token = …`
+    // has somewhere real to write.
+    auth: {},
     on: vi.fn((event, cb) => { listeners[event] = cb }),
     disconnect: vi.fn(function () {
       this.active = false
@@ -58,6 +63,26 @@ describe("socketClient", () => {
     expect(ioMock).toHaveBeenCalledTimes(1) // only the first call actually built a socket
     expect(fakeSocket.disconnect).not.toHaveBeenCalled()
     expect(second).toBe(first)
+  })
+
+  // Follow-on to the bug above: reusing the live socket instead of
+  // rebuilding it is correct, but the rotated token still has to end up
+  // somewhere Socket.IO will actually use it. socket.auth.token is what
+  // socket.io-client re-reads right before each reconnection attempt — if
+  // it's never updated here, a reconnect after the access token's 15-minute
+  // expiry (network blip, phone sleep/wake, server restart) keeps retrying
+  // with the original, by-then-expired token and permanently fails all 3
+  // attempts, silently killing every real-time feature.
+  test("connectSocket updates the live socket's auth token so a later reconnect uses the fresh one", async () => {
+    const fakeSocket = createFakeSocket()
+    ioMock.mockReturnValue(fakeSocket)
+
+    const { connectSocket } = await import("../socketClient.js")
+
+    connectSocket("token-1")
+    connectSocket("token-2") // token rotated, socket is still healthy
+
+    expect(fakeSocket.auth.token).toBe("token-2")
   })
 
   test("connectSocket builds a new socket if the previous one is no longer active (reconnection exhausted)", async () => {
