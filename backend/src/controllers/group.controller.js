@@ -417,7 +417,7 @@ export const addMember = async (req, res) => {
         const updatedGroup = await Group.findByIdAndUpdate(
             groupId,
             { $addToSet: { participants: newMemberObjId } },
-            { new: true }
+            { new: true, runValidators: true }
         )
             .populate('participants', 'name email publicKey avatar')
             .populate('adminId', 'name email avatar');
@@ -486,6 +486,21 @@ export const removeMember = async (req, res) => {
             });
         }
 
+        // An admin removing themselves through this path would leave
+        // group.adminId pointing at a non-participant, who could then still
+        // fully administer the group (every admin-gated action here checks
+        // only group.adminId, never current membership) while being unable
+        // to send/read messages in it — and there's no "promote a member"
+        // feature, so the group would have no way to ever get a working
+        // admin again. leaveGroup already handles this correctly (reassigns
+        // to another member, or blocks leaving an otherwise-empty group).
+        if (memberId === myId.toString()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Admins cannot remove themselves this way — use "Leave Group" instead'
+            });
+        }
+
         const memberObjIdToRemove = toObjectId(memberId);
 
         const memberExists = group.participants.some(
@@ -504,7 +519,7 @@ export const removeMember = async (req, res) => {
         const updatedGroup = await Group.findByIdAndUpdate(
             groupId,
             { $pull: { participants: memberObjIdToRemove } },
-            { new: true }
+            { new: true, runValidators: true }
         )
             .populate('participants', 'name email publicKey avatar')
             .populate('adminId', 'name email avatar');
@@ -541,8 +556,15 @@ export const getGroupMessages = async (req, res) => {
     try {
         const { groupId } = req.params;
         const userId = toObjectId(req.user.userId);
-        const { before, limit = 50 } = req.query;
-        const pageSize = parseInt(limit);
+        const { before } = req.query;
+        // The `pagination` middleware (wired on this route) already parses
+        // and clamps req.query.limit to [1, 500] — re-parsing it raw here
+        // meant that clamp was never applied: `?limit=0` reached
+        // `.limit()` as literally 0, which MongoDB/Mongoose treats as "no
+        // limit at all" rather than "zero results", so it returned this
+        // group's entire message history in one response; `?limit=999999`
+        // had no upper cap either.
+        const pageSize = req.pagination?.limit || 50;
 
         if (!isValidObjectId(groupId)) {
             return res.status(400).json({
@@ -716,7 +738,7 @@ export const leaveGroup = async (req, res) => {
         const updatedGroup = await Group.findOneAndUpdate(
             { _id: groupId, participants: userId },
             update,
-            { new: true }
+            { new: true, runValidators: true }
         )
             .populate('participants', 'name email publicKey avatar')
             .populate('adminId', 'name email avatar');

@@ -17,12 +17,22 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
         socket.join(userId.toString());
         console.log(`🏠 [SOCKET] User ${name} joined personal room: ${userId}`);
 
-        onlineUsers.set(userId, {
-            socketId: socket.id,
-            name: name,
-            email: email,
-            userId: userId
-        });
+        // A user can have more than one socket connected at once (multiple
+        // browser tabs, or a browser tab plus the Capacitor app) — track
+        // every one of them per user, not just the most recent, so that ONE
+        // of them disconnecting doesn't wipe the user's presence entry
+        // while others are still live (see handleUserDisconnect below).
+        const existingEntry = onlineUsers.get(userId);
+        if (existingEntry) {
+            existingEntry.socketIds.add(socket.id);
+        } else {
+            onlineUsers.set(userId, {
+                socketIds: new Set([socket.id]),
+                name: name,
+                email: email,
+                userId: userId
+            });
+        }
 
         const userGroups = await Group.find({
             participants: userId
@@ -62,6 +72,21 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
 export async function handleUserDisconnect(socket, io, userId, name, onlineUsers) {
     try {
         const now = new Date();
+
+        const existingEntry = onlineUsers.get(userId);
+        existingEntry?.socketIds.delete(socket.id);
+
+        // Other tabs/devices for this user are still connected — presence,
+        // delivery-status, and group online-member counts should all stay
+        // exactly as they are. Broadcasting "offline" here would be wrong:
+        // private-message.handler.js reads onlineUsers to decide the
+        // `delivered` flag it reports back to the sender, so this used to
+        // mark a still-online user's incoming messages as undelivered
+        // purely because their OTHER tab happened to disconnect first.
+        if (existingEntry && existingEntry.socketIds.size > 0) {
+            return;
+        }
+
         onlineUsers.delete(userId);
 
         await User.findByIdAndUpdate(userId, {

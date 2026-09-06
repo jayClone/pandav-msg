@@ -44,8 +44,15 @@ export const getChatHistory = async (req, res) => {
   try {
     const myId = req.user?.userId || req.user?._id;
     const otherUserId = req.params.userId;
-    const { before, limit = 50 } = req.query;
-    const pageSize = parseInt(limit);
+    const { before } = req.query;
+    // The `pagination` middleware (wired on this route) already parses and
+    // clamps req.query.limit to [1, 500] — re-parsing it raw here meant
+    // that clamp was never actually applied: `?limit=0` reached
+    // `.limit(pageSize + 1)` as `.limit(1)`... except MongoDB/Mongoose
+    // treats `.limit(0)` as "no limit at all", not "zero results", so
+    // `?limit=0` returned this entire conversation's history in one
+    // response, and `?limit=999999` had no upper cap either.
+    const pageSize = req.pagination?.limit || 50;
 
     if (!myId) {
       return res.status(401).json({

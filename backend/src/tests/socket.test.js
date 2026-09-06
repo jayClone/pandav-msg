@@ -823,4 +823,79 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
     }, 8000);
   });
 
+  describe('🔟 Multi-Tab Presence Test (user-status regression)', () => {
+
+    it('a second tab disconnecting should not mark the user offline/undelivered while their other tab is still connected', (done) => {
+      const tokenB = generateToken(testUsers.userB);
+      const socketB1 = io(API_URL, {
+        auth: { token: tokenB },
+        reconnection: false,
+        transports: ['websocket', 'polling']
+      });
+      const socketB2 = io(API_URL, {
+        auth: { token: tokenB },
+        reconnection: false,
+        transports: ['websocket', 'polling']
+      });
+
+      let handled = false;
+      const finish = (err) => {
+        if (handled) return;
+        handled = true;
+        socketB1.connected && socketB1.disconnect();
+        socketB2.connected && socketB2.disconnect();
+        done(err);
+      };
+
+      let b1Connected = false;
+      let b2Connected = false;
+
+      const startTestOnceBothConnected = () => {
+        if (!b1Connected || !b2Connected) return;
+
+        // Two "tabs" for userB are now connected. Disconnect the first one,
+        // then have userA message userB and confirm they're still reported
+        // as delivered/online via the second tab's still-live socket.
+        socketB1.disconnect();
+
+        setTimeout(() => {
+          const tokenA = generateToken(testUsers.userA);
+          const socketA = io(API_URL, {
+            auth: { token: tokenA },
+            reconnection: false,
+            transports: ['websocket', 'polling']
+          });
+
+          socketA.on('connect', () => {
+            socketA.emit('private_message', {
+              toUserId: testUsers.userB.id,
+              message: 'still there?'
+            });
+          });
+
+          socketA.on('message_sent', (data) => {
+            try {
+              expect(data.delivered).toBe(true);
+              console.log('✅ PASS: userB still marked delivered/online via their remaining tab');
+              socketA.disconnect();
+              finish();
+            } catch (err) {
+              socketA.disconnect();
+              finish(err);
+            }
+          });
+
+          socketA.on('connect_error', (error) => finish(error));
+        }, 500); // give the server a moment to process socketB1's disconnect
+      };
+
+      socketB1.on('connect', () => { b1Connected = true; startTestOnceBothConnected(); });
+      socketB2.on('connect', () => { b2Connected = true; startTestOnceBothConnected(); });
+      socketB1.on('connect_error', (error) => finish(error));
+      socketB2.on('connect_error', (error) => finish(error));
+
+      setTimeout(() => finish(new Error('timed out')), 8000);
+    }, 10000);
+  });
+
 });

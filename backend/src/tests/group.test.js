@@ -684,6 +684,33 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
 
       console.log('✅ TC-G-BONUS-04 PASSED\n');
     });
+
+    // Regression test: removeMember had no check against the admin
+    // targeting themselves, unlike leaveGroup (which correctly reassigns
+    // admin or blocks leaving an empty group). Removing yourself via this
+    // endpoint would leave group.adminId pointing at a non-participant, who
+    // could still fully administer the group (every admin-gated action here
+    // checks only adminId, never current membership) while unable to send
+    // or read messages in it — with no way for anyone to ever become admin
+    // again (no "promote member" feature).
+    it('TC-G-BONUS-05: Admin cannot remove themselves via removeMember (must use leaveGroup)', async () => {
+      const response = await request(app)
+        .delete(`/api/v1/groups/${testGroup._id}/members`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ memberId: userA._id.toString() })
+        .timeout(15000);
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('Leave Group');
+
+      // The admin must still be a participant afterward.
+      const groupAfter = await Group.findById(testGroup._id);
+      expect(groupAfter.adminId.toString()).toBe(userA._id.toString());
+      expect(groupAfter.participants.map(String)).toContain(userA._id.toString());
+
+      console.log('✅ TC-G-BONUS-05 PASSED\n');
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════════

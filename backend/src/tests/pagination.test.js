@@ -142,4 +142,98 @@ describe('🧪 PAGINATION TESTS', () => {
             expect(res2.body.data[0].message).toBe('Group Msg 1');
         });
     });
+
+    // Regression tests: both getChatHistory and getGroupMessages used to
+    // re-parse req.query.limit raw instead of reading the already-clamped
+    // req.pagination.limit set by the `pagination` middleware. MongoDB/
+    // Mongoose treats `.limit(0)` as "no limit at all" (not "zero
+    // results"), so `?limit=0` returned an entire conversation's/group's
+    // history in one response instead of falling back to a sane default.
+    describe('3) limit=0 no longer means "unlimited"', () => {
+        it('private chat: ?limit=0 falls back to the clamped default (50), not the full history', async () => {
+            const otherRegA = await registerTestUser(app, {
+                name: 'Limit Zero A', email: 'limitzero-a@test.com', password: 'Password123!'
+            });
+            const otherRegB = await registerTestUser(app, {
+                name: 'Limit Zero B', email: 'limitzero-b@test.com', password: 'Password123!'
+            });
+            const userX = otherRegA.body.data;
+            const userY = otherRegB.body.data;
+            const loginX = await request(app).post('/api/v1/auth/login').send({
+                email: 'limitzero-a@test.com', password: 'Password123!'
+            });
+            const tokenX = loginX.body.token;
+
+            const msgs = [];
+            for (let i = 1; i <= 55; i++) {
+                msgs.push({
+                    senderId: userX._id,
+                    receiverId: userY._id,
+                    message: `Overflow Msg ${i}`,
+                    createdAt: new Date(Date.now() - (56 - i) * 60000)
+                });
+            }
+            await Message.insertMany(msgs);
+
+            const res = await request(app)
+                .get(`/api/v1/messages/${userY._id}?limit=0`)
+                .set('Authorization', `Bearer ${tokenX}`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.data.length).toBe(50);
+            expect(res.body.hasMore).toBe(true);
+        });
+
+        it('group chat: ?limit=0 falls back to the clamped default (50), not the full history', async () => {
+            const otherRegA = await registerTestUser(app, {
+                name: 'Limit Zero Group A', email: 'limitzero-group-a@test.com', password: 'Password123!'
+            });
+            const otherRegB = await registerTestUser(app, {
+                name: 'Limit Zero Group B', email: 'limitzero-group-b@test.com', password: 'Password123!'
+            });
+            const userX = otherRegA.body.data;
+            const userY = otherRegB.body.data;
+            const loginX = await request(app).post('/api/v1/auth/login').send({
+                email: 'limitzero-group-a@test.com', password: 'Password123!'
+            });
+            const tokenX = loginX.body.token;
+
+            const sendRes = await request(app)
+                .post('/api/v1/friends')
+                .set('Authorization', `Bearer ${tokenX}`)
+                .send({ receiverId: userY._id });
+            const loginY = await request(app).post('/api/v1/auth/login').send({
+                email: 'limitzero-group-b@test.com', password: 'Password123!'
+            });
+            await request(app)
+                .patch(`/api/v1/friends/${sendRes.body.data._id}/accept`)
+                .set('Authorization', `Bearer ${loginY.body.token}`);
+
+            const groupRes = await request(app)
+                .post('/api/v1/groups')
+                .set('Authorization', `Bearer ${tokenX}`)
+                .send({ name: 'Overflow Group', memberIds: [userY._id] });
+            const groupId = groupRes.body.data._id;
+
+            const msgs = [];
+            for (let i = 1; i <= 55; i++) {
+                msgs.push({
+                    senderId: userX._id,
+                    groupId,
+                    chatType: 'group',
+                    message: `Overflow Group Msg ${i}`,
+                    createdAt: new Date(Date.now() - (56 - i) * 60000)
+                });
+            }
+            await Message.insertMany(msgs);
+
+            const res = await request(app)
+                .get(`/api/v1/groups/${groupId}/messages?limit=0`)
+                .set('Authorization', `Bearer ${tokenX}`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.data.length).toBe(50);
+            expect(res.body.hasMore).toBe(true);
+        });
+    });
 });
