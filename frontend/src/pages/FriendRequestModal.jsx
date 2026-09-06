@@ -97,7 +97,7 @@ export default function FriendRequestModal({
       
       //  PHASE 4: Single Aggregated Call (Much faster)
       const res = await friendAPI.getFriendshipSummary();
-      const { users, friends, pending } = res.data.data;
+      const { users, friends, pending, sent } = res.data.data;
 
       setAllUsers(users.map(user => ({
         _id: user._id,
@@ -111,6 +111,28 @@ export default function FriendRequestModal({
         senderId: {
           _id: req.senderId._id,
           name: req.senderId.name
+        }
+      })) || []);
+
+      // The summary endpoint already includes this user's own sent
+      // requests — without reading it, sentRequests only ever got
+      // populated as a side effect of handleSendRequest's own separate
+      // getSentRequests() call. That meant: it stayed empty on first
+      // open until a NEW request was sent, real-time refreshes (the
+      // socket listeners above) never updated it, and — worst — the
+      // Cancel button's own fetchAllData() refresh never removed the
+      // just-cancelled request from this list, leaving Contacts unable
+      // to show that person again (blocked by the same stale entry) and
+      // "Sent" showing a phantom entry whose Cancel button now 404s.
+      setSentRequests(sent?.map(req => ({
+        _id: req._id,
+        senderId: {
+          _id: req.senderId._id,
+          name: req.senderId.name
+        },
+        receiverId: {
+          _id: req.receiverId._id,
+          name: req.receiverId.name
         }
       })) || []);
 
