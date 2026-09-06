@@ -8,8 +8,6 @@ import logger from '../config/logger.js';
 import { sendServerError } from '../utils/errorResponse.js';
 import { invalidateFriendGraphCaches } from '../utils/friendCache.js';
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_REGEX = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])[A-Za-z0-9!@#$%^&*]{8,}$/;
 const ACCESS_TOKEN_EXPIRE = process.env.JWT_ACCESS_EXPIRE || '15m';
 const REFRESH_TOKEN_EXPIRE = process.env.JWT_REFRESH_EXPIRE || '30d';
 const REFRESH_COOKIE_NAME = 'refreshToken';
@@ -66,25 +64,44 @@ const generateRefreshToken = (user) => {
   );
 };
 
-const getCookieOptions = () => ({
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
-  path: '/',
-  maxAge: parseDurationToMs(REFRESH_TOKEN_EXPIRE)
-});
+// The Capacitor Android app's WebView sends requests from its own local
+// virtual host, "https://localhost" (or "capacitor://localhost" on older
+// versions) — genuinely cross-site relative to the real backend domain.
+// SameSite=Lax cookies are withheld on cross-site fetch/XHR (exactly how
+// axios.js talks to /auth/refresh), so a Lax refresh cookie set for one of
+// these origins is silently never sent back, forcing the app to lose its
+// session every ~15 minutes (the access-token lifetime) even though the
+// refresh session is still valid server-side. SameSite=None is required for
+// genuinely cross-site requests to carry a cookie at all, and browsers
+// reject SameSite=None without Secure outright, so secure must follow suit
+// for these origins regardless of NODE_ENV.
+const CROSS_SITE_COOKIE_ORIGINS = ['https://localhost', 'capacitor://localhost'];
 
-const clearRefreshCookie = (res) => {
+const getCookieOptions = (req) => {
+  const isCrossSiteOrigin = CROSS_SITE_COOKIE_ORIGINS.includes(req?.headers?.origin);
+
+  return {
+    httpOnly: true,
+    secure: isCrossSiteOrigin || process.env.NODE_ENV === 'production',
+    sameSite: isCrossSiteOrigin ? 'none' : 'lax',
+    path: '/',
+    maxAge: parseDurationToMs(REFRESH_TOKEN_EXPIRE)
+  };
+};
+
+const clearRefreshCookie = (req, res) => {
+  const isCrossSiteOrigin = CROSS_SITE_COOKIE_ORIGINS.includes(req?.headers?.origin);
+
   res.clearCookie(REFRESH_COOKIE_NAME, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: isCrossSiteOrigin || process.env.NODE_ENV === 'production',
+    sameSite: isCrossSiteOrigin ? 'none' : 'lax',
     path: '/'
   });
 };
 
-const setRefreshCookie = (res, token) => {
-  res.cookie(REFRESH_COOKIE_NAME, token, getCookieOptions());
+const setRefreshCookie = (req, res, token) => {
+  res.cookie(REFRESH_COOKIE_NAME, token, getCookieOptions(req));
 };
 
 const parseCookies = (cookieHeader = '') => {
@@ -123,7 +140,7 @@ const buildAuthResponse = (user, accessToken) => ({
   }
 });
 
-const issueSession = async (res, user) => {
+const issueSession = async (req, res, user) => {
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
 
@@ -132,7 +149,7 @@ const issueSession = async (res, user) => {
     lastSeen: new Date()
   });
 
-  setRefreshCookie(res, refreshToken);
+  setRefreshCookie(req, res, refreshToken);
 
   return accessToken;
 };
@@ -189,19 +206,14 @@ export const register = async (req, res) => {
       });
     }
 
-    if (!EMAIL_REGEX.test(normalizedEmail)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid email format'
-      });
-    }
-
-    if (!PASSWORD_REGEX.test(password)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 8 characters with uppercase, number, and special character'
-      });
-    }
+    // Email format and password strength are already fully validated by
+    // RegisterSchema (Joi) before this controller ever runs — re-checking
+    // here with separately-written regexes only risked the two definitions
+    // drifting apart. They already had: this controller's old password
+    // regex additionally restricted every character to a fixed whitelist
+    // that neither the frontend's checklist nor the Joi schema enforced,
+    // so a password could show all-green on the signup form and still get
+    // rejected here for containing e.g. an underscore.
 
     const userExist = await User.findOne({ email: normalizedEmail });
     if (userExist) {
@@ -237,7 +249,7 @@ export const register = async (req, res) => {
 
     await OTP.deleteOne({ _id: otpRecord._id });
 
-    const accessToken = await issueSession(res, user);
+    const accessToken = await issueSession(req, res, user);
 
     logger.info(`User registered: ${normalizedEmail}`);
 
@@ -294,7 +306,7 @@ export const login = async (req, res) => {
       await invalidateFriendGraphCaches(user._id);
     }
 
-    const accessToken = await issueSession(res, user);
+    const accessToken = await issueSession(req, res, user);
 
     logger.info(`User logged in: ${normalizedEmail}`);
 
@@ -343,12 +355,8 @@ export const resetPassword = async (req, res) => {
       });
     }
 
-    if (!PASSWORD_REGEX.test(newPassword)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 8 characters with uppercase, number, and special character'
-      });
-    }
+    // Already validated by ResetPasswordSchema (Joi) before this
+    // controller runs — see the matching comment in register() above.
 
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
@@ -374,7 +382,7 @@ export const resetPassword = async (req, res) => {
     // correct public key for the new password — a token from this endpoint
     // would just encourage skipping that.
     await revokeStoredRefreshToken(user._id);
-    clearRefreshCookie(res);
+    clearRefreshCookie(req, res);
 
     logger.info(`Password reset for ${normalizedEmail}`);
 
@@ -406,7 +414,7 @@ export const refreshSession = async (req, res) => {
         process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
       );
     } catch {
-      clearRefreshCookie(res);
+      clearRefreshCookie(req, res);
       return res.status(401).json({
         success: false,
         message: 'Refresh token is invalid or expired'
@@ -414,7 +422,7 @@ export const refreshSession = async (req, res) => {
     }
 
     if (decoded.type !== 'refresh') {
-      clearRefreshCookie(res);
+      clearRefreshCookie(req, res);
       return res.status(401).json({
         success: false,
         message: 'Refresh token is invalid or expired'
@@ -424,7 +432,7 @@ export const refreshSession = async (req, res) => {
     const user = await User.findById(decoded.userId).select('+refreshToken');
 
     if (!user || !user.refreshToken) {
-      clearRefreshCookie(res);
+      clearRefreshCookie(req, res);
       return res.status(401).json({
         success: false,
         message: 'Session not found'
@@ -433,14 +441,14 @@ export const refreshSession = async (req, res) => {
 
     if (user.refreshToken !== hashToken(refreshToken)) {
       await revokeStoredRefreshToken(user._id);
-      clearRefreshCookie(res);
+      clearRefreshCookie(req, res);
       return res.status(401).json({
         success: false,
         message: 'Session mismatch detected'
       });
     }
 
-    const accessToken = await issueSession(res, user);
+    const accessToken = await issueSession(req, res, user);
 
     res.status(200).json({
       ...buildAuthResponse(user, accessToken),
@@ -448,7 +456,7 @@ export const refreshSession = async (req, res) => {
     });
   } catch (error) {
     logger.error(`Refresh error: ${error.message}`);
-    clearRefreshCookie(res);
+    clearRefreshCookie(req, res);
     sendServerError(res, error, 'Session refresh failed');
   }
 };
@@ -465,11 +473,11 @@ export const logout = async (req, res) => {
         );
         await revokeStoredRefreshToken(decoded.userId);
       } catch {
-        clearRefreshCookie(res);
+        clearRefreshCookie(req, res);
       }
     }
 
-    clearRefreshCookie(res);
+    clearRefreshCookie(req, res);
 
     res.status(200).json({
       success: true,
@@ -477,7 +485,7 @@ export const logout = async (req, res) => {
     });
   } catch (error) {
     logger.error(`Logout error: ${error.message}`);
-    clearRefreshCookie(res);
+    clearRefreshCookie(req, res);
     sendServerError(res, error, 'Logout failed');
   }
 };

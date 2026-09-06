@@ -48,18 +48,25 @@ jobs:
           cd backend
           npm audit --audit-level=moderate || true
 
-      #  SIMPLE: Use GitHub secrets in tests
-      # - name: Run Backend Tests
-      #   run: |
-      #     cd backend
-      #     bun test  # havent updated my test cases so commented this :-)
-      #   env:
-      #     NODE_ENV: test
-      #     MONGO_URI: mongodb://localhost:27017/pandav_chat_test  #  Local DB for tests
-      #     JWT_SECRET: test_secret_key_min_32_chars_long_!@#$%^&*
-      #     JWT_EXPIRE: 7d
-      #     API_VERSION: v1
-      #     CLIENT_URL: http://localhost:5173
+      - name: Run backend tests
+        run: |
+          cd backend
+          bun run test
+        env:
+          NODE_ENV: test
+          MONGO_URI: mongodb://localhost:27017/pandav_chat_test
+          JWT_SECRET: test_secret_key_min_32_chars_long_123
+          JWT_REFRESH_SECRET: test_refresh_secret_key_min_32_chars_456
+          JWT_ACCESS_EXPIRE: 15m
+          JWT_REFRESH_EXPIRE: 30d
+          API_VERSION: v1
+          CLIENT_URL: http://localhost:5173
+          OTP_EXPIRY_MINUTES: 10
+          OTP_MAX_ATTEMPTS: 5
+          OTP_LENGTH: 6
+          RESEND_API_KEY: re_test_dummy_key_123
+          RESEND_FROM_EMAIL: test@example.com
+          RESEND_FROM_NAME: Test
 
       - name: Backend build check
         run: |
@@ -95,6 +102,11 @@ jobs:
         run: |
           cd frontend
           npm audit --audit-level=moderate || true
+
+      - name: Run frontend tests
+        run: |
+          cd frontend
+          bun run test:run
 
       - name: Frontend build check
         run: |

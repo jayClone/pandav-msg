@@ -99,9 +99,18 @@ export class OTPController {
 
       const normalizedEmail = email.trim().toLowerCase();
 
+      // Look up by {email, purpose} only — NOT also by the submitted otp
+      // value. sendOTP/resendOTP always delete any prior record for this
+      // {email, purpose} before creating a new one, so there's at most one
+      // record to find. Filtering the query on the guessed otp value too
+      // meant a WRONG guess made findOne return null, which fell straight
+      // into the generic "not found" branch below and skipped the
+      // attempts-increment/mismatch-message logic entirely — that code was
+      // unreachable dead code, since by the time a query match included the
+      // right otp, verification had already succeeded. This is what let
+      // OTP_MAX_ATTEMPTS go unenforced against real wrong guesses.
       const otpRecord = await OTP.findOne({
         email: normalizedEmail,
-        otp: otp.toString(),
         purpose
       });
 
@@ -177,10 +186,31 @@ export class OTPController {
 
       const normalizedEmail = email.trim().toLowerCase();
 
-     
+      // Same enumeration-prevention guard as sendOTP — without this, a
+      // resend-otp call bypassed it entirely: a registration OTP could be
+      // sent (and really emailed) to an address that already has an
+      // account, silently confirming the account exists.
+      const genericResponse = {
+        success: true,
+        message: 'New OTP sent successfully'
+      };
+
+      const userExists = await User.findOne({ email: normalizedEmail });
+
+      if (purpose === 'login' && !userExists) {
+        return res.status(200).json(genericResponse);
+      }
+
+      if (purpose === 'registration' && userExists) {
+        return res.status(200).json(genericResponse);
+      }
+
+      if (purpose === 'password-reset' && !userExists) {
+        return res.status(200).json(genericResponse);
+      }
+
       await OTP.deleteMany({ email: normalizedEmail, purpose });
 
- 
       const otp = generateOTP();
       const expiresAt = new Date(Date.now() + (process.env.OTP_EXPIRY_MINUTES || 10) * 60 * 1000);
 
@@ -192,11 +222,7 @@ export class OTPController {
         expiresAt
       });
 
-      let greetingName = name || 'User';
-      if (purpose === 'password-reset') {
-        const user = await User.findOne({ email: normalizedEmail }).select('name');
-        greetingName = user?.name || 'there';
-      }
+      const greetingName = purpose === 'password-reset' ? (userExists?.name || 'there') : (name || 'User');
 
       await EmailService.sendOTPEmail(normalizedEmail, otp, greetingName, purpose);
 

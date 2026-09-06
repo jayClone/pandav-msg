@@ -199,6 +199,62 @@ export const otpArcjet = async (req, res, next) => {
 };
 
 /**
+ * OTP *verify* rate limiting: 15 attempts per hour — deliberately separate
+ * from otpArcjet (send/resend). That bucket is tightly limited (3/hour) to
+ * stop email-sending abuse, but verify-otp was sharing it too — a couple of
+ * genuine typos while entering a 6-digit code could burn through the same
+ * budget needed to request a fresh OTP, locking a real user out of both
+ * retrying and resending for a full hour. Typos are expected; they
+ * shouldn't cost the same as triggering an actual email send.
+ */
+const otpVerifyAj = arcjet({
+  key: process.env.ARCJET_KEY,
+  environment: process.env.ARCJET_ENV || "production",
+  characteristics: ["ip.src", "http.request.headers['user-agent']"],
+  rules: [
+    shield({ mode: "LIVE" }),
+    tokenBucket({
+      mode: "LIVE",
+      refillRate: 15,
+      interval: 3600,
+      capacity: 15,
+    }),
+  ],
+});
+
+export const otpVerifyArcjet = async (req, res, next) => {
+  if (isTestEnv) {
+    return next();
+  }
+
+  try {
+    const decision = await otpVerifyAj.protect(req, { requested: 1 });
+
+    const remaining = decision.limits?.[0]?.remaining ?? 15;
+    const resetTime = decision.limits?.[0]?.resetTime ?? (Date.now() + 3600000);
+
+    res.set("X-RateLimit-Limit", "15");
+    res.set("X-RateLimit-Remaining", remaining.toString());
+
+    if (decision.isDenied()) {
+      const retryAfter = Math.ceil((resetTime - Date.now()) / 1000);
+      console.warn(`⚠️  OTP verify rate limit exceeded. Retry after: ${retryAfter}s`);
+
+      return res.status(429).json({
+        success: false,
+        message: "Too many verification attempts. Please try again later.",
+        retryAfter: Math.max(1, retryAfter),
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error("❌ OTP verify Arcjet error:", error.message);
+    next();
+  }
+};
+
+/**
  * Message rate limiting: 50 messages per minute
  */
 const msgAj = arcjet({
