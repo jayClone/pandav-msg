@@ -1157,4 +1157,88 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
     }, 8000);
   });
 
+  describe('1️⃣4️⃣ Call Ring Timeout Test (call.handler regression)', () => {
+    const originalRingTimeout = process.env.CALL_RING_TIMEOUT_MS;
+
+    afterAll(() => {
+      if (originalRingTimeout === undefined) {
+        delete process.env.CALL_RING_TIMEOUT_MS;
+      } else {
+        process.env.CALL_RING_TIMEOUT_MS = originalRingTimeout;
+      }
+    });
+
+    it('an unanswered call times out instead of leaving both users permanently "busy"', (done) => {
+      process.env.CALL_RING_TIMEOUT_MS = '1200';
+
+      const tokenA = generateToken(testUsers.userA);
+      const tokenB = generateToken(testUsers.userB);
+      const socketA = io(API_URL, { auth: { token: tokenA }, reconnection: false, transports: ['websocket', 'polling'] });
+      const socketB = io(API_URL, { auth: { token: tokenB }, reconnection: false, transports: ['websocket', 'polling'] });
+
+      let handled = false;
+      const finish = (err) => {
+        if (handled) return;
+        handled = true;
+        socketA.connected && socketA.disconnect();
+        socketB.connected && socketB.disconnect();
+        done(err);
+      };
+
+      let aConnected = false;
+      let bConnected = false;
+
+      const startOnceBothConnected = () => {
+        if (!aConnected || !bConnected) return;
+
+        // B deliberately never answers or rejects — simulating a callee who
+        // just doesn't pick up. Before the fix, activeCalls would stay set
+        // forever, permanently blocking both A and B as "busy".
+        socketA.emit('call_offer', {
+          toUserId: testUsers.userB.id,
+          offer: { type: 'offer', sdp: 'fake-sdp' },
+          callType: 'audio',
+        });
+
+        socketA.on('call_unavailable', (data) => {
+          try {
+            expect(data.reason).toBe('timeout');
+          } catch (e) {
+            finish(e);
+            return;
+          }
+
+          // The stuck-forever bug is specifically that activeCalls never
+          // clears — prove it actually did by immediately trying a second
+          // call and confirming it's NOT rejected as "busy".
+          socketA.once('call_unavailable', (second) => finish(new Error(`unexpected second call_unavailable: ${second.reason}`)));
+          socketA.emit('call_offer', {
+            toUserId: testUsers.userB.id,
+            offer: { type: 'offer', sdp: 'fake-sdp-2' },
+            callType: 'audio',
+          });
+          setTimeout(() => {
+            console.log('✅ PASS: call timed out and activeCalls was cleared (second offer not rejected as busy)');
+            finish();
+          }, 500);
+        });
+
+        socketB.on('call_end', (data) => {
+          try {
+            expect(data.reason).toBe('timeout');
+          } catch (e) {
+            finish(e);
+          }
+        });
+      };
+
+      socketA.on('connect', () => { aConnected = true; startOnceBothConnected(); });
+      socketB.on('connect', () => { bConnected = true; startOnceBothConnected(); });
+      socketA.on('connect_error', (error) => finish(error));
+      socketB.on('connect_error', (error) => finish(error));
+
+      setTimeout(() => finish(new Error('timed out')), 8000);
+    }, 10000);
+  });
+
 });

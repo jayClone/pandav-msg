@@ -165,4 +165,27 @@ describe('useCall', () => {
     expect(result.current.status).toBe('idle')
     expect(result.current.peer).toBeNull()
   })
+
+  // Regression test for the stuck-ringing-forever bug: an unanswered call
+  // used to leave both users permanently "busy" server-side since nothing
+  // ever cleared it. The server now emits call_unavailable with
+  // reason:'timeout' after the ring window — the caller should surface a
+  // "No answer" message distinct from busy/offline, not lump it in with
+  // "User is offline".
+  test('call_unavailable with reason "timeout" shows a distinct "No answer" message', async () => {
+    const { useCall } = await import('../useCall.js')
+    const { result } = renderHook(() => useCall('user-a'))
+
+    await act(async () => {
+      await result.current.startCall('user-b', 'Bob', 'audio')
+    })
+
+    act(() => {
+      listeners['call_unavailable']({ toUserId: 'user-b', reason: 'timeout' })
+    })
+
+    expect(result.current.error).toBe('No answer')
+    expect(result.current.status).toBe('idle')
+    expect(result.current.peer).toBeNull()
+  })
 })

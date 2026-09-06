@@ -221,7 +221,11 @@ export function useCall(currentUserId) {
       };
 
       const onUnavailable = ({ reason }) => {
-        setError(reason === 'busy' ? 'User is busy' : 'User is offline');
+        setError(
+          reason === 'busy' ? 'User is busy'
+            : reason === 'timeout' ? 'No answer'
+              : 'User is offline'
+        );
         cleanup();
         setStatus('idle');
         setPeer(null);
