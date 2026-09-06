@@ -44,6 +44,21 @@ export default function OTPVerification({
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
+
+    // Auto-submit the instant all 6 digits are present — reads newOTP (not
+    // the otp state, which hasn't re-rendered with this keystroke yet) so
+    // this fires exactly once, on the keystroke that actually completes it.
+    if (newOTP.every((digit) => digit !== '')) {
+      handleVerifyOTP(newOTP.join(''));
+    }
+  };
+
+  // Selects the existing digit on focus so typing a replacement digit
+  // overwrites it via the browser's normal selected-text behavior — without
+  // this, maxLength=1 blocks a second keystroke into an already-filled box
+  // outright, making it look like the box silently ignored the keypress.
+  const handleFocus = (e) => {
+    e.target.select();
   };
 
   // ✅ Handle backspace
@@ -54,8 +69,8 @@ export default function OTPVerification({
   };
 
   // ✅ Verify OTP
-  const handleVerifyOTP = async () => {
-    const otpCode = otp.join('');
+  const handleVerifyOTP = async (codeOverride) => {
+    const otpCode = codeOverride ?? otp.join('');
 
     if (otpCode.length !== 6) {
       setError('Please enter all 6 digits');
@@ -127,6 +142,10 @@ export default function OTPVerification({
 
       const nextIndex = Math.min(digits.length, 5);
       inputRefs.current[nextIndex]?.focus();
+
+      if (digits.length === 6) {
+        handleVerifyOTP(newOTP.join(''));
+      }
     }
   };
 
@@ -179,6 +198,7 @@ export default function OTPVerification({
               onChange={(e) => handleOTPChange(index, e.target.value)}
               onKeyDown={(e) => handleKeyDown(index, e)}
               onPaste={handlePaste}
+              onFocus={handleFocus}
               maxLength="1"
               disabled={loading || success}
               aria-label={`Digit ${index + 1} of 6`}
@@ -193,7 +213,7 @@ export default function OTPVerification({
 
       {/* Verify Button */}
       <button
-        onClick={handleVerifyOTP}
+        onClick={() => handleVerifyOTP()}
         disabled={loading || success || otp.join('').length !== 6}
         className="w-full bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 mb-4"
       >

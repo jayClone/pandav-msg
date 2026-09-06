@@ -75,12 +75,13 @@ const submitForm = async (user) => {
   await user.click(screen.getByRole("button", { name: /continue with email verification/i }))
 }
 
+// Typing the 6th digit auto-submits (OTPVerification's handleOTPChange),
+// so there's no button left to click by the time all digits are in.
 const enterOtpAndVerify = async (user, code = "123456") => {
   const otpInputs = screen.getAllByRole("textbox")
   for (let i = 0; i < otpInputs.length; i++) {
     await user.type(otpInputs[i], code[i])
   }
-  await user.click(screen.getByRole("button", { name: /verify otp/i }))
 }
 
 describe("SignupForm", () => {
