@@ -85,10 +85,18 @@ export const sendFriendRequest = async (req, res) => {
       await Friend.findByIdAndDelete(reverseRequest._id);
     }
 
+    // Same value regardless of who's sender/receiver, so the unique index
+    // on it (Friend.js) atomically rejects a second request for this pair
+    // even if it arrives concurrently in the other direction — the
+    // findOne checks above narrow the race window but can't close it by
+    // themselves.
+    const pairKey = [senderId.toString(), receiverId.toString()].sort().join('_');
+
     const friendRequest = await Friend.create({
       senderId,
       receiverId,
       status: 'pending',
+      pairKey,
     });
 
     emitToUser(req, receiverId, SOCKET_EVENTS.FRIEND_REQUEST_RECEIVED, {
@@ -498,12 +506,14 @@ export const removeFriend = async (req, res) => {
       });
     }
 
-    const friend = await Friend.findOne({
+    const friendshipQuery = {
       $or: [
         { senderId: userId, receiverId: friendId, status: 'accepted' },
         { senderId: friendId, receiverId: userId, status: 'accepted' },
       ],
-    });
+    };
+
+    const friend = await Friend.findOne(friendshipQuery);
 
     if (!friend) {
       return res.status(404).json({
@@ -512,7 +522,13 @@ export const removeFriend = async (req, res) => {
       });
     }
 
-    await Friend.findByIdAndDelete(friend._id);
+    // Delete every matching doc, not just one: a request race from before
+    // the pairKey uniqueness fix (see Friend.js) could have left two
+    // accepted rows for the same pair, and leaving one behind would keep
+    // areFriends() checks (private-message.handler.js) finding a
+    // friendship after "unfriending" — silently not actually blocking
+    // messaging.
+    await Friend.deleteMany(friendshipQuery);
 
     await Promise.all([
       deleteCache(`friends:v2:${userId}`),

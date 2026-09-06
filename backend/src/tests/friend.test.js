@@ -927,6 +927,44 @@ describe('🧪 FRIEND REQUEST FEATURE TESTS', () => {
 
       console.log('✅ TC-F-29 PASSED: Remove affects both users');
     });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TC-F-37: Regression — removeFriend clears every matching doc, not just one
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-F-37: Remove friend deletes all accepted docs for the pair, even duplicates', async () => {
+      // Simulates leftover duplicate data (e.g. from the pre-fix race in
+      // TC-F-36): two accepted Friend rows for the same pair, in opposite
+      // directions. removeFriend used to findOne + delete just one of
+      // them, so the other stayed behind and areFriends() checks kept
+      // treating the pair as friends after "unfriending".
+      await Friend.create({ senderId: userA._id, receiverId: userB._id, status: 'accepted', acceptedAt: new Date() });
+      await Friend.create({ senderId: userB._id, receiverId: userA._id, status: 'accepted', acceptedAt: new Date() });
+
+      const before = await Friend.find({
+        $or: [
+          { senderId: userA._id, receiverId: userB._id },
+          { senderId: userB._id, receiverId: userA._id },
+        ],
+      });
+      expect(before.length).toBe(2);
+
+      const removeRes = await request(app)
+        .delete(`/api/v1/friends/${userB._id}/remove`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .timeout(15000);
+
+      expect(removeRes.status).toBe(200);
+
+      const after = await Friend.find({
+        $or: [
+          { senderId: userA._id, receiverId: userB._id },
+          { senderId: userB._id, receiverId: userA._id },
+        ],
+      });
+      expect(after.length).toBe(0);
+
+      console.log('✅ TC-F-37 PASSED: removeFriend clears every duplicate accepted doc');
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -1122,6 +1160,68 @@ describe('🧪 FRIEND REQUEST FEATURE TESTS', () => {
     expect(response.body.message).toContain('Invalid user ID format');
 
     console.log('✅ TC-F-35 PASSED: Invalid ID handled gracefully');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TC-F-36: Regression — pairKey unique index rejects a true concurrent
+    // duplicate at the DB layer (the actual race sendFriendRequest's
+    // non-atomic findOne checks can't close by themselves)
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-F-36a: pairKey unique index rejects a concurrent duplicate create for the same pair', async () => {
+      const pairKey = [userA._id.toString(), userB._id.toString()].sort().join('_');
+
+      const results = await Promise.allSettled([
+        Friend.create({ senderId: userA._id, receiverId: userB._id, status: 'pending', pairKey }),
+        Friend.create({ senderId: userB._id, receiverId: userA._id, status: 'pending', pairKey }),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      expect(fulfilled.length).toBe(1);
+      expect(rejected.length).toBe(1);
+      expect(rejected[0].reason.code).toBe(11000);
+
+      const allDocs = await Friend.find({ pairKey });
+      expect(allDocs.length).toBe(1);
+
+      console.log('✅ TC-F-36a PASSED: concurrent duplicate pairKey rejected at the DB layer');
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TC-F-36b: End-to-end — simultaneous opposite-direction HTTP requests
+    // never leave more than one Friend document for the pair. Either one
+    // request wins and the other is rejected (true race, closed by the
+    // pairKey index) or the second legitimately replaces the first's
+    // reverse-pending row (the app's existing, intentional behavior when
+    // requests don't race) — both are fine; two surviving documents is not.
+    // ───────────────────────────────────────────────────────────────────────────
+    it('TC-F-36b: simultaneous requests in both directions never leave two Friend docs for the pair', async () => {
+      const [resA, resB] = await Promise.all([
+        request(app)
+          .post('/api/v1/friends')
+          .set('Authorization', `Bearer ${tokenA}`)
+          .send({ receiverId: userB._id })
+          .timeout(15000),
+        request(app)
+          .post('/api/v1/friends')
+          .set('Authorization', `Bearer ${tokenB}`)
+          .send({ receiverId: userA._id })
+          .timeout(15000),
+      ]);
+
+      expect(resA.status).toBeLessThan(500);
+      expect(resB.status).toBeLessThan(500);
+
+      const allDocs = await Friend.find({
+        $or: [
+          { senderId: userA._id, receiverId: userB._id },
+          { senderId: userB._id, receiverId: userA._id },
+        ],
+      });
+      expect(allDocs.length).toBe(1);
+
+      console.log('✅ TC-F-36b PASSED: at most one Friend doc survives concurrent opposite-direction requests');
     });
   });
 

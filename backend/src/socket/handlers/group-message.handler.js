@@ -61,18 +61,31 @@ export async function handleGroupMessage(socket, io, payload, userId, name) {
       }
     }
 
-    const savedMessage = await Message.create({
-      senderId: userId,
-      groupId: groupId,
-      chatType: 'group',
-      isEncrypted: !!isEncrypted,
-      delivered: true,
-      readBy: [],
-      ...(isMedia && { messageType, imageCiphertext, imageNonce, imageMimeType }),
-      ...(isEncrypted
-        ? { groupCiphertexts: ciphertexts }
-        : (!isMedia && { message: message.trim() }))
-    });
+    let savedMessage;
+    try {
+      savedMessage = await Message.create({
+        senderId: userId,
+        groupId: groupId,
+        chatType: 'group',
+        isEncrypted: !!isEncrypted,
+        delivered: true,
+        readBy: [],
+        ...(isMedia && { messageType, imageCiphertext, imageNonce, imageMimeType }),
+        ...(isEncrypted
+          ? { groupCiphertexts: ciphertexts }
+          : (!isMedia && { message: message.trim() }))
+      });
+    } catch (dbError) {
+      // Without this, a schema validation failure (e.g. an imageMimeType
+      // outside the enum, or an oversized ciphertext) fell through to the
+      // outer catch below, which only logs server-side — unlike the
+      // private-chat equivalent, the sender got no error and the message
+      // just silently vanished.
+      socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
+        message: 'Failed to save message'
+      });
+      return;
+    }
 
     const populatedMessage = await Message.findById(savedMessage._id)
       .populate('senderId', 'name email _id')

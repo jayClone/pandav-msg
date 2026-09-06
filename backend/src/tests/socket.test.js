@@ -990,4 +990,67 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
     }, 12000);
   });
 
+  describe('1️⃣2️⃣ Group Message Save Failure Feedback Test (group-message regression)', () => {
+
+    it('a group message that fails schema validation gets an error_message back instead of silently vanishing', (done) => {
+      (async () => {
+        const group = await Group.create({
+          name: 'Save Failure Test Group',
+          participants: [testUsers.userA.id],
+          adminId: testUsers.userA.id
+        });
+
+        const tokenA = generateToken(testUsers.userA);
+        const socketA = io(API_URL, {
+          auth: { token: tokenA },
+          reconnection: false,
+          transports: ['websocket', 'polling']
+        });
+
+        let handled = false;
+        const finish = async (err) => {
+          if (handled) return;
+          handled = true;
+          const created = await Message.findOne({ groupId: group._id });
+          if (!err) {
+            try {
+              expect(created).toBeNull();
+            } catch (e) {
+              err = e;
+            }
+          }
+          socketA.disconnect();
+          done(err);
+        };
+
+        socketA.on('error_message', (data) => {
+          try {
+            expect(data.message).toBe('Failed to save message');
+            console.log('✅ PASS: group message save failure reported back to sender');
+            finish();
+          } catch (e) {
+            finish(e);
+          }
+        });
+
+        socketA.on('connect', () => {
+          // imageMimeType outside the schema's enum — passes the handler's
+          // own presence check but fails Message.create's schema
+          // validation, which used to be swallowed by the outer catch.
+          socketA.emit('group_message', {
+            groupId: group._id.toString(),
+            messageType: 'image',
+            imageCiphertext: 'ciphertext',
+            imageNonce: 'nonce',
+            imageMimeType: 'image/heic',
+          });
+        });
+
+        socketA.on('connect_error', (error) => finish(error));
+
+        setTimeout(() => finish(new Error('timed out')), 5000);
+      })();
+    }, 8000);
+  });
+
 });
