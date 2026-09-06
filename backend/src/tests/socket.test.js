@@ -771,6 +771,61 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
         setTimeout(finish, 5000);
       })();
     }, 8000);
+
+    it('regression: the real receiver is still notified even if the client sends a wrong/stale toUserId', (done) => {
+      (async () => {
+        const msg = await Message.create({
+          senderId: testUsers.userA.id,
+          receiverId: testUsers.userB.id,
+          message: 'Owned by A, deleted with a bogus toUserId',
+          chatType: 'private'
+        });
+
+        const tokenA = generateToken(testUsers.userA);
+        const tokenB = generateToken(testUsers.userB);
+        const socketA = io(API_URL, { auth: { token: tokenA }, reconnection: false, transports: ['websocket', 'polling'] });
+        const socketB = io(API_URL, { auth: { token: tokenB }, reconnection: false, transports: ['websocket', 'polling'] });
+
+        let handled = false;
+        const finish = (err) => {
+          if (handled) return;
+          handled = true;
+          socketA.connected && socketA.disconnect();
+          socketB.connected && socketB.disconnect();
+          done(err);
+        };
+
+        let aConnected = false;
+        let bConnected = false;
+        const startOnceBothConnected = () => {
+          if (!aConnected || !bConnected) return;
+
+          socketB.on('message_deleted', (data) => {
+            try {
+              expect(data.messageId).toBe(msg._id.toString());
+              console.log('✅ PASS: real receiver notified despite a bogus client-supplied toUserId');
+              finish();
+            } catch (e) {
+              finish(e);
+            }
+          });
+
+          // Deliberately wrong toUserId — the fix must route the
+          // notification using the message's own DB receiverId, not this.
+          socketA.emit('message_deleted', {
+            messageId: msg._id.toString(),
+            toUserId: '507f1f77bcf86cd799439011'
+          });
+        };
+
+        socketA.on('connect', () => { aConnected = true; startOnceBothConnected(); });
+        socketB.on('connect', () => { bConnected = true; startOnceBothConnected(); });
+        socketA.on('connect_error', (error) => finish(error));
+        socketB.on('connect_error', (error) => finish(error));
+
+        setTimeout(() => finish(new Error('timed out — real receiver was never notified')), 5000);
+      })();
+    }, 8000);
   });
 
   // ═══════════════════════════════════════════════════════════════════════════════
