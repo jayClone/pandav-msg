@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { vi } from "vitest"
 import naclLib from "tweetnacl"
@@ -320,6 +320,41 @@ describe("GroupChat", () => {
     errorHandler({ message: "Too many messages. Please slow down." })
 
     expect(await screen.findByText(/too many messages/i)).toBeInTheDocument()
+  })
+
+  // Regression test: the "Delete Group?" confirmation — the only
+  // non-undoable action in this component — had no Escape-to-close and no
+  // focus trap, so a keyboard user tabbing from the trigger walked into
+  // the (still-rendered, just visually covered) background page instead
+  // of staying inside the dialog.
+  test("the delete-group confirmation auto-focuses Cancel, traps Tab, and closes on Escape", async () => {
+    const user = userEvent.setup()
+    renderGroupChat()
+    await user.click(await screen.findByText("Test Group"))
+    await waitFor(() => expect(mockGetGroup).toHaveBeenCalled())
+
+    await user.click(screen.getByLabelText("Group options"))
+    await user.click(screen.getByText(/delete/i))
+
+    const dialog = await screen.findByRole("dialog", { name: /delete group confirmation/i })
+    const cancelButton = within(dialog).getByRole("button", { name: /cancel/i })
+    const deleteButton = within(dialog).getByRole("button", { name: /^delete$/i })
+
+    // Auto-focused the safe default, not the destructive action.
+    await waitFor(() => expect(document.activeElement).toBe(cancelButton))
+
+    // Tab wraps forward from the last focusable button back to the first.
+    deleteButton.focus()
+    await user.keyboard("{Tab}")
+    expect(document.activeElement).toBe(cancelButton)
+
+    // Shift+Tab wraps backward from the first back to the last.
+    cancelButton.focus()
+    await user.keyboard("{Shift>}{Tab}{/Shift}")
+    expect(document.activeElement).toBe(deleteButton)
+
+    await user.keyboard("{Escape}")
+    expect(screen.queryByText(/delete group\?/i)).not.toBeInTheDocument()
   })
 
   test("creates a group with a selected member", async () => {

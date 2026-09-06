@@ -1126,6 +1126,43 @@ export default function GroupChat({
     }
   };
 
+  // The "Delete Group?" confirmation is the only non-undoable action in
+  // this component, but — like every modal here — had no Escape-to-close
+  // and no focus trap: Tab/Shift+Tab from whatever triggered it walked
+  // straight through the (still-rendered, just visually covered)
+  // background page instead of staying inside the dialog. Auto-focuses
+  // Cancel (the safe default) on open, traps Tab between the two buttons,
+  // and closes on Escape.
+  const deleteConfirmRef = useRef(null);
+  useEffect(() => {
+    if (!showDeleteConfirm) return;
+
+    const container = deleteConfirmRef.current;
+    const focusable = container?.querySelectorAll('button:not(:disabled)') || [];
+    focusable[0]?.focus();
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setShowDeleteConfirm(false);
+        return;
+      }
+      if (e.key !== 'Tab' || focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showDeleteConfirm]);
+
   const fetchAvailableUsers = useCallback(async () => {
     try {
       await axios.get("/users", {
@@ -2542,7 +2579,7 @@ useEffect(() => {
       {/*  DELETE CONFIRM - RESPONSIVE */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 rounded-lg border border-red-600 p-6 max-w-md w-full">
+          <div ref={deleteConfirmRef} role="dialog" aria-modal="true" aria-label="Delete group confirmation" className="bg-slate-900 rounded-lg border border-red-600 p-6 max-w-md w-full">
             <h3 className="text-lg font-bold text-red-400 mb-2">Delete Group?</h3>
             <p className="text-sm text-slate-300 mb-4">
               This will permanently delete "{selectedGroup?.name}" and all messages. This action cannot be undone.
