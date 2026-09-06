@@ -1803,13 +1803,27 @@ useEffect(() => {
                 const unreadCount = unreadCounts[id] || 0;
                 const lastMsg = lastMessages[id];
 
+                const openThisGroup = () => {
+                  handleSelectGroup(group);
+                  if (window.innerWidth < 640) {
+                    setSidebarOpen(false);
+                  }
+                };
+
                 return (
                   <div
                     key={id}
-                    onClick={() => {
-                      handleSelectGroup(group);
-                      if (window.innerWidth < 640) {
-                        setSidebarOpen(false);
+                    onClick={openThisGroup}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      // Guard against the nested Pin <button> below: Enter/
+                      // Space on it fires a keydown that bubbles up here
+                      // too, which would otherwise also open the group.
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openThisGroup();
                       }
                     }}
                     className={`group relative p-2 sm:p-3 rounded-lg sm:rounded-xl cursor-pointer transition-all ${

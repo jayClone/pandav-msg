@@ -1484,13 +1484,27 @@ export default function Chat({
                   const unreadCount = unreadCounts[id] || 0;
                   const isOnline = user.online;
 
+                  const openThisChat = () => {
+                    setSelectedUserId(id);
+                    if (window.innerWidth < 640) {
+                      setSidebarOpen(false);
+                    }
+                  };
+
                   return (
                     <div
                       key={id}
-                      onClick={() => {
-                        setSelectedUserId(id);
-                        if (window.innerWidth < 640) {
-                          setSidebarOpen(false);
+                      onClick={openThisChat}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        // Guard against the nested Pin <button> below: Enter/
+                        // Space on it fires a keydown that bubbles up here
+                        // too, which would otherwise also open the chat.
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openThisChat();
                         }
                       }}
                       className={`group relative p-2 sm:p-3 rounded-lg sm:rounded-xl cursor-pointer transition-all ${

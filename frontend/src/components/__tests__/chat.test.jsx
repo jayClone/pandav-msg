@@ -149,6 +149,53 @@ describe("Chat", () => {
     expect(mockGetFriends).toHaveBeenCalledTimes(1)
   })
 
+  // Regression test: the friend-list row — the only way to open a 1:1
+  // chat — was a bare <div onClick>, invisible to the browser's tab order
+  // and completely unreachable by keyboard-only or screen-reader users.
+  test("a friend list item is keyboard-reachable and opens the chat with Enter", async () => {
+    const user = userEvent.setup()
+    render(<ChatHarness />)
+
+    const friendName = await screen.findByText("Friend One")
+    const friendItem = friendName.closest('[role="button"]')
+    expect(friendItem).toBeTruthy()
+    expect(friendItem).toHaveAttribute("tabIndex", "0")
+
+    friendItem.focus()
+    await user.keyboard("{Enter}")
+
+    await waitFor(() => expect(mockFetchChatHistory).toHaveBeenCalledWith("friend-1"))
+  })
+
+  // Guards the fix above: the row's own onKeyDown must not fire for a key
+  // event that actually originated on the nested Pin <button> (keydown
+  // bubbles), or focusing/activating Pin would incorrectly also open the
+  // chat underneath it.
+  test("pressing Enter on the nested Pin button does not also open the chat", async () => {
+    mockGetFriends.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: [
+          { _id: "friend-1", name: "Friend One", email: "friend@example.com", publicKey: encodeBase64(friend.publicKey), isOnline: true },
+          { _id: "friend-2", name: "Friend Two", email: "friend2@example.com", publicKey: encodeBase64(generateKeypair().publicKey), isOnline: false },
+        ],
+      },
+    })
+
+    const user = userEvent.setup()
+    render(<ChatHarness />)
+    await screen.findByText("Friend Two")
+
+    mockFetchChatHistory.mockClear()
+
+    const pinButtons = screen.getAllByTitle("Pin chat")
+    // The second friend's pin button (Friend Two hasn't been selected/opened).
+    pinButtons[1].focus()
+    await user.keyboard("{Enter}")
+
+    expect(mockFetchChatHistory).not.toHaveBeenCalledWith("friend-2")
+  })
+
   test("selecting a friend loads and decrypts chat history", async () => {
     const user = userEvent.setup()
     const encryptedFromFriend = await encryptAs(friend, "friend-1", me.publicKey, "me-id", "hello from friend")

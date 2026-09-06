@@ -156,6 +156,48 @@ describe("GroupChat", () => {
     expect(mockGetMyGroups).toHaveBeenCalledTimes(1)
   })
 
+  // Regression test: the group-list row — the only way to open a group
+  // chat — was a bare <div onClick>, invisible to the browser's tab order
+  // and completely unreachable by keyboard-only or screen-reader users.
+  test("a group list item is keyboard-reachable and opens the group with Enter", async () => {
+    const user = userEvent.setup()
+    renderGroupChat()
+
+    const groupName = await screen.findByText("Test Group")
+    const groupItem = groupName.closest('[role="button"]')
+    expect(groupItem).toBeTruthy()
+    expect(groupItem).toHaveAttribute("tabIndex", "0")
+
+    groupItem.focus()
+    await user.keyboard("{Enter}")
+
+    await waitFor(() => expect(mockGetGroup).toHaveBeenCalledWith("group-1"))
+  })
+
+  // Guards the fix above: the row's own onKeyDown must not fire for a key
+  // event that actually originated on the nested Pin <button> (keydown
+  // bubbles), or focusing/activating Pin would incorrectly also open the
+  // group underneath it.
+  test("pressing Enter on the nested Pin button does not also open the group", async () => {
+    mockGetMyGroups.mockResolvedValueOnce([
+      { _id: "group-1", name: "Test Group", members: [{ _id: "me-id" }, { _id: "member-1" }], createdAt: new Date().toISOString() },
+      { _id: "group-2", name: "Second Group", members: [{ _id: "me-id" }], createdAt: new Date().toISOString() },
+    ])
+
+    const user = userEvent.setup()
+    renderGroupChat()
+    await screen.findByText("Second Group")
+
+    mockGetGroup.mockClear()
+
+    const pinButtons = screen.getAllByTitle("Pin group")
+    // The second group's pin button (Second Group hasn't been opened).
+    pinButtons[1].focus()
+    await user.keyboard("{Enter}")
+
+    expect(mockGetGroup).not.toHaveBeenCalledWith("group-2")
+  })
+
   test("selecting a group loads members and decrypts messages", async () => {
     const user = userEvent.setup()
     const encrypted = await encryptAs(member, "member-1", me.publicKey, "me-id", "hello group")
