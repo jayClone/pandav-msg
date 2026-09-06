@@ -24,6 +24,19 @@ allprojects {
     }
 }
 
+// This project lives inside a OneDrive-synced folder. OneDrive's Files
+// On-Demand feature turns freshly-written build output into cloud-only
+// placeholder files mid-sync, which breaks Gradle two ways: file locks
+// during heavy write bursts (AccessDeniedException) and build outputs
+// getting swapped for non-regular placeholder files it can't snapshot
+// ("not a regular file"). Keeping source under OneDrive is fine — it's
+// only the intensely-written build/ directories that need to live
+// somewhere OneDrive never touches.
+def externalBuildRoot = new File(System.getProperty("java.io.tmpdir"), "pandav-msg-android-build")
+allprojects {
+    buildDir = new File(externalBuildRoot, project.name)
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
