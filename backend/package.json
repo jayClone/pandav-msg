@@ -6,7 +6,7 @@
     "dev": "bun --watch run src/server.js",
     "start": "bun run src/server.js",
     "build": "echo Backend build OK",
-    "test": "bun test --max-concurrency=1 --retry=2"
+    "test": "bun test --max-concurrency=1"
   },
   "dependencies": {
     "@arcjet/bun": "^1.1.0",

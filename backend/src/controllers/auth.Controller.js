@@ -47,18 +47,29 @@ const generateAccessToken = (user) => {
       userId: user._id.toString(),
       email: user.email,
       name: user.name,
-      type: 'access'
+      type: 'access',
+      jti: crypto.randomUUID()
     },
     process.env.JWT_SECRET,
     { expiresIn: ACCESS_TOKEN_EXPIRE }
   );
 };
 
+// jti (a random per-token ID) matters here specifically because JWT signing
+// is otherwise fully deterministic: `iat` only has second-level
+// granularity, and without it, two refresh tokens minted for the same user
+// within the same wall-clock second are byte-identical. That's exactly the
+// gap that let a revoked refresh token come back to life — reset-password
+// revokes the stored token hash, but if a login for the same user lands in
+// that same second afterward (easily happens in a fast test, and isn't
+// impossible in production either), it silently regenerates the identical
+// token string and the "revoked" cookie starts matching the DB hash again.
 const generateRefreshToken = (user) => {
   return jwt.sign(
     {
       userId: user._id.toString(),
-      type: 'refresh'
+      type: 'refresh',
+      jti: crypto.randomUUID()
     },
     process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
     { expiresIn: REFRESH_TOKEN_EXPIRE }
@@ -382,7 +393,15 @@ export const resetPassword = async (req, res) => {
     // go through the normal login flow next to re-derive and re-publish the
     // correct public key for the new password — a token from this endpoint
     // would just encourage skipping that.
-    await revokeStoredRefreshToken(user._id);
+    // Unlike the shared revokeStoredRefreshToken helper (used by logout and
+    // refresh-mismatch cleanup, where swallowing a transient failure is
+    // fine — those paths already return non-success or are best-effort),
+    // this call must NOT fail silently: a swallowed error here would let
+    // resetPassword report 200 success while the pre-reset session is
+    // still fully valid. Awaited directly, uncaught, so any failure
+    // propagates to the outer try/catch and surfaces as a real 500 instead
+    // of a lying "success."
+    await User.findByIdAndUpdate(user._id, { refreshToken: null });
     clearRefreshCookie(req, res);
 
     logger.info(`Password reset for ${normalizedEmail}`);
