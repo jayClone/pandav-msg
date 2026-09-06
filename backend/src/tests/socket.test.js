@@ -1053,4 +1053,108 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
     }, 8000);
   });
 
+  describe('1️⃣3️⃣ Read Receipt Authorization Test (read-receipt regression)', () => {
+
+    it('a user who is not the receiver cannot mark someone else\'s private message as read', (done) => {
+      (async () => {
+        const privateMessage = await Message.create({
+          senderId: testUsers.userA.id,
+          receiverId: testUsers.userB.id,
+          chatType: 'private',
+          message: 'secret between A and B',
+        });
+
+        // An unrelated third party — not the sender, not the receiver.
+        const outsider = {
+          id: '507f1f77bcf86cd799439011',
+          email: 'outsider@test.com',
+          name: 'Outsider'
+        };
+        const tokenC = generateToken(outsider);
+        const socketC = io(API_URL, {
+          auth: { token: tokenC },
+          reconnection: false,
+          transports: ['websocket', 'polling']
+        });
+
+        let handled = false;
+        const finish = async (err) => {
+          if (handled) return;
+          handled = true;
+          socketC.connected && socketC.disconnect();
+          done(err);
+        };
+
+        socketC.on('connect', () => {
+          socketC.emit('read_receipt', { messageId: privateMessage._id.toString() });
+
+          // The handler returns silently either way (no ack, no error
+          // event) — give it time to process, then verify the DB directly.
+          setTimeout(async () => {
+            try {
+              const after = await Message.findById(privateMessage._id);
+              expect(after.readBy.length).toBe(0);
+              expect(after.read).toBe(false);
+              console.log('✅ PASS: outsider could not mark another pair\'s message as read');
+              finish();
+            } catch (e) {
+              finish(e);
+            }
+          }, 800);
+        });
+
+        socketC.on('connect_error', (error) => finish(error));
+
+        setTimeout(() => finish(new Error('timed out')), 5000);
+      })();
+    }, 8000);
+
+    it('the actual receiver can still mark the message as read (fix does not break legitimate use)', (done) => {
+      (async () => {
+        const privateMessage = await Message.create({
+          senderId: testUsers.userA.id,
+          receiverId: testUsers.userB.id,
+          chatType: 'private',
+          message: 'another secret between A and B',
+        });
+
+        const tokenB = generateToken(testUsers.userB);
+        const socketB = io(API_URL, {
+          auth: { token: tokenB },
+          reconnection: false,
+          transports: ['websocket', 'polling']
+        });
+
+        let handled = false;
+        const finish = async (err) => {
+          if (handled) return;
+          handled = true;
+          socketB.connected && socketB.disconnect();
+          done(err);
+        };
+
+        socketB.on('connect', () => {
+          socketB.emit('read_receipt', { messageId: privateMessage._id.toString() });
+
+          setTimeout(async () => {
+            try {
+              const after = await Message.findById(privateMessage._id);
+              expect(after.readBy.length).toBe(1);
+              expect(after.readBy[0].userId.toString()).toBe(testUsers.userB.id);
+              expect(after.read).toBe(true);
+              console.log('✅ PASS: the real receiver can still mark the message as read');
+              finish();
+            } catch (e) {
+              finish(e);
+            }
+          }, 800);
+        });
+
+        socketB.on('connect_error', (error) => finish(error));
+
+        setTimeout(() => finish(new Error('timed out')), 5000);
+      })();
+    }, 8000);
+  });
+
 });

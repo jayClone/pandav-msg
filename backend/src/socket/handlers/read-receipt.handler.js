@@ -1,8 +1,9 @@
 import Message from '../../models/Message.js';
+import Group from '../../models/Group.js';
 
 export async function handleReadReceipt(socket, io, payload, userId, name) {
   try {
-    const { messageId, groupId } = payload;
+    const { messageId } = payload;
 
     if (!messageId) {
       return;
@@ -15,7 +16,28 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
     }
 
     if (message.senderId.toString() === userId.toString()) {
-      return;  
+      return;
+    }
+
+    // The sender check above isn't enough on its own — anyone who knew (or
+    // guessed) a messageId could otherwise mark someone else's private
+    // message as read, or a non-member's read receipt into a group they
+    // never joined. Mirror reaction.handler.js's authorization check,
+    // trusting the message's own chatType/receiverId/groupId rather than
+    // whatever the client's payload claims.
+    const isPrivate = message.chatType === 'private';
+
+    if (isPrivate) {
+      const isParticipant = message.receiverId && message.receiverId.toString() === userId.toString();
+      if (!isParticipant) {
+        return;
+      }
+    } else {
+      const group = await Group.findById(message.groupId);
+      const isMember = group?.participants.some((p) => p.toString() === userId.toString());
+      if (!isMember) {
+        return;
+      }
     }
 
     const userAlreadyRead = message.readBy?.some(
@@ -54,10 +76,11 @@ export async function handleReadReceipt(socket, io, payload, userId, name) {
       readCount: updatedMessage.readBy.length,
     };
 
-    if (groupId) {
+    if (!isPrivate) {
+      const groupId = message.groupId.toString();
       console.log(`📢 [READ_RECEIPT] Group broadcast: ${groupId}`);
       readReceiptData.groupId = groupId;
-      io.to(groupId.toString()).emit('message_read', readReceiptData);
+      io.to(groupId).emit('message_read', readReceiptData);
     } else {
       const senderRoom = message.senderId.toString();
       const receiverRoom = userId.toString();
