@@ -507,7 +507,13 @@ export default function Chat({
       // The server echo just confirms delivery + gets the _id
       // No need to decrypt - we already know the plaintext
       setMessages((prev) => {
-        const tempIndex = prev.findIndex((m) => String(m._id).startsWith("temp_"));
+        // Match the exact optimistic message this ack confirms via the
+        // uniqueId we sent with it, rather than just grabbing the first
+        // "temp_" message — rapid sends can have their acks arrive out of
+        // order, which used to swap real _ids onto the wrong message.
+        const tempIndex = data.uniqueId
+          ? prev.findIndex((m) => m.uniqueId === data.uniqueId)
+          : prev.findIndex((m) => String(m._id).startsWith("temp_"));
         if (tempIndex !== -1) {
           // Replace temp message with server's confirmed version (keeps plaintext)
           const updated = [...prev];
@@ -1006,18 +1012,27 @@ export default function Chat({
 
       const encryptedMessage = await cryptoService.encryptMessage(plaintext, selectedUserId);
 
+      // Tag this send with a unique id so the MESSAGE_SENT echo can find and
+      // replace the exact optimistic message it confirms, instead of just
+      // grabbing whichever temp message happens to be first in the array —
+      // two rapid sends could otherwise have their real _ids swapped onto
+      // the wrong message if the server acks arrive out of order.
+      const uniqueId = crypto.randomUUID();
+
       // Send encrypted blob to recipient
       socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
         toUserId: selectedUserId,
         message: encryptedMessage,
         isEncrypted: true,
+        uniqueId,
       });
 
       // Show plaintext in own UI (optimistic - we know the plaintext)
       setMessages((prev) => [
         ...prev,
         {
-          _id: `temp_${Date.now()}`,
+          _id: `temp_${uniqueId}`,
+          uniqueId,
           fromUserId: currentUserId,
           toUserId: selectedUserId,
           fromUserName: currentUserName,
@@ -1071,6 +1086,8 @@ export default function Chat({
       const { wrappedKey, imageCiphertext, imageNonce, imageMimeType } =
         await cryptoService.encryptImageForRecipient(bytes, mimeType, selectedUserId);
 
+      const uniqueId = crypto.randomUUID();
+
       socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
         toUserId: selectedUserId,
         message: wrappedKey,
@@ -1079,12 +1096,14 @@ export default function Chat({
         imageNonce,
         imageMimeType,
         isEncrypted: true,
+        uniqueId,
       });
 
       setMessages((prev) => [
         ...prev,
         {
-          _id: `temp_${Date.now()}`,
+          _id: `temp_${uniqueId}`,
+          uniqueId,
           fromUserId: currentUserId,
           toUserId: selectedUserId,
           fromUserName: currentUserName,
@@ -1141,6 +1160,8 @@ export default function Chat({
       const { wrappedKey, imageCiphertext, imageNonce, imageMimeType } =
         await cryptoService.encryptImageForRecipient(bytes, mimeType, selectedUserId);
 
+      const uniqueId = crypto.randomUUID();
+
       socket.emit(SOCKET_EVENTS.PRIVATE_MESSAGE, {
         toUserId: selectedUserId,
         message: wrappedKey,
@@ -1149,12 +1170,14 @@ export default function Chat({
         imageNonce,
         imageMimeType,
         isEncrypted: true,
+        uniqueId,
       });
 
       setMessages((prev) => [
         ...prev,
         {
-          _id: `temp_${Date.now()}`,
+          _id: `temp_${uniqueId}`,
+          uniqueId,
           fromUserId: currentUserId,
           toUserId: selectedUserId,
           fromUserName: currentUserName,

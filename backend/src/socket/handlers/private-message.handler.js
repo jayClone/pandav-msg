@@ -94,6 +94,7 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
 
         const messagePayload = {
             _id: savedMessage._id,
+            uniqueId,
             fromUserId: userId,
             toUserId: toUserId,
             fromUserName: name,
@@ -125,6 +126,7 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
 
         socket.emit(SOCKET_EVENTS.MESSAGE_SENT, {
             _id: savedMessage._id,
+            uniqueId,
             fromUserId: userId,
             toUserId: toUserId,
             fromUserName: name,

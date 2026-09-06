@@ -199,6 +199,67 @@ describe("Chat", () => {
     expect(payload.message).not.toContain("hi there") // must be ciphertext, not plaintext
   })
 
+  test("regression: out-of-order MESSAGE_SENT acks don't swap real _ids onto the wrong optimistic message", async () => {
+    // Two rapid sends before either ack returns, with the acks arriving in
+    // reverse order (the second message's DB write finishes first). The old
+    // matching logic grabbed whichever "temp_" message was first in the
+    // array, so the second ack's real _id landed on the FIRST message.
+    // uniqueId-based matching must keep each ack on its own message.
+    const user = userEvent.setup()
+    render(<ChatHarness />)
+
+    await user.click(await screen.findByText("Friend One"))
+    await waitFor(() => expect(mockFetchChatHistory).toHaveBeenCalled())
+
+    const input = screen.getByPlaceholderText(/type a message/i)
+    await user.type(input, "first message{Enter}")
+    await screen.findByText("first message")
+    await user.type(input, "second message{Enter}")
+    await screen.findByText("second message")
+
+    const sentCalls = mockSocket.emit.mock.calls.filter(([event]) => event === SOCKET_EVENTS.PRIVATE_MESSAGE)
+    expect(sentCalls).toHaveLength(2)
+    const firstUniqueId = sentCalls[0][1].uniqueId
+    const secondUniqueId = sentCalls[1][1].uniqueId
+    expect(firstUniqueId).toBeTruthy()
+    expect(secondUniqueId).toBeTruthy()
+    expect(firstUniqueId).not.toBe(secondUniqueId)
+
+    const messageSentHandler = getSocketHandler(SOCKET_EVENTS.MESSAGE_SENT)
+    expect(messageSentHandler).toBeTypeOf("function")
+
+    // Ack the SECOND message first, then the first — out of order.
+    await messageSentHandler({
+      _id: "real-second", uniqueId: secondUniqueId,
+      fromUserId: "me-id", toUserId: "friend-1", time: new Date().toISOString(),
+    })
+    await messageSentHandler({
+      _id: "real-first", uniqueId: firstUniqueId,
+      fromUserId: "me-id", toUserId: "friend-1", time: new Date().toISOString(),
+    })
+
+    await screen.findByText("first message")
+    await screen.findByText("second message")
+
+    // Messages render in array order, so the delete buttons line up with
+    // "first message" then "second message".
+    const deleteButtons = screen.getAllByTitle("Delete")
+    expect(deleteButtons).toHaveLength(2)
+
+    await user.click(deleteButtons[0])
+    expect(mockSocket.emit).toHaveBeenCalledWith(
+      SOCKET_EVENTS.MESSAGE_DELETED,
+      expect.objectContaining({ messageId: "real-first" })
+    )
+
+    mockSocket.emit.mockClear()
+    await user.click(screen.getByTitle("Delete"))
+    expect(mockSocket.emit).toHaveBeenCalledWith(
+      SOCKET_EVENTS.MESSAGE_DELETED,
+      expect.objectContaining({ messageId: "real-second" })
+    )
+  })
+
   test("receiving a private message over the socket decrypts and displays it", async () => {
     const user = userEvent.setup()
     render(<ChatHarness />)

@@ -898,4 +898,96 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
     }, 10000);
   });
 
+  describe('1️⃣1️⃣ Group Room Reconnect Test (user-status regression)', () => {
+
+    it('a reconnected socket still receives group_message broadcasts without re-emitting JOIN_GROUP', (done) => {
+      (async () => {
+        const group = await Group.create({
+          name: 'Reconnect Test Group',
+          participants: [testUsers.userA.id, testUsers.userB.id],
+          adminId: testUsers.userA.id
+        });
+
+        let handled = false;
+        let socketA;
+        const finish = (err) => {
+          if (handled) return;
+          handled = true;
+          socketB1.connected && socketB1.disconnect();
+          socketB2 && socketB2.connected && socketB2.disconnect();
+          socketA && socketA.connected && socketA.disconnect();
+          done(err);
+        };
+
+        const tokenB = generateToken(testUsers.userB);
+        const socketB1 = io(API_URL, {
+          auth: { token: tokenB },
+          reconnection: false,
+          transports: ['websocket', 'polling']
+        });
+
+        let socketB2;
+
+        socketB1.on('connect', () => {
+          socketB1.emit('join_group', { groupId: group._id.toString() });
+
+          // Give the server a moment to process JOIN_GROUP, then disconnect
+          // and reconnect with a brand-new socket (simulating a network
+          // blip / phone sleep-wake) WITHOUT re-emitting JOIN_GROUP —
+          // handleUserConnect should rejoin the group room on its own.
+          setTimeout(() => {
+            socketB1.disconnect();
+
+            setTimeout(() => {
+              socketB2 = io(API_URL, {
+                auth: { token: tokenB },
+                reconnection: false,
+                transports: ['websocket', 'polling']
+              });
+
+              socketB2.on('group_message', (data) => {
+                try {
+                  expect(data.groupId.toString()).toBe(group._id.toString());
+                  expect(data.message).toBe('reconnect test message');
+                  console.log('✅ PASS: reconnected socket still received group_message');
+                  finish();
+                } catch (e) {
+                  finish(e);
+                }
+              });
+
+              socketB2.on('connect', () => {
+                // Deliberately NOT emitting join_group here — this is the
+                // behavior under test.
+                setTimeout(() => {
+                  const tokenA = generateToken(testUsers.userA);
+                  socketA = io(API_URL, {
+                    auth: { token: tokenA },
+                    reconnection: false,
+                    transports: ['websocket', 'polling']
+                  });
+
+                  socketA.on('connect', () => {
+                    socketA.emit('group_message', {
+                      groupId: group._id.toString(),
+                      message: 'reconnect test message'
+                    });
+                  });
+
+                  socketA.on('connect_error', (error) => finish(error));
+                }, 500); // give socketB2's connect handler time to rejoin the group room server-side
+              });
+
+              socketB2.on('connect_error', (error) => finish(error));
+            }, 500);
+          }, 500);
+        });
+
+        socketB1.on('connect_error', (error) => finish(error));
+
+        setTimeout(() => finish(new Error('timed out')), 10000);
+      })();
+    }, 12000);
+  });
+
 });

@@ -39,6 +39,16 @@ export async function handleUserConnect(socket, io, userId, email, name, onlineU
         });
 
         for (const group of userGroups) {
+            // Socket.IO room membership does not survive a reconnect — a new
+            // socket.id starts in zero rooms. The personal room above gets
+            // rejoined every connect, but group rooms were previously only
+            // joined once via the client's one-shot JOIN_GROUP emit, so a
+            // reconnect (network blip, phone sleep/wake) silently dropped the
+            // user from io.to(groupId).emit(...) broadcasts — including new
+            // group_message events — for any group they had open, until they
+            // navigated away and back. Rejoin every group room here too.
+            socket.join(group._id.toString());
+
             const updatedGroup = await Group.findByIdAndUpdate(
                 group._id,
                 { $addToSet: { onlineMembers: userId } },
