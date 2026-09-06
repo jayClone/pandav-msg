@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X, Camera, Trash2, Loader, AlertCircle } from 'lucide-react'
 import Avatar from './Avatar'
 import userAPI from '@api/user.api.js'
@@ -8,6 +8,17 @@ export default function ProfileSettingsModal({ isOpen, onClose, currentUserName,
   const fileInputRef = useRef(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Close on Escape, matching FriendRequestModal.jsx's existing pattern —
+  // every other modal in this app supports it, this one just never had it.
+  useEffect(() => {
+    if (!isOpen) return
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [isOpen, onClose])
 
   if (!isOpen) return null
 
