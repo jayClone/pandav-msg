@@ -63,7 +63,6 @@ jobs:
           CLIENT_URL: http://localhost:5173
           OTP_EXPIRY_MINUTES: 10
           OTP_MAX_ATTEMPTS: 5
-          OTP_LENGTH: 6
           RESEND_API_KEY: re_test_dummy_key_123
           RESEND_FROM_EMAIL: test@example.com
           RESEND_FROM_NAME: Test

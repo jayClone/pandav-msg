@@ -255,6 +255,62 @@ export const otpVerifyArcjet = async (req, res, next) => {
 };
 
 /**
+ * Session rate limiting (refresh/logout): 20 requests per 5 minutes.
+ * These had no dedicated limiter at all before — only the loose global
+ * 100/10min bucket applied. Generous enough for legitimate multi-tab/
+ * multi-device usage (each tab silently refreshes roughly once per
+ * access-token lifetime), while still bounding abuse of an endpoint that
+ * accepts a bare cookie credential with no other rate limiting in front
+ * of it.
+ */
+const sessionAj = arcjet({
+  key: process.env.ARCJET_KEY,
+  environment: process.env.ARCJET_ENV || "production",
+  characteristics: ["ip.src", "http.request.headers['user-agent']"],
+  rules: [
+    shield({ mode: "LIVE" }),
+    tokenBucket({
+      mode: "LIVE",
+      refillRate: 20,
+      interval: 300,
+      capacity: 20,
+    }),
+  ],
+});
+
+export const sessionArcjet = async (req, res, next) => {
+  if (isTestEnv) {
+    return next();
+  }
+
+  try {
+    const decision = await sessionAj.protect(req, { requested: 1 });
+
+    const remaining = decision.limits?.[0]?.remaining ?? 20;
+    const resetTime = decision.limits?.[0]?.resetTime ?? (Date.now() + 300000);
+
+    res.set("X-RateLimit-Limit", "20");
+    res.set("X-RateLimit-Remaining", remaining.toString());
+
+    if (decision.isDenied()) {
+      const retryAfter = Math.ceil((resetTime - Date.now()) / 1000);
+      console.warn(`⚠️  Session rate limit exceeded. Retry after: ${retryAfter}s`);
+
+      return res.status(429).json({
+        success: false,
+        message: "Too many requests. Please try again later.",
+        retryAfter: Math.max(1, retryAfter),
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error("❌ Session Arcjet error:", error.message);
+    next();
+  }
+};
+
+/**
  * Message rate limiting: 50 messages per minute
  */
 const msgAj = arcjet({

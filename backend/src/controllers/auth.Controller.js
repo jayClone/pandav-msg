@@ -7,6 +7,7 @@ import { deleteCache } from '../config/redis.js';
 import logger from '../config/logger.js';
 import { sendServerError } from '../utils/errorResponse.js';
 import { invalidateFriendGraphCaches } from '../utils/friendCache.js';
+import { MESSAGES } from '../constant/response.messages.js';
 
 const ACCESS_TOKEN_EXPIRE = process.env.JWT_ACCESS_EXPIRE || '15m';
 const REFRESH_TOKEN_EXPIRE = process.env.JWT_REFRESH_EXPIRE || '30d';
@@ -171,14 +172,14 @@ export const register = async (req, res) => {
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Name, email, and password are required'
+        message: MESSAGES.AUTH.REGISTER_FIELDS_REQUIRED
       });
     }
 
     if (!otp) {
       return res.status(400).json({
         success: false,
-        message: 'OTP is required. Please verify your email first.'
+        message: MESSAGES.AUTH.OTP_REQUIRED_FOR_REGISTER
       });
     }
 
@@ -194,7 +195,7 @@ export const register = async (req, res) => {
     if (!otpRecord) {
       return res.status(400).json({
         success: false,
-        message: 'OTP not verified. Please verify your email with correct OTP.'
+        message: MESSAGES.AUTH.OTP_NOT_VERIFIED_REGISTER
       });
     }
 
@@ -202,7 +203,7 @@ export const register = async (req, res) => {
       await OTP.deleteOne({ _id: otpRecord._id });
       return res.status(400).json({
         success: false,
-        message: 'OTP expired. Please request a new OTP.'
+        message: MESSAGES.OTP.EXPIRED
       });
     }
 
@@ -219,7 +220,7 @@ export const register = async (req, res) => {
     if (userExist) {
       return res.status(409).json({
         success: false,
-        message: 'User with this email already exists'
+        message: MESSAGES.AUTH.USER_EXISTS
       });
     }
 
@@ -255,17 +256,17 @@ export const register = async (req, res) => {
 
     res.status(201).json({
       ...buildAuthResponse(user, accessToken),
-      message: 'User registered successfully'
+      message: MESSAGES.AUTH.REGISTER_SUCCESS
     });
   } catch (error) {
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: 'User with this email already exists'
+        message: MESSAGES.AUTH.USER_EXISTS
       });
     }
     logger.error(`Registration error: ${error.message}`);
-    sendServerError(res, error, 'Registration failed');
+    sendServerError(res, error, MESSAGES.AUTH.REGISTRATION_FAILED);
   }
 };
 
@@ -276,7 +277,7 @@ export const login = async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Email and password are required'
+        message: MESSAGES.AUTH.LOGIN_FIELDS_REQUIRED
       });
     }
 
@@ -287,7 +288,7 @@ export const login = async (req, res) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password'
+        message: MESSAGES.AUTH.INVALID_CREDENTIALS
       });
     }
 
@@ -296,7 +297,7 @@ export const login = async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password'
+        message: MESSAGES.AUTH.INVALID_CREDENTIALS
       });
     }
 
@@ -312,11 +313,11 @@ export const login = async (req, res) => {
 
     res.status(200).json({
       ...buildAuthResponse(user, accessToken),
-      message: 'Login successful'
+      message: MESSAGES.AUTH.LOGIN_SUCCESS
     });
   } catch (error) {
     logger.error(`Login error: ${error.message}`);
-    sendServerError(res, error, 'Login failed');
+    sendServerError(res, error, MESSAGES.AUTH.LOGIN_FAILED);
   }
 };
 
@@ -327,7 +328,7 @@ export const resetPassword = async (req, res) => {
     if (!email || !otp || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: 'Email, OTP, and new password are required'
+        message: MESSAGES.AUTH.RESET_FIELDS_REQUIRED
       });
     }
 
@@ -343,7 +344,7 @@ export const resetPassword = async (req, res) => {
     if (!otpRecord) {
       return res.status(400).json({
         success: false,
-        message: 'OTP not verified. Please verify your email with the correct OTP.'
+        message: MESSAGES.AUTH.OTP_NOT_VERIFIED_RESET
       });
     }
 
@@ -351,7 +352,7 @@ export const resetPassword = async (req, res) => {
       await OTP.deleteOne({ _id: otpRecord._id });
       return res.status(400).json({
         success: false,
-        message: 'OTP expired. Please request a new OTP.'
+        message: MESSAGES.OTP.EXPIRED
       });
     }
 
@@ -363,7 +364,7 @@ export const resetPassword = async (req, res) => {
       await OTP.deleteOne({ _id: otpRecord._id });
       return res.status(404).json({
         success: false,
-        message: 'No account found for this email'
+        message: MESSAGES.AUTH.NO_ACCOUNT_FOUND
       });
     }
 
@@ -388,11 +389,11 @@ export const resetPassword = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Password reset successful. Please log in with your new password.'
+      message: MESSAGES.AUTH.RESET_SUCCESS
     });
   } catch (error) {
     logger.error(`Reset password error: ${error.message}`);
-    sendServerError(res, error, 'Password reset failed');
+    sendServerError(res, error, MESSAGES.AUTH.RESET_FAILED);
   }
 };
 
@@ -403,7 +404,7 @@ export const refreshSession = async (req, res) => {
     if (!refreshToken) {
       return res.status(401).json({
         success: false,
-        message: 'Refresh token is missing'
+        message: MESSAGES.AUTH.REFRESH_TOKEN_MISSING
       });
     }
 
@@ -417,7 +418,7 @@ export const refreshSession = async (req, res) => {
       clearRefreshCookie(req, res);
       return res.status(401).json({
         success: false,
-        message: 'Refresh token is invalid or expired'
+        message: MESSAGES.AUTH.REFRESH_TOKEN_INVALID
       });
     }
 
@@ -425,7 +426,7 @@ export const refreshSession = async (req, res) => {
       clearRefreshCookie(req, res);
       return res.status(401).json({
         success: false,
-        message: 'Refresh token is invalid or expired'
+        message: MESSAGES.AUTH.REFRESH_TOKEN_INVALID
       });
     }
 
@@ -435,7 +436,7 @@ export const refreshSession = async (req, res) => {
       clearRefreshCookie(req, res);
       return res.status(401).json({
         success: false,
-        message: 'Session not found'
+        message: MESSAGES.AUTH.SESSION_NOT_FOUND
       });
     }
 
@@ -444,7 +445,7 @@ export const refreshSession = async (req, res) => {
       clearRefreshCookie(req, res);
       return res.status(401).json({
         success: false,
-        message: 'Session mismatch detected'
+        message: MESSAGES.AUTH.SESSION_MISMATCH
       });
     }
 
@@ -452,12 +453,12 @@ export const refreshSession = async (req, res) => {
 
     res.status(200).json({
       ...buildAuthResponse(user, accessToken),
-      message: 'Session refreshed'
+      message: MESSAGES.AUTH.SESSION_REFRESHED
     });
   } catch (error) {
     logger.error(`Refresh error: ${error.message}`);
     clearRefreshCookie(req, res);
-    sendServerError(res, error, 'Session refresh failed');
+    sendServerError(res, error, MESSAGES.AUTH.REFRESH_FAILED);
   }
 };
 
@@ -481,12 +482,12 @@ export const logout = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Logged out successfully'
+      message: MESSAGES.AUTH.LOGOUT_SUCCESS
     });
   } catch (error) {
     logger.error(`Logout error: ${error.message}`);
     clearRefreshCookie(req, res);
-    sendServerError(res, error, 'Logout failed');
+    sendServerError(res, error, MESSAGES.AUTH.LOGOUT_FAILED);
   }
 };
 
@@ -497,7 +498,7 @@ export const getCurrentUser = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: MESSAGES.AUTH.USER_NOT_FOUND
       });
     }
 
@@ -514,6 +515,6 @@ export const getCurrentUser = async (req, res) => {
     });
   } catch (error) {
     logger.error(`Get user error: ${error.message}`);
-    sendServerError(res, error, 'Failed to fetch current user');
+    sendServerError(res, error, MESSAGES.AUTH.FETCH_USER_FAILED);
   }
 };

@@ -2,6 +2,58 @@ export const MESSAGES = {
   AUTH: {
     TOKEN_MISSING: "Invalid or expired token",
     TOKEN_INVALID: "Invalid token",
+
+    REGISTER_FIELDS_REQUIRED: "Name, email, and password are required",
+    OTP_REQUIRED_FOR_REGISTER: "OTP is required. Please verify your email first.",
+    OTP_NOT_VERIFIED_REGISTER: "OTP not verified. Please verify your email with correct OTP.",
+    USER_EXISTS: "User with this email already exists",
+    REGISTER_SUCCESS: "User registered successfully",
+    REGISTRATION_FAILED: "Registration failed",
+
+    LOGIN_FIELDS_REQUIRED: "Email and password are required",
+    // Deliberately identical for "no such user" and "wrong password" —
+    // enumeration-safe, see login() in auth.Controller.js.
+    INVALID_CREDENTIALS: "Invalid email or password",
+    LOGIN_SUCCESS: "Login successful",
+    LOGIN_FAILED: "Login failed",
+
+    RESET_FIELDS_REQUIRED: "Email, OTP, and new password are required",
+    OTP_NOT_VERIFIED_RESET: "OTP not verified. Please verify your email with the correct OTP.",
+    NO_ACCOUNT_FOUND: "No account found for this email",
+    RESET_SUCCESS: "Password reset successful. Please log in with your new password.",
+    RESET_FAILED: "Password reset failed",
+
+    REFRESH_TOKEN_MISSING: "Refresh token is missing",
+    REFRESH_TOKEN_INVALID: "Refresh token is invalid or expired",
+    SESSION_NOT_FOUND: "Session not found",
+    SESSION_MISMATCH: "Session mismatch detected",
+    SESSION_REFRESHED: "Session refreshed",
+    REFRESH_FAILED: "Session refresh failed",
+
+    LOGOUT_SUCCESS: "Logged out successfully",
+    LOGOUT_FAILED: "Logout failed",
+
+    USER_NOT_FOUND: "User not found",
+    FETCH_USER_FAILED: "Failed to fetch current user",
+  },
+
+  OTP: {
+    NAME_REQUIRED: "Email and name are required",
+    EMAIL_REQUIRED: "Email is required",
+    EMAIL_AND_OTP_REQUIRED: "Email and OTP are required",
+    // Used for both send-otp and resend-otp — the response can't reveal
+    // whether an OTP was actually created and emailed, or not, for a given
+    // email (enumeration prevention).
+    GENERIC_SENT: (email) => `If eligible, an OTP has been sent to ${email}`,
+    RESEND_SUCCESS: "New OTP sent successfully",
+    NOT_FOUND: "OTP not found. Please request a new OTP.",
+    EXPIRED: "OTP expired. Please request a new OTP.",
+    TOO_MANY_ATTEMPTS: "Too many verification attempts. Please request a new OTP.",
+    INVALID: (remaining) => `Invalid OTP. ${remaining} attempts remaining.`,
+    VERIFIED: "OTP verified successfully",
+    SEND_FAILED: "Failed to send OTP",
+    VERIFY_FAILED: "Failed to verify OTP",
+    RESEND_FAILED: "Failed to resend OTP",
   },
 
   SOCKET: {

@@ -4,6 +4,7 @@ import EmailService from '../services/email.service.js';
 import User from '../models/User.js';
 import logger from '../config/logger.js';
 import { sendServerError } from '../utils/errorResponse.js';
+import { MESSAGES } from '../constant/response.messages.js';
 
 //  Generate random 6-digit OTP using a CSPRNG (not Math.random())
 const generateOTP = () => {
@@ -22,7 +23,7 @@ export class OTPController {
       if (!email || (!name && purpose !== 'password-reset')) {
         return res.status(400).json({
           success: false,
-          message: 'Email and name are required'
+          message: MESSAGES.OTP.NAME_REQUIRED
         });
       }
 
@@ -32,7 +33,7 @@ export class OTPController {
       // response itself never reveals whether this email is registered.
       const genericResponse = {
         success: true,
-        message: `If eligible, an OTP has been sent to ${normalizedEmail}`,
+        message: MESSAGES.OTP.GENERIC_SENT(normalizedEmail),
         data: {
           email: normalizedEmail,
           expiresIn: `${process.env.OTP_EXPIRY_MINUTES || 10} minutes`
@@ -81,7 +82,7 @@ export class OTPController {
       res.status(200).json(genericResponse);
     } catch (error) {
       logger.error(`❌ Send OTP error: ${error.message}`);
-      sendServerError(res, error, 'Failed to send OTP');
+      sendServerError(res, error, MESSAGES.OTP.SEND_FAILED);
     }
   }
 
@@ -93,7 +94,7 @@ export class OTPController {
       if (!email || !otp) {
         return res.status(400).json({
           success: false,
-          message: 'Email and OTP are required'
+          message: MESSAGES.OTP.EMAIL_AND_OTP_REQUIRED
         });
       }
 
@@ -117,25 +118,25 @@ export class OTPController {
       if (!otpRecord) {
         return res.status(400).json({
           success: false,
-          message: 'OTP not found. Please request a new OTP.'
+          message: MESSAGES.OTP.NOT_FOUND
         });
       }
 
-  
+
       if (new Date() > otpRecord.expiresAt) {
         await OTP.deleteOne({ _id: otpRecord._id });
         return res.status(400).json({
           success: false,
-          message: 'OTP expired. Please request a new OTP.'
+          message: MESSAGES.OTP.EXPIRED
         });
       }
 
-   
+
       if (otpRecord.attempts >= (process.env.OTP_MAX_ATTEMPTS || 5)) {
         await OTP.deleteOne({ _id: otpRecord._id });
         return res.status(400).json({
           success: false,
-          message: 'Too many verification attempts. Please request a new OTP.'
+          message: MESSAGES.OTP.TOO_MANY_ATTEMPTS
         });
       }
 
@@ -143,15 +144,15 @@ export class OTPController {
       if (otpRecord.otp !== otp.toString()) {
         otpRecord.attempts += 1;
         await otpRecord.save();
-        
+
         const remaining = (process.env.OTP_MAX_ATTEMPTS || 5) - otpRecord.attempts;
         return res.status(400).json({
           success: false,
-          message: `Invalid OTP. ${remaining} attempts remaining.`
+          message: MESSAGES.OTP.INVALID(remaining)
         });
       }
 
-     
+
       otpRecord.verified = true;
       await otpRecord.save();
 
@@ -159,7 +160,7 @@ export class OTPController {
 
       res.status(200).json({
         success: true,
-        message: 'OTP verified successfully',
+        message: MESSAGES.OTP.VERIFIED,
         data: {
           email: normalizedEmail,
           verified: true,
@@ -168,7 +169,7 @@ export class OTPController {
       });
     } catch (error) {
       logger.error(`❌ Verify OTP error: ${error.message}`);
-      sendServerError(res, error, 'Failed to verify OTP');
+      sendServerError(res, error, MESSAGES.OTP.VERIFY_FAILED);
     }
   }
 
@@ -180,7 +181,7 @@ export class OTPController {
       if (!email) {
         return res.status(400).json({
           success: false,
-          message: 'Email is required'
+          message: MESSAGES.OTP.EMAIL_REQUIRED
         });
       }
 
@@ -192,7 +193,7 @@ export class OTPController {
       // account, silently confirming the account exists.
       const genericResponse = {
         success: true,
-        message: 'New OTP sent successfully'
+        message: MESSAGES.OTP.RESEND_SUCCESS
       };
 
       const userExists = await User.findOne({ email: normalizedEmail });
@@ -230,11 +231,11 @@ export class OTPController {
 
       res.status(200).json({
         success: true,
-        message: 'New OTP sent successfully'
+        message: MESSAGES.OTP.RESEND_SUCCESS
       });
     } catch (error) {
       logger.error(`❌ Resend OTP error: ${error.message}`);
-      sendServerError(res, error, 'Failed to resend OTP');
+      sendServerError(res, error, MESSAGES.OTP.RESEND_FAILED);
     }
   }
 }

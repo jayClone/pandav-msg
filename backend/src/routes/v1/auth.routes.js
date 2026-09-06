@@ -3,7 +3,7 @@ import { register, login, logout, refreshSession, getCurrentUser, resetPassword 
 import { protect } from '../../middlewares/auth.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { validate } from '../../middlewares/validate.js';
-import { authArcjet } from '../../middlewares/arcjet.js';
+import { authArcjet, sessionArcjet } from '../../middlewares/arcjet.js';
 import { RegisterSchema, LoginSchema, ResetPasswordSchema } from '../../validators/auth.validator.js';
 
 const router = express.Router();
@@ -41,9 +41,9 @@ router.post(
   asyncHandler(resetPassword)
 );
 
-router.post('/refresh', asyncHandler(refreshSession));
+router.post('/refresh', sessionArcjet, asyncHandler(refreshSession));
 
-router.post('/logout', asyncHandler(logout));
+router.post('/logout', sessionArcjet, asyncHandler(logout));
 
 /**
  * @route GET /api/v1/auth/current
