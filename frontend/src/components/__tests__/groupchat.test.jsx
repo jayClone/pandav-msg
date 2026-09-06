@@ -261,6 +261,25 @@ describe("GroupChat", () => {
     })
   })
 
+  // Regression test: nothing in GroupChat.jsx ever listened for
+  // ERROR_MESSAGE, the event every backend socket handler (rate limiting,
+  // membership checks, save failures) uses to report a rejected send. A
+  // failed group message send used to leave no signal that it never
+  // actually reached the server.
+  test("a server-side error_message is surfaced to the user", async () => {
+    const user = userEvent.setup()
+    renderGroupChat()
+    await user.click(await screen.findByText("Test Group"))
+    await waitFor(() => expect(mockGetGroup).toHaveBeenCalled())
+
+    const errorHandler = getSocketHandler(SOCKET_EVENTS.ERROR_MESSAGE)
+    expect(errorHandler).toBeTypeOf("function")
+
+    errorHandler({ message: "Too many messages. Please slow down." })
+
+    expect(await screen.findByText(/too many messages/i)).toBeInTheDocument()
+  })
+
   test("creates a group with a selected member", async () => {
     const user = userEvent.setup()
     mockGetFriends.mockResolvedValue({

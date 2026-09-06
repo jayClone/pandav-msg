@@ -260,6 +260,25 @@ describe("Chat", () => {
     )
   })
 
+  // Regression test: nothing in Chat.jsx ever listened for ERROR_MESSAGE,
+  // the event every backend socket handler (rate limiting, friend checks,
+  // save failures) uses to report a rejected send. A failed send used to
+  // leave the optimistic bubble on screen with no signal it never actually
+  // reached the server.
+  test("a server-side error_message is surfaced to the user", async () => {
+    const user = userEvent.setup()
+    render(<ChatHarness />)
+    await user.click(await screen.findByText("Friend One"))
+    await waitFor(() => expect(mockFetchChatHistory).toHaveBeenCalled())
+
+    const errorHandler = getSocketHandler(SOCKET_EVENTS.ERROR_MESSAGE)
+    expect(errorHandler).toBeTypeOf("function")
+
+    errorHandler({ message: "Too many messages. Please slow down." })
+
+    expect(await screen.findByText(/too many messages/i)).toBeInTheDocument()
+  })
+
   test("receiving a private message over the socket decrypts and displays it", async () => {
     const user = userEvent.setup()
     render(<ChatHarness />)

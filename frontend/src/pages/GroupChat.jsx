@@ -1478,12 +1478,22 @@ export default function GroupChat({
         }
       };
 
+      // Every socket handler on the backend (rate limiting, membership
+      // checks, save failures, etc.) reports failures via ERROR_MESSAGE —
+      // nothing here was ever listening for it, so a rejected group
+      // message send just silently stayed on-screen as if it had gone
+      // through, with no signal that it never actually reached the server.
+      const handleErrorMessage = (data) => {
+        setError(`⚠️ ${data?.message || 'Something went wrong.'}`);
+      };
+
       socket.on(SOCKET_EVENTS.GROUP_CREATED, handleGroupCreated);
       socket.on(SOCKET_EVENTS.GROUP_MEMBER_ADDED, handleMemberAdded);
       socket.on(SOCKET_EVENTS.GROUP_MEMBER_REMOVED, handleMemberRemoved);
       socket.on(SOCKET_EVENTS.GROUP_MEMBER_LEFT, handleMemberLeft);
       socket.on(SOCKET_EVENTS.GROUP_DELETED, handleGroupDeleted);
       socket.on(SOCKET_EVENTS.GROUP_AVATAR_UPDATED, handleGroupAvatarUpdated);
+      socket.on(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage);
 
       return () => {
         socket.off(SOCKET_EVENTS.GROUP_CREATED, handleGroupCreated);
@@ -1492,6 +1502,7 @@ export default function GroupChat({
         socket.off(SOCKET_EVENTS.GROUP_MEMBER_LEFT, handleMemberLeft);
         socket.off(SOCKET_EVENTS.GROUP_DELETED, handleGroupDeleted);
         socket.off(SOCKET_EVENTS.GROUP_AVATAR_UPDATED, handleGroupAvatarUpdated);
+        socket.off(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage);
       };
     };
 

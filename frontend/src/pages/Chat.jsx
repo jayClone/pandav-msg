@@ -593,6 +593,15 @@ export default function Chat({
       fetchFriends();
     };
 
+    // Every socket handler on the backend (rate limiting, friend checks,
+    // save failures, etc.) reports failures via ERROR_MESSAGE — nothing
+    // here was ever listening for it, so a rejected send just silently
+    // stayed on-screen as if it had gone through, with no signal to the
+    // user that it never actually reached the server.
+    const handleErrorMessage = (data) => {
+      setError(`⚠️ ${data?.message || 'Something went wrong.'}`);
+    };
+
     const registerListeners = (socket) => {
       const onConnect = () => {
         setSocketStatus('connected');
@@ -623,6 +632,7 @@ export default function Chat({
       socket.on(SOCKET_EVENTS.MESSAGE_REACTION, handleMessageReactionEvent);
       socket.on(SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, handleFriendListChanged);
       socket.on(SOCKET_EVENTS.FRIEND_REMOVED, handleFriendListChanged);
+      socket.on(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage);
 
       // Handle the race where the socket connects before listeners are attached.
       if (socket.connected) {
@@ -645,6 +655,7 @@ export default function Chat({
         socket.off(SOCKET_EVENTS.MESSAGE_REACTION, handleMessageReactionEvent);
         socket.off(SOCKET_EVENTS.FRIEND_REQUEST_ACCEPTED, handleFriendListChanged);
         socket.off(SOCKET_EVENTS.FRIEND_REMOVED, handleFriendListChanged);
+        socket.off(SOCKET_EVENTS.ERROR_MESSAGE, handleErrorMessage);
       };
     };
 
