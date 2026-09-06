@@ -391,6 +391,18 @@ export const addMember = async (req, res) => {
             });
         }
 
+        // createGroup caps membership at 200 (matching the groupCiphertexts
+        // schema validator's own 200-member limit) but addMember had no
+        // equivalent check — an admin adding members one at a time could
+        // push a group past 200, after which every encrypted group message
+        // would fail Message.create's validation with no indication why.
+        if (group.participants.length >= 200) {
+            return res.status(400).json({
+                success: false,
+                message: 'A group cannot have more than 200 members'
+            });
+        }
+
         const userExists = await User.findById(userId);
         if (!userExists) {
             return res.status(404).json({

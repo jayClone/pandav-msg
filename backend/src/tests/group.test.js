@@ -657,6 +657,40 @@ describe('🧪 GROUP CHAT TESTS (DAY-5)', () => {
       console.log('✅ TC-G-BONUS-02 PASSED\n');
     });
 
+    // Regression test: createGroup caps membership at 200 (matching the
+    // groupCiphertexts schema validator's own 200-member limit), but
+    // addMember had no equivalent check — an admin adding members one at a
+    // time could push a group past 200, after which every encrypted group
+    // message would fail Message.create's validation with no indication
+    // why (silently, before the group-message.handler.js fix from a
+    // previous iteration; opaquely, "Failed to save message", after it).
+    it('TC-G-BONUS-06: Cannot add a member once the group already has 200 participants', async () => {
+      const fullGroup = await Group.create({
+        name: 'Already Full Group',
+        participants: [
+          userA._id,
+          ...Array.from({ length: 199 }, () => new mongoose.Types.ObjectId()),
+        ],
+        adminId: userA._id
+      });
+      expect(fullGroup.participants.length).toBe(200);
+
+      const response = await request(app)
+        .post(`/api/v1/groups/${fullGroup._id}/members`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ userId: userD._id.toString() })
+        .timeout(15000);
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain('200');
+
+      const unchanged = await Group.findById(fullGroup._id);
+      expect(unchanged.participants.length).toBe(200);
+
+      console.log('✅ TC-G-BONUS-06 PASSED\n');
+    });
+
     it('TC-G-BONUS-03: Cannot add duplicate member', async () => {
       const response = await request(app)
         .post(`/api/v1/groups/${testGroup._id}/members`)
