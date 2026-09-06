@@ -1296,4 +1296,102 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
     }, 10000);
   });
 
+  describe('1️⃣5️⃣ Typing Indicator Authorization Test (typing.handler regression)', () => {
+
+    it('a non-friend cannot send a private typing indicator to an arbitrary user', (done) => {
+      const outsider = { id: '507f1f77bcf86cd799439012', email: 'typing-outsider@test.com', name: 'Typing Outsider' };
+      const tokenOutsider = generateToken(outsider);
+      const tokenA = generateToken(testUsers.userA);
+      const socketOutsider = io(API_URL, { auth: { token: tokenOutsider }, reconnection: false, transports: ['websocket', 'polling'] });
+      const socketA = io(API_URL, { auth: { token: tokenA }, reconnection: false, transports: ['websocket', 'polling'] });
+
+      let handled = false;
+      const finish = (err) => {
+        if (handled) return;
+        handled = true;
+        socketOutsider.connected && socketOutsider.disconnect();
+        socketA.connected && socketA.disconnect();
+        done(err);
+      };
+
+      let outsiderConnected = false;
+      let aConnected = false;
+      const startOnceBothConnected = () => {
+        if (!outsiderConnected || !aConnected) return;
+
+        socketA.on('typing', (data) => {
+          finish(new Error(`non-friend's typing indicator was delivered: ${JSON.stringify(data)}`));
+        });
+
+        socketOutsider.emit('typing', { toUserId: testUsers.userA.id, isTyping: true });
+
+        setTimeout(() => {
+          console.log('✅ PASS: non-friend typing indicator was not delivered');
+          finish();
+        }, 800);
+      };
+
+      socketOutsider.on('connect', () => { outsiderConnected = true; startOnceBothConnected(); });
+      socketA.on('connect', () => { aConnected = true; startOnceBothConnected(); });
+      socketOutsider.on('connect_error', (error) => finish(error));
+      socketA.on('connect_error', (error) => finish(error));
+
+      setTimeout(() => finish(new Error('timed out')), 5000);
+    }, 8000);
+
+    it('a non-member cannot send a typing indicator into a group they never joined', (done) => {
+      (async () => {
+        const group = await Group.create({
+          name: 'Typing Members Only',
+          participants: [testUsers.userA.id],
+          adminId: testUsers.userA.id
+        });
+
+        const tokenB = generateToken(testUsers.userB);
+        const tokenA = generateToken(testUsers.userA);
+        const socketB = io(API_URL, { auth: { token: tokenB }, reconnection: false, transports: ['websocket', 'polling'] });
+        const socketA = io(API_URL, { auth: { token: tokenA }, reconnection: false, transports: ['websocket', 'polling'] });
+
+        let handled = false;
+        const finish = (err) => {
+          if (handled) return;
+          handled = true;
+          socketB.connected && socketB.disconnect();
+          socketA.connected && socketA.disconnect();
+          done(err);
+        };
+
+        let bConnected = false;
+        let aConnected = false;
+        const startOnceBothConnected = () => {
+          if (!bConnected || !aConnected) return;
+
+          // A is the only member and joins the group room so the room
+          // actually has a listener to (not) deliver to.
+          socketA.emit('join_group', { groupId: group._id.toString() });
+
+          setTimeout(() => {
+            socketA.on('typing', (data) => {
+              finish(new Error(`non-member's typing indicator was delivered: ${JSON.stringify(data)}`));
+            });
+
+            socketB.emit('typing', { groupId: group._id.toString(), isTyping: true });
+
+            setTimeout(() => {
+              console.log('✅ PASS: non-member typing indicator was not delivered');
+              finish();
+            }, 800);
+          }, 300);
+        };
+
+        socketB.on('connect', () => { bConnected = true; startOnceBothConnected(); });
+        socketA.on('connect', () => { aConnected = true; startOnceBothConnected(); });
+        socketB.on('connect_error', (error) => finish(error));
+        socketA.on('connect_error', (error) => finish(error));
+
+        setTimeout(() => finish(new Error('timed out')), 6000);
+      })();
+    }, 9000);
+  });
+
 });
