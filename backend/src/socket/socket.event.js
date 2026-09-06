@@ -15,6 +15,7 @@ import {
   handleCallEnd,
   cleanupCallOnDisconnect,
 } from './handlers/call.handler.js';
+import { allowMessageEvent } from './socket-rate-limiter.js';
 
 /**
  * Register all socket events
@@ -29,6 +30,17 @@ export function registerSocketEvents(io, socket, onlineUsers) {
   // ✅ PRIVATE MESSAGE
   // ═══════════════════════════════════════════════════════════════════
   socket.on(SOCKET_EVENTS.PRIVATE_MESSAGE, async (data, callback) => {
+    // Every message-sending REST route goes through messageArcjet
+    // (50/min per user), but the frontend sends all real messages over
+    // this socket event instead — which had no rate limit of any kind.
+    if (!allowMessageEvent(userId)) {
+      socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { message: 'Too many messages. Please slow down.' });
+      if (callback && typeof callback === 'function') {
+        callback('Too many messages. Please slow down.');
+      }
+      return;
+    }
+
     try {
       const result = await handlePrivateMessage(socket, io, data, userId, name, onlineUsers);
 
@@ -75,6 +87,11 @@ export function registerSocketEvents(io, socket, onlineUsers) {
   //  GROUP MESSAGE -  THIS WAS MISSING THE HANDLER CALL!
   // ═══════════════════════════════════════════════════════════════════
   socket.on(SOCKET_EVENTS.GROUP_MESSAGE, async (payload) => {
+    if (!allowMessageEvent(userId)) {
+      socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, { message: 'Too many messages. Please slow down.' });
+      return;
+    }
+
     try {
       await handleGroupMessage(socket, io, payload, userId, name);
     } catch (error) {
