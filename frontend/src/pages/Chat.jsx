@@ -600,6 +600,17 @@ export default function Chat({
     // user that it never actually reached the server.
     const handleErrorMessage = (data) => {
       setError(`⚠️ ${data?.message || 'Something went wrong.'}`);
+
+      // private-message.handler.js now echoes back the uniqueId of the
+      // send that failed. Without this, a rejected send left its
+      // optimistic bubble on screen forever — still stamped
+      // delivered:true — since only a successful MESSAGE_SENT ack ever
+      // replaces a temp_ message; the banner above told the user
+      // *something* failed, but the UI kept lying about that specific
+      // message having gone through.
+      if (data?.uniqueId) {
+        setMessages((prev) => prev.filter((m) => m.uniqueId !== data.uniqueId));
+      }
     };
 
     const registerListeners = (socket) => {

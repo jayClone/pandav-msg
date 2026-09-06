@@ -326,6 +326,34 @@ describe("Chat", () => {
     expect(await screen.findByText(/too many messages/i)).toBeInTheDocument()
   })
 
+  // Regression test: private-message.handler.js's ERROR_MESSAGE emits
+  // didn't include the failed send's uniqueId, so a rejected send left its
+  // optimistic bubble on screen forever — still stamped delivered:true —
+  // since only a successful MESSAGE_SENT ack ever replaces a temp_
+  // message. The banner alone told the user *something* failed, but the
+  // UI kept lying about that specific message having gone through.
+  test("a server-side error_message with a uniqueId removes the matching optimistic bubble", async () => {
+    const user = userEvent.setup()
+    render(<ChatHarness />)
+    await user.click(await screen.findByText("Friend One"))
+    await waitFor(() => expect(mockFetchChatHistory).toHaveBeenCalled())
+
+    const input = screen.getByPlaceholderText(/type a message/i)
+    await user.type(input, "this will fail{Enter}")
+    await screen.findByText("this will fail")
+
+    const [, payload] = mockSocket.emit.mock.calls.find(([event]) => event === SOCKET_EVENTS.PRIVATE_MESSAGE)
+    const uniqueId = payload.uniqueId
+    expect(uniqueId).toBeTruthy()
+
+    const errorHandler = getSocketHandler(SOCKET_EVENTS.ERROR_MESSAGE)
+    errorHandler({ message: "Failed to save message", uniqueId })
+
+    await waitFor(() => {
+      expect(screen.queryByText("this will fail")).not.toBeInTheDocument()
+    })
+  })
+
   test("receiving a private message over the socket decrypts and displays it", async () => {
     const user = userEvent.setup()
     render(<ChatHarness />)

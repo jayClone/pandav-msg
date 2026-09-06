@@ -16,7 +16,8 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
     try {
         if (!toUserId || typeof toUserId !== "string") {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
-                message: MESSAGES.SOCKET.TO_USER_REQUIRED
+                message: MESSAGES.SOCKET.TO_USER_REQUIRED,
+                uniqueId
             });
             return;
         }
@@ -24,7 +25,8 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
         if (isMedia) {
             if (!imageCiphertext || !imageNonce || !imageMimeType) {
                 socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
-                    message: `imageCiphertext, imageNonce, and imageMimeType are required for ${messageType} messages`
+                    message: `imageCiphertext, imageNonce, and imageMimeType are required for ${messageType} messages`,
+                    uniqueId
                 });
                 return;
             }
@@ -35,7 +37,8 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
 
         if (!message || typeof message !== "string" || message.length === 0) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
-                message: MESSAGES.SOCKET.MESSAGE_EMPTY
+                message: MESSAGES.SOCKET.MESSAGE_EMPTY,
+                uniqueId
             });
             return;
         }
@@ -46,7 +49,8 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
 
         if (!isEncrypted && !isMedia && processedMessage.length === 0) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
-                message: MESSAGES.SOCKET.MESSAGE_EMPTY
+                message: MESSAGES.SOCKET.MESSAGE_EMPTY,
+                uniqueId
             });
             return;
         }
@@ -70,7 +74,8 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
 
         if (!areFriends) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
-                message: MESSAGES.FRIEND.CANNOT_MESSAGE
+                message: MESSAGES.FRIEND.CANNOT_MESSAGE,
+                uniqueId
             });
             return;
         }
@@ -87,7 +92,8 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
             });
         } catch (dbError) {
             socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
-                message: 'Failed to save message'
+                message: 'Failed to save message',
+                uniqueId
             });
             return;
         }
@@ -141,7 +147,8 @@ export async function handlePrivateMessage(socket, io, payload, userId, name, on
     } catch (error) {
         console.error('[ERROR] Message sending failed:', error.message);
         socket.emit(SOCKET_EVENTS.ERROR_MESSAGE, {
-            message: MESSAGES.SOCKET.SOMETHING_WENT_WRONG
+            message: MESSAGES.SOCKET.SOMETHING_WENT_WRONG,
+            uniqueId
         });
     }
 }

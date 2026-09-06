@@ -1394,4 +1394,58 @@ describe('🧪 Socket.IO Backend QA Tests', () => {
     }, 9000);
   });
 
+  describe('1️⃣6️⃣ Private Message Error uniqueId Test (private-message regression)', () => {
+
+    it('a private message that fails schema validation gets an error_message back with the same uniqueId it was sent with', (done) => {
+      const tokenA = generateToken(testUsers.userA);
+      const socketA = io(API_URL, {
+        auth: { token: tokenA },
+        reconnection: false,
+        transports: ['websocket', 'polling']
+      });
+
+      let handled = false;
+      const finish = (err) => {
+        if (handled) return;
+        handled = true;
+        socketA.connected && socketA.disconnect();
+        done(err);
+      };
+
+      const uniqueId = 'test-unique-id-12345';
+
+      socketA.on('error_message', (data) => {
+        try {
+          expect(data.message).toBe('Failed to save message');
+          // Without this, the frontend had no way to know WHICH optimistic
+          // message a failure applied to, so a rejected send's bubble was
+          // never cleaned up and stayed on screen looking delivered.
+          expect(data.uniqueId).toBe(uniqueId);
+          console.log('✅ PASS: private message save failure echoed back the original uniqueId');
+          finish();
+        } catch (e) {
+          finish(e);
+        }
+      });
+
+      socketA.on('connect', () => {
+        // imageMimeType outside the schema's enum — passes the handler's
+        // own presence check but fails Message.create's schema validation.
+        socketA.emit('private_message', {
+          toUserId: testUsers.userB.id,
+          uniqueId,
+          message: 'wrapped-content-key',
+          messageType: 'image',
+          imageCiphertext: 'ciphertext',
+          imageNonce: 'nonce',
+          imageMimeType: 'image/heic',
+        });
+      });
+
+      socketA.on('connect_error', (error) => finish(error));
+
+      setTimeout(() => finish(new Error('timed out')), 5000);
+    }, 8000);
+  });
+
 });
