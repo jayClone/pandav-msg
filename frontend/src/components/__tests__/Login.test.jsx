@@ -259,23 +259,6 @@ describe("LoginForm", () => {
       expect(localStorage.getItem("token")).toBeNull()
     })
 
-    test("shows 'No account found' on a 404", async () => {
-      const user = userEvent.setup()
-      mockLogin.mockRejectedValueOnce({ status: 404, message: "Not found" })
-
-      render(
-        <MemoryRouter>
-          <LoginForm />
-        </MemoryRouter>
-      )
-
-      await user.type(screen.getByPlaceholderText("name@example.com"), "nobody@example.com")
-      await user.type(screen.getByPlaceholderText("........"), "password123")
-      await user.click(screen.getByRole("button", { name: /sign in/i }))
-
-      expect(await screen.findByText(/no account found with this email/i)).toBeInTheDocument()
-    })
-
     test("shows the server message on a 400", async () => {
       const user = userEvent.setup()
       mockLogin.mockRejectedValueOnce({ status: 400, message: "OTP required" })
@@ -293,9 +276,14 @@ describe("LoginForm", () => {
       expect(await screen.findByText(/otp required/i)).toBeInTheDocument()
     })
 
-    test("shows a lockout message on a 403", async () => {
+    // The backend only ever returns 401 (enumeration-safe, both for a
+    // missing account and a wrong password), 400 (e.g. OTP required), or a
+    // genuine server error for /auth/login — never 404 or 403. Any other
+    // status the switch doesn't special-case should still surface the
+    // server's own message via the default branch rather than going blank.
+    test("falls back to the server's own message for a status the switch doesn't special-case", async () => {
       const user = userEvent.setup()
-      mockLogin.mockRejectedValueOnce({ status: 403, message: "Locked" })
+      mockLogin.mockRejectedValueOnce({ status: 503, message: "Service temporarily unavailable" })
 
       render(
         <MemoryRouter>
@@ -307,7 +295,7 @@ describe("LoginForm", () => {
       await user.type(screen.getByPlaceholderText("........"), "password123")
       await user.click(screen.getByRole("button", { name: /sign in/i }))
 
-      expect(await screen.findByText(/account is locked/i)).toBeInTheDocument()
+      expect(await screen.findByText(/service temporarily unavailable/i)).toBeInTheDocument()
     })
   })
 })

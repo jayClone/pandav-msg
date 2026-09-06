@@ -239,5 +239,31 @@ describe("ForgotPasswordForm", () => {
       expect(await screen.findByText(/otp expired/i)).toBeInTheDocument()
       expect(mockNavigate).not.toHaveBeenCalled()
     })
+
+    // Regression test: there used to be no way back from this step at all
+    // (no Back button existed here, unlike the OTP step) — an OTP that
+    // expired while sitting on the new-password screen was a dead end
+    // requiring a full page reload to recover from.
+    test("offers a way back to the OTP step when the reset fails (e.g. an expired OTP)", async () => {
+      const user = userEvent.setup()
+      mockResetPassword.mockRejectedValueOnce({ message: "OTP expired. Please request a new OTP." })
+
+      render(
+        <MemoryRouter>
+          <ForgotPasswordForm />
+        </MemoryRouter>
+      )
+
+      await getToNewPasswordStep(user)
+
+      await user.type(screen.getByLabelText(/^new password$/i), VALID_PASSWORD)
+      await user.type(screen.getByLabelText(/confirm new password/i), VALID_PASSWORD)
+      await user.click(screen.getByRole("button", { name: /reset password/i }))
+      await screen.findByText(/otp expired/i)
+
+      await user.click(screen.getByRole("button", { name: /get a new one/i }))
+
+      expect(await screen.findByText(/verify email/i)).toBeInTheDocument()
+    })
   })
 })

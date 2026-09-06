@@ -332,5 +332,41 @@ describe("SignupForm", () => {
       expect(await screen.findByText(/email already exists/i)).toBeInTheDocument()
       expect(mockNavigate).not.toHaveBeenCalled()
     })
+
+    // Regression test: OTPVerification used to stay mounted showing its own
+    // "Verified!" success state (every box disabled) when registration
+    // failed afterward — a dead end with no way to retry. SignupForm now
+    // forces it to remount (via a key bump) so the boxes come back usable.
+    test("lets the user try again after a post-verification registration failure, instead of leaving the OTP screen frozen", async () => {
+      const user = userEvent.setup()
+      mockSendOTP.mockResolvedValue({ success: true })
+      mockVerifyOTP
+        .mockResolvedValueOnce({ success: true })
+        .mockResolvedValueOnce({ success: true })
+      mockRegister
+        .mockRejectedValueOnce({ message: "Email already exists" })
+        .mockResolvedValueOnce({ success: true, token: "test-token" })
+
+      render(
+        <MemoryRouter>
+          <SignupForm />
+        </MemoryRouter>
+      )
+
+      await fillForm(user)
+      await submitForm(user)
+      await screen.findByText(/verify email/i)
+      await enterOtpAndVerify(user, "111111")
+      await screen.findByText(/email already exists/i)
+
+      const otpInputs = screen.getAllByRole("textbox")
+      expect(otpInputs[0]).not.toBeDisabled()
+
+      await enterOtpAndVerify(user, "222222")
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith("/login")
+      }, { timeout: 3000 })
+    })
   })
 })

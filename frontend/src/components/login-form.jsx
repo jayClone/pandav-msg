@@ -138,6 +138,13 @@ export function LoginForm({ className, ...props }) {
       const errorMessage = err?.message || "Login failed"
 
       switch (status) {
+        // The backend deliberately returns the identical 401 for both "no
+        // such user" and "wrong password" (enumeration-safe — see
+        // auth.Controller.js login()), so there's only ever one case to
+        // handle here. It never returns 404 for a missing account or 403
+        // for a locked account — no such distinction or lockout feature
+        // exists server-side, so branches for those statuses would just be
+        // dead code implying capabilities that don't exist.
         case 401:
           setError("Invalid email or password")
           if (attemptCount >= 1) {
@@ -151,21 +158,8 @@ export function LoginForm({ className, ...props }) {
           setFailedField("password")
           break
 
-        case 404:
-          setError("No account found with this email")
-          setFieldErrors({
-            email: "This email is not registered",
-            password: "",
-          })
-          setFailedField("email")
-          break
-
         case 400:
           setError(errorMessage)
-          break
-
-        case 403:
-          setError("Account is locked. Please try again later.")
           break
 
         default:

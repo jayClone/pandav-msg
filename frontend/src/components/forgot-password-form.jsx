@@ -281,6 +281,23 @@ export function ForgotPasswordForm({ ...props }) {
                 <Button type="submit" disabled={loading || !isPasswordValid()} className="w-full">
                   {loading ? "Resetting..." : "Reset Password"}
                 </Button>
+
+                {/* Recovery path for an OTP that expired while sitting on this
+                    step (or any other stale/consumed-OTP failure) — without
+                    this there was no way back except reloading the page and
+                    restarting from the email step. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("")
+                    setStep('otp')
+                  }}
+                  disabled={loading}
+                  className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors w-full"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Code expired or not working? Get a new one
+                </button>
               </form>
             )}
           </CardContent>

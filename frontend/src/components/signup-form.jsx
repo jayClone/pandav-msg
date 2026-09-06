@@ -24,6 +24,11 @@ export function SignupForm({ ...props }) {
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState("")
   const [error, setError] = useState("")
+  // Bumped whenever registration fails *after* OTP verification already
+  // succeeded, to force OTPVerification to remount (via its key prop)
+  // instead of staying frozen on its own internal "Verified!" success
+  // state with every input disabled and no way to retry.
+  const [otpResetKey, setOtpResetKey] = useState(0)
   
   // ✅ Password visibility state
   const [showPassword, setShowPassword] = useState(false)
@@ -163,11 +168,11 @@ export function SignupForm({ ...props }) {
         setTimeout(() => navigate("/login"), 1500)
       } else {
         setError(response.message || "Registration failed")
-        setStep('otp')
+        setOtpResetKey((k) => k + 1)
       }
     } catch (err) {
       setError(err.message || "Registration failed")
-      setStep('otp')
+      setOtpResetKey((k) => k + 1)
     } finally {
       setLoading(false)
     }
@@ -410,7 +415,14 @@ export function SignupForm({ ...props }) {
             <p className="font-medium">{error}</p>
           </div>
         )}
+        {loading && (
+          <div className="mb-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader className="h-4 w-4 animate-spin" />
+            Creating your account...
+          </div>
+        )}
         <OTPVerification
+          key={otpResetKey}
           email={form.email}
           name={form.name}
           purpose="registration"
