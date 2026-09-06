@@ -231,12 +231,31 @@ export function useCall(currentUserId) {
         setPeer(null);
       };
 
+      // handleCallOffer rejects a bad/non-friend call attempt via the
+      // generic ERROR_MESSAGE event (not CALL_UNAVAILABLE), and does so
+      // BEFORE ever setting the server's activeCalls entry for this
+      // session — so the ring timeout that would otherwise rescue a stuck
+      // call never even starts. With nothing here listening for it, the
+      // caller was left stuck in "outgoing" forever, with the camera/mic
+      // still actively held (only cleanup() releases them). Scoped to
+      // status === 'outgoing' — the only state this specific rejection can
+      // affect — so it can't be confused with an unrelated ERROR_MESSAGE
+      // from some other feature (that event isn't call-specific).
+      const onErrorMessage = ({ message }) => {
+        if (status !== 'outgoing') return;
+        setError(message || 'Call could not be started');
+        cleanup();
+        setStatus('idle');
+        setPeer(null);
+      };
+
       socket.on(SOCKET_EVENTS.CALL_OFFER, onOffer);
       socket.on(SOCKET_EVENTS.CALL_ANSWER, onAnswer);
       socket.on(SOCKET_EVENTS.CALL_ICE_CANDIDATE, onIceCandidate);
       socket.on(SOCKET_EVENTS.CALL_REJECT, onReject);
       socket.on(SOCKET_EVENTS.CALL_END, onEnd);
       socket.on(SOCKET_EVENTS.CALL_UNAVAILABLE, onUnavailable);
+      socket.on(SOCKET_EVENTS.ERROR_MESSAGE, onErrorMessage);
 
       return () => {
         socket.off(SOCKET_EVENTS.CALL_OFFER, onOffer);
@@ -245,6 +264,7 @@ export function useCall(currentUserId) {
         socket.off(SOCKET_EVENTS.CALL_REJECT, onReject);
         socket.off(SOCKET_EVENTS.CALL_END, onEnd);
         socket.off(SOCKET_EVENTS.CALL_UNAVAILABLE, onUnavailable);
+        socket.off(SOCKET_EVENTS.ERROR_MESSAGE, onErrorMessage);
       };
     };
 

@@ -188,4 +188,49 @@ describe('useCall', () => {
     expect(result.current.status).toBe('idle')
     expect(result.current.peer).toBeNull()
   })
+
+  // Regression test: handleCallOffer rejects a bad/non-friend call attempt
+  // via the generic error_message event, not call_unavailable, and never
+  // sets the server's activeCalls entry for it — so the ring-timeout safety
+  // net never starts either. Nothing here listened for error_message, so
+  // the caller was stuck showing "outgoing" forever with the camera/mic
+  // still actively captured.
+  test('error_message while a call is outgoing resets to idle and releases the media stream', async () => {
+    const { useCall } = await import('../useCall.js')
+    const { result } = renderHook(() => useCall('user-a'))
+
+    await act(async () => {
+      await result.current.startCall('user-b', 'Bob', 'audio')
+    })
+
+    expect(result.current.status).toBe('outgoing')
+    const stream = result.current.localStream
+    const tracks = stream.getTracks()
+
+    act(() => {
+      listeners['error_message']({ message: 'You can only call friends' })
+    })
+
+    expect(result.current.error).toBe('You can only call friends')
+    expect(result.current.status).toBe('idle')
+    expect(result.current.peer).toBeNull()
+    expect(result.current.localStream).toBeNull()
+    tracks.forEach((track) => expect(track.stop).toHaveBeenCalled())
+  })
+
+  // An error_message unrelated to calling (this event isn't call-specific)
+  // must not interfere when there's no outgoing call to fail.
+  test('error_message while idle is ignored', async () => {
+    const { useCall } = await import('../useCall.js')
+    const { result } = renderHook(() => useCall('user-a'))
+
+    expect(result.current.status).toBe('idle')
+
+    act(() => {
+      listeners['error_message']?.({ message: 'Too many messages. Please slow down.' })
+    })
+
+    expect(result.current.status).toBe('idle')
+    expect(result.current.error).toBe('')
+  })
 })
