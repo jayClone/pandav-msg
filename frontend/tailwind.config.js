@@ -1,3 +1,8 @@
+// NOTE: Tailwind v4 (via @tailwindcss/vite, see vite.config.js) does not
+// read this file unless referenced with an `@config` directive in CSS,
+// which this project doesn't do — the `theme`/`plugins` below are dead and
+// only kept for the `content` globs some tooling still expects. Safe-area
+// utilities (.safe-ptop/.safe-pbottom/etc.) live in src/index.css instead.
 export default {
   content: [
     "./index.html",
@@ -9,31 +14,6 @@ export default {
       screens: {
         'xs': '380px',
       },
-      // ✅ ADD SAFE AREA SUPPORT FOR iOS NOTCH
-      spacing: {
-        'safe': 'max(1rem, env(safe-area-inset-bottom))',
-        'safe-left': 'env(safe-area-inset-left)',
-        'safe-right': 'env(safe-area-inset-right)',
-        'safe-top': 'env(safe-area-inset-top)',
-      },
     },
   },
-  plugins: [
-    function({ addUtilities }) {
-      addUtilities({
-        '.safe-pbottom': {
-          paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
-        },
-        '.safe-ptop': {
-          paddingTop: 'max(1rem, env(safe-area-inset-top))',
-        },
-        '.safe-pleft': {
-          paddingLeft: 'env(safe-area-inset-left)',
-        },
-        '.safe-pright': {
-          paddingRight: 'env(safe-area-inset-right)',
-        },
-      });
-    },
-  ],
 }

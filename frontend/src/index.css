@@ -5,6 +5,14 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /*
+   * Custom breakpoint for ultra-small phones. Previously declared in
+   * tailwind.config.js, which the @tailwindcss/vite plugin (Tailwind v4)
+   * never reads without an `@config` directive — every `xs:` utility in
+   * the app (33 usages) was compiling to nothing, e.g. the emoji-picker
+   * button's `hidden xs:flex` left it hidden at every screen size.
+   */
+  --breakpoint-xs: 380px;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -333,5 +341,80 @@
     background: rgba(31, 41, 55, 0.8);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
+  }
+}
+
+/*
+ * Mobile-native interaction feel (unlayered on purpose: these need to win
+ * over Tailwind's `utilities` layer — e.g. override `opacity-0` — which a
+ * same-specificity rule inside @layer base/components can never do because
+ * Tailwind v4's cascade layers place `utilities` after `base`/`components`
+ * regardless of selector specificity).
+ */
+
+/* The app shell shouldn't rubber-band like a webpage; individual scroll
+   containers opt back in via .custom-scrollbar below. */
+html {
+  overscroll-behavior: none;
+}
+
+/*
+ * Safe-area insets (notch / status bar / gesture bar). These used to be
+ * registered via a tailwind.config.js `addUtilities` plugin, but Tailwind
+ * v4's `@tailwindcss/vite` plugin doesn't read tailwind.config.js at all
+ * (no `@config` directive here) — the classes were being applied throughout
+ * the app but compiled to nothing, so safe-area padding was silently a
+ * no-op everywhere it was used. Defining them directly here is what
+ * actually ships them.
+ */
+.safe-ptop {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+.safe-pbottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.safe-pleft {
+  padding-left: env(safe-area-inset-left);
+}
+
+.safe-pright {
+  padding-right: env(safe-area-inset-right);
+}
+
+button,
+[role="button"],
+a {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+@media (hover: none) {
+  /* Touchscreens have no hover, so give buttons instant press feedback
+     instead of a hover state that never fires. */
+  button:active,
+  [role="button"]:active {
+    opacity: 0.7;
+  }
+
+  /* Actions meant to reveal "on hover" (delete/pin/react) have no way to
+     reveal on a touchscreen — show them immediately instead. */
+  .opacity-0.group-hover\:opacity-100 {
+    opacity: 1;
+  }
+}
+
+.custom-scrollbar {
+  overscroll-behavior: contain;
+}
+
+@media (hover: none) {
+  .custom-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }

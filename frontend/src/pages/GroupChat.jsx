@@ -1,4 +1,6 @@
 import React, { useCallback, useMemo, useEffect, useState, useRef } from 'react'
+import { Capacitor } from '@capacitor/core'
+import { App as CapacitorApp } from '@capacitor/app'
 import axios from 'axios'
 import groupService from '@services/group.service.js'
 import cryptoService from '@services/crypto.service.js'
@@ -8,9 +10,11 @@ import { compressImageFile } from '@utils/imageCompression.js'
 import { compressVideoFile } from '@utils/videoCompression.js'
 import Avatar from '@/components/Avatar'
 import GroupAvatarModal from '@/components/GroupAvatarModal'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import EmojiPicker from '@/components/EmojiPicker'
 import ReactionBar from '@/components/ReactionBar'
 import { showDesktopNotification } from '@utils/notifications.js'
+import { hapticLight } from '@utils/haptics.js'
 import {
   Plus,
   Search,
@@ -48,6 +52,10 @@ export default function GroupChat({
   
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
+  const selectedGroupRef = useRef(null); // TRACK CURRENT SELECTION WITHOUT RE-RENDERS (native back button)
+  useEffect(() => {
+    selectedGroupRef.current = selectedGroup;
+  }, [selectedGroup]);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [members, setMembers] = useState([]);
@@ -71,6 +79,8 @@ export default function GroupChat({
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [addMemberLoading, setAddMemberLoading] = useState(false);
   const [removeMemberLoading, setRemoveMemberLoading] = useState(null);
+  const [confirmRemoveMemberId, setConfirmRemoveMemberId] = useState(null);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [usersToAddList, setUsersToAddList] = useState([]);
   const [selectedUsersToAdd, setSelectedUsersToAdd] = useState([]);
   const [searchUsersToAdd, setSearchUsersToAdd] = useState("");
@@ -1039,10 +1049,6 @@ export default function GroupChat({
 
   const handleRemoveMember = async (memberId) => {
     if (!selectedGroup) return;
-  
-    if (!confirm("Are you sure you want to remove this member from the group?")) {
-      return;
-    }
 
     setRemoveMemberLoading(memberId);
     try {
@@ -1126,43 +1132,6 @@ export default function GroupChat({
     }
   };
 
-  // The "Delete Group?" confirmation is the only non-undoable action in
-  // this component, but — like every modal here — had no Escape-to-close
-  // and no focus trap: Tab/Shift+Tab from whatever triggered it walked
-  // straight through the (still-rendered, just visually covered)
-  // background page instead of staying inside the dialog. Auto-focuses
-  // Cancel (the safe default) on open, traps Tab between the two buttons,
-  // and closes on Escape.
-  const deleteConfirmRef = useRef(null);
-  useEffect(() => {
-    if (!showDeleteConfirm) return;
-
-    const container = deleteConfirmRef.current;
-    const focusable = container?.querySelectorAll('button:not(:disabled)') || [];
-    focusable[0]?.focus();
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        setShowDeleteConfirm(false);
-        return;
-      }
-      if (e.key !== 'Tab' || focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showDeleteConfirm]);
-
   const fetchAvailableUsers = useCallback(async () => {
     try {
       await axios.get("/users", {
@@ -1194,20 +1163,9 @@ export default function GroupChat({
     }
   }, [showCreateGroupModal, token]);
 
-  //  COMPREHENSIVE PROTECTION: NO BACK, NO CLOSE, NO SWIPE-BACK
+  //  PREVENT ACCIDENTAL TAB CLOSE / BROWSER SHORTCUTS WHILE CHATTING
   useEffect(() => {
-    // 1️⃣ PREVENT BACK BUTTON - Replace history so browser back doesn't work
-    window.history.replaceState(null, "", window.location.href);
-
-    // 2️⃣ PREVENT BACK BUTTON - Trap popstate event
-    const handlePopState = (e) => {
-      e.preventDefault();
-      // Push forward to keep user on group chat page
-      window.history.forward();
-    };
-    window.addEventListener('popstate', handlePopState);
-
-    // 3️⃣ PREVENT TAB CLOSE - Warn user before leaving/closing
+    // 1️⃣ PREVENT TAB CLOSE - Warn user before leaving/closing
     const handleBeforeUnload = (e) => {
       const message = "You have active group chats. Are you sure you want to close this tab?";
       e.returnValue = message;
@@ -1215,18 +1173,7 @@ export default function GroupChat({
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // 4️⃣ PREVENT SWIPE-BACK GESTURE ON MOBILE
-    const handleTouchMove = (e) => {
-      // If user swipes from left edge to go back, prevent it
-      const touch = e.touches[0];
-      if (touch && touch.clientX < 10) {
-        e.preventDefault();
-      }
-    };
-    // Use 'passive: false' to allow preventDefault
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-
-    // 5️⃣ DISABLE BROWSER CONTROLS - Meta+W, Alt+Left, etc.
+    // 2️⃣ DISABLE BROWSER CONTROLS - Meta+W, Alt+Left, etc.
     const handleKeyDown = (e) => {
       // Prevent Ctrl+W / Cmd+W (close tab)
       if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
@@ -1248,10 +1195,26 @@ export default function GroupChat({
 
     // Cleanup
     return () => {
-      window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // ANDROID BACK BUTTON / GESTURE: closes the open group chat instead of
+  // exiting the app or being blocked outright — mirrors the back-arrow button.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const listenerPromise = CapacitorApp.addListener('backButton', () => {
+      if (selectedGroupRef.current) {
+        setSelectedGroup(null);
+      } else {
+        CapacitorApp.exitApp();
+      }
+    });
+
+    return () => {
+      listenerPromise.then((listener) => listener.remove());
     };
   }, []);
 
@@ -1691,11 +1654,7 @@ export default function GroupChat({
       return;
     }
 
-    const confirmed = window.confirm(
-      `Are you sure you want to leave "${selectedGroup.name}"? You can rejoin if invited again.`
-    );
-
-    if (!confirmed) return;
+    setShowLeaveConfirm(false);
 
     try {
       setLoading(true);
@@ -1807,7 +1766,7 @@ useEffect(() => {
               placeholder="Search groups..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-3 py-2 sm:py-2.5 bg-[rgb(var(--bg-tertiary))]/50 backdrop-blur-sm border border-[rgb(var(--border-secondary))]/60 rounded-xl text-xs sm:text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))]/70 focus:outline-none focus:ring-2 focus:ring-green-500/60 focus:border-green-500/40 transition-all duration-200 hover:bg-[rgb(var(--bg-tertiary))]/60 hover:border-[rgb(var(--border-secondary))]/80"
+              className="w-full pl-10 pr-3 py-2 sm:py-2.5 bg-[rgb(var(--bg-tertiary))]/50 backdrop-blur-sm border border-[rgb(var(--border-secondary))]/60 rounded-xl text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))]/70 focus:outline-none focus:ring-2 focus:ring-green-500/60 focus:border-green-500/40 transition-all duration-200 hover:bg-[rgb(var(--bg-tertiary))]/60 hover:border-[rgb(var(--border-secondary))]/80"
             />
           </div>
         </div>
@@ -1933,7 +1892,7 @@ useEffect(() => {
         {selectedGroup ? (
           <>
             {/* CHAT HEADER - Mobile Optimized */}
-            <div className="p-2 xs:p-3 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-1 xs:gap-2 sm:gap-3 flex-shrink-0">
+            <div className="p-2 xs:p-3 sm:p-4 safe-ptop bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-1 xs:gap-2 sm:gap-3 flex-shrink-0">
               <div className="flex items-center gap-1.5 xs:gap-2 sm:gap-3 min-w-0 flex-1">
                 {/* Back Button - Mobile Safe */}
                 <button
@@ -1943,11 +1902,11 @@ useEffect(() => {
                     setMembers([]);
                     setSidebarOpen(true);
                   }}
-                  className="p-1.5 xs:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
+                  className="p-2.5 xs:p-2 hover:bg-[rgb(var(--bg-hover))] active:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
                   title="Back"
                   aria-label="Back to groups list"
                 >
-                  <ChevronLeft className="w-4 xs:w-4.5 sm:w-5 h-4 xs:h-4.5 sm:h-5" />
+                  <ChevronLeft className="w-5 h-5" />
                 </button>
 
                 {/* Group Avatar - clickable for admin to change the picture */}
@@ -2010,12 +1969,12 @@ useEffect(() => {
                     e.preventDefault();
                     setShowOptionsMenu(prev => !prev);
                   }}
-                  className="p-1.5 xs:p-2 sm:p-3 hover:bg-red-500/20 rounded-lg transition-all text-red-400 hover:text-red-300 shrink-0 border border-red-500/30 hover:border-red-400/50"
+                  className="p-2.5 xs:p-2 sm:p-3 hover:bg-red-500/20 active:bg-red-500/20 rounded-lg transition-all text-red-400 hover:text-red-300 shrink-0 border border-red-500/30 hover:border-red-400/50"
                   title="Group Options"
                   aria-label="Group options"
                   aria-expanded={showOptionsMenu}
                 >
-                  <MoreVertical className="w-4 xs:w-5 sm:w-6 h-4 xs:h-5 sm:h-6" />
+                  <MoreVertical className="w-5 h-5 sm:w-6 sm:h-6" />
                 </button>
 
                 {/* Dropdown Menu - MOBILE */}
@@ -2061,7 +2020,7 @@ useEffect(() => {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleLeaveGroup();
+                        setShowLeaveConfirm(true);
                         setShowOptionsMenu(false);
                       }}
                       disabled={loading}
@@ -2203,7 +2162,7 @@ useEffect(() => {
                           {/* Remove Button - Only show if current user is admin */}
                             {String(selectedGroup?.adminId) === String(currentUserId) && memberId !== currentUserId && (
                               <button
-                                onClick={() => handleRemoveMember(memberId)}
+                                onClick={() => setConfirmRemoveMemberId(memberId)}
                                 disabled={removeMemberLoading === memberId}
                                 className="p-2 sm:p-2.5 rounded-lg transition-all shrink-0 font-bold text-white bg-red-600 hover:bg-red-700 shadow-lg hover:shadow-red-500/50 border border-red-400/50 hover:border-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Remove Member"
@@ -2284,7 +2243,7 @@ useEffect(() => {
             </div>
 
             {/* INPUT AREA - Mobile Optimized */}
-            <div className="p-2 xs:p-2.5 sm:p-4 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))] flex-shrink-0">
+            <div className="p-2 xs:p-2.5 sm:p-4 safe-pbottom bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))] flex-shrink-0">
               {error && (
                 <div className="mb-2 sm:mb-3 p-2 sm:p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-xs">
                   {error}
@@ -2362,19 +2321,20 @@ useEffect(() => {
                 {/* Send Button - RESPONSIVE */}
                 <button
                   onClick={() => {
+                    hapticLight();
                     handleSendMessage();
                     handleGroupTyping(false);
                   }}
                   disabled={!newMessage.trim()}
                   title="Send message"
                   aria-label="Send message"
-                  className={`p-2 sm:p-3 rounded-xl transition-all shadow-lg shrink-0 ${
+                  className={`p-3 sm:p-3 rounded-xl transition-all shadow-lg shrink-0 ${
                     newMessage.trim()
                       ? "bg-linear-to-br from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-black glow-green"
                       : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-muted))] cursor-not-allowed"
                   }`}
                 >
-                  <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 lg:w-5 lg:h-5" />
+                  <Send className="w-4 h-4 sm:w-4 sm:h-4 lg:w-5 lg:h-5" />
                 </button>
               </div>
             </div>
@@ -2577,32 +2537,46 @@ useEffect(() => {
       )}
 
       {/*  DELETE CONFIRM - RESPONSIVE */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div ref={deleteConfirmRef} role="dialog" aria-modal="true" aria-label="Delete group confirmation" className="bg-slate-900 rounded-lg border border-red-600 p-6 max-w-md w-full">
-            <h3 className="text-lg font-bold text-red-400 mb-2">Delete Group?</h3>
-            <p className="text-sm text-slate-300 mb-4">
-              This will permanently delete "{selectedGroup?.name}" and all messages. This action cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors"
-                disabled={deletingGroup}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteGroup}
-                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition-colors disabled:opacity-50"
-                disabled={deletingGroup}
-              >
-                {deletingGroup ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDeleteGroup}
+        title="Delete Group?"
+        message={`This will permanently delete "${selectedGroup?.name}" and all messages. This action cannot be undone.`}
+        confirmLabel="Delete"
+        loadingLabel="Deleting..."
+        loading={deletingGroup}
+        danger
+        dialogLabel="Delete group confirmation"
+      />
+
+      {/* LEAVE GROUP CONFIRM */}
+      <ConfirmDialog
+        isOpen={showLeaveConfirm}
+        onCancel={() => setShowLeaveConfirm(false)}
+        onConfirm={handleLeaveGroup}
+        title="Leave group?"
+        message={`Are you sure you want to leave "${selectedGroup?.name}"? You can rejoin if invited again.`}
+        confirmLabel="Leave"
+        danger
+        dialogLabel="Leave group confirmation"
+      />
+
+      {/* REMOVE MEMBER CONFIRM */}
+      <ConfirmDialog
+        isOpen={!!confirmRemoveMemberId}
+        onCancel={() => setConfirmRemoveMemberId(null)}
+        onConfirm={() => {
+          const memberId = confirmRemoveMemberId;
+          setConfirmRemoveMemberId(null);
+          handleRemoveMember(memberId);
+        }}
+        title="Remove member?"
+        message="Are you sure you want to remove this member from the group?"
+        confirmLabel="Remove"
+        danger
+        dialogLabel="Remove member confirmation"
+      />
 
       {/*  ADD MEMBER MODAL - RESPONSIVE */}
       {showAddMemberModal && (

@@ -1,3 +1,5 @@
+import { syncStatusBar } from "./nativeShell.js";
+
 // Initialize theme on page load with preventDefault for default behavior
 export const initializeTheme = () => {
   // Prevent default browser behavior for theme
@@ -63,6 +65,8 @@ export const applyTheme = (themeName, e) => {
   root.style.setProperty('--text-muted', theme['--text-muted'], 'important');
   root.style.setProperty('--text-lighter', theme['--text-lighter'], 'important');
   root.style.setProperty('--text-darker-muted', theme['--text-darker-muted'], 'important');
+
+  syncStatusBar(themeName);
 };
 
 // Get theme name from localStorage

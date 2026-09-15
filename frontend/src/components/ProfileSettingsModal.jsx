@@ -62,8 +62,14 @@ export default function ProfileSettingsModal({ isOpen, onClose, currentUserName,
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl border border-[rgb(var(--border-secondary))] max-w-sm w-full overflow-hidden animate-in fade-in zoom-in duration-300">
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-[rgb(var(--bg-secondary))] rounded-t-2xl sm:rounded-2xl shadow-2xl border border-[rgb(var(--border-secondary))] sm:max-w-sm w-full overflow-hidden animate-in fade-in slide-in-from-bottom sm:zoom-in sm:slide-in-from-bottom-0 duration-300 max-h-[85vh] overflow-y-auto custom-scrollbar safe-pbottom"
+      >
         <div className="px-6 py-5 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between">
           <h2 className="text-lg font-bold text-[rgb(var(--text-primary))]">Profile Picture</h2>
           <button

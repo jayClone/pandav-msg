@@ -46,8 +46,8 @@ export default function UnlockEncryptionModal({ userId, email, expectedPublicKey
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl border border-[rgb(var(--border-secondary))] max-w-sm w-full overflow-hidden animate-in fade-in zoom-in duration-300">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-[100] sm:p-4">
+      <div className="bg-[rgb(var(--bg-secondary))] rounded-t-2xl sm:rounded-2xl shadow-2xl border border-[rgb(var(--border-secondary))] sm:max-w-sm w-full overflow-hidden animate-in fade-in slide-in-from-bottom sm:zoom-in sm:slide-in-from-bottom-0 duration-300 max-h-[85vh] overflow-y-auto custom-scrollbar safe-pbottom">
         <div className="px-6 py-6 flex flex-col items-center gap-3 text-center">
           <div className="w-14 h-14 rounded-full bg-amber-500/15 flex items-center justify-center">
             <Lock className="w-7 h-7 text-amber-500" />

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { vi } from "vitest"
@@ -294,6 +294,8 @@ describe("Chat", () => {
     expect(deleteButtons).toHaveLength(2)
 
     await user.click(deleteButtons[0])
+    let dialog = await screen.findByRole("dialog", { name: /delete message confirmation/i })
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }))
     expect(mockSocket.emit).toHaveBeenCalledWith(
       SOCKET_EVENTS.MESSAGE_DELETED,
       expect.objectContaining({ messageId: "real-first" })
@@ -301,6 +303,8 @@ describe("Chat", () => {
 
     mockSocket.emit.mockClear()
     await user.click(screen.getByTitle("Delete"))
+    dialog = await screen.findByRole("dialog", { name: /delete message confirmation/i })
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }))
     expect(mockSocket.emit).toHaveBeenCalledWith(
       SOCKET_EVENTS.MESSAGE_DELETED,
       expect.objectContaining({ messageId: "real-second" })
@@ -416,7 +420,9 @@ describe("Chat", () => {
 
     await user.click(screen.getByTitle("Delete"))
 
-    expect(window.confirm).toHaveBeenCalled()
+    const dialog = await screen.findByRole("dialog", { name: /delete message confirmation/i })
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }))
+
     expect(mockSocket.emit).toHaveBeenCalledWith(
       SOCKET_EVENTS.MESSAGE_DELETED,
       expect.objectContaining({ toUserId: "friend-1" })

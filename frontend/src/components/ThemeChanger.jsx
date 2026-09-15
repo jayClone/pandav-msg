@@ -37,10 +37,16 @@ export default function ThemeChanger({ isOpen, onClose, onThemeChange }) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-      {/* Modal Container */}
-      <div className="bg-[rgb(var(--bg-secondary))] rounded-2xl shadow-2xl border border-[rgb(var(--border-secondary))] max-w-lg w-full mx-4 overflow-hidden animate-in fade-in zoom-in duration-300">
-        
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50"
+      onClick={onClose}
+    >
+      {/* Modal Container — bottom sheet on mobile, centered card on desktop */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-[rgb(var(--bg-secondary))] rounded-t-2xl sm:rounded-2xl shadow-2xl border border-[rgb(var(--border-secondary))] sm:max-w-lg w-full sm:mx-4 overflow-hidden animate-in fade-in slide-in-from-bottom sm:zoom-in sm:slide-in-from-bottom-0 duration-300 max-h-[85vh] overflow-y-auto custom-scrollbar safe-pbottom"
+      >
+
         {/* Header */}
         <div className="bg-linear-to-r from-green-600/20 to-emerald-600/20 px-6 py-5 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between">
           <div className="flex items-center gap-3">

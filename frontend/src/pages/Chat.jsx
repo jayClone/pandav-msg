@@ -6,6 +6,8 @@ import React, {
   useMemo,
 } from "react";
 import { useNavigate } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 import messageService from "@services/message.service.js";
 import cryptoService from "@services/crypto.service.js";
 import { getAuthUser } from "@/utils/authStorage.js";
@@ -23,7 +25,6 @@ import {
   Search,
   Pin,
   Circle,
-  MoreVertical,
   Phone,
   Video,
   Send,
@@ -42,10 +43,12 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import ThemeChanger from "@/components/ThemeChanger";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import Avatar from "@/components/Avatar";
 import EmojiPicker from "@/components/EmojiPicker";
 import ReactionBar from "@/components/ReactionBar";
 import { showDesktopNotification } from "@utils/notifications.js";
+import { hapticLight } from "@utils/haptics.js";
 import { useDebounce } from '@hooks/useDebounce';
 
 export default function Chat({
@@ -141,6 +144,7 @@ export default function Chat({
   // Chat States
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState("");
+  const [pendingDeleteMessageId, setPendingDeleteMessageId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingFriends, setLoadingFriends] = useState(false);
   const [error, setError] = useState("");
@@ -228,20 +232,9 @@ export default function Chat({
   }, [keyWarnings]);
 
 
-  //  COMPREHENSIVE PROTECTION: NO BACK, NO CLOSE, NO SWIPE-BACK
+  //  PREVENT ACCIDENTAL TAB CLOSE / BROWSER SHORTCUTS WHILE CHATTING
   useEffect(() => {
-    // 1️⃣ PREVENT BACK BUTTON - Replace history so browser back doesn't work
-    window.history.replaceState(null, "", window.location.href);
-
-    // 2️⃣ PREVENT BACK BUTTON - Trap popstate event
-    const handlePopState = (e) => {
-      e.preventDefault();
-      // Push forward to keep user on chat page
-      window.history.forward();
-    };
-    window.addEventListener('popstate', handlePopState);
-
-    // 3️⃣ PREVENT TAB CLOSE - Warn user before leaving/closing
+    // 1️⃣ PREVENT TAB CLOSE - Warn user before leaving/closing
     const handleBeforeUnload = (e) => {
       const message = "You have an active chat. Are you sure you want to close this tab?";
       e.returnValue = message;
@@ -249,18 +242,7 @@ export default function Chat({
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // 4️⃣ PREVENT SWIPE-BACK GESTURE ON MOBILE
-    const handleTouchMove = (e) => {
-      // If user swipes from left edge to go back, prevent it
-      const touch = e.touches[0];
-      if (touch && touch.clientX < 10) {
-        e.preventDefault();
-      }
-    };
-    // Use 'passive: false' to allow preventDefault
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-
-    // 5️⃣ DISABLE BROWSER CONTROLS - Meta+W, Alt+Left, etc.
+    // 2️⃣ DISABLE BROWSER CONTROLS - Meta+W, Alt+Left, etc.
     const handleKeyDown = (e) => {
       // Prevent Ctrl+W / Cmd+W (close tab)
       if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
@@ -280,7 +262,7 @@ export default function Chat({
     };
     window.addEventListener('keydown', handleKeyDown);
 
-    // 6️⃣ PREVENT OPENING CONTEXT MENU / RIGHT CLICK (optional, can remove if needed)
+    // 3️⃣ PREVENT OPENING CONTEXT MENU / RIGHT CLICK (optional, can remove if needed)
     const handleContextMenu = () => {
       // You can disable right-click, but it's better to allow it for accessibility
       // Uncomment if you want to disable it:
@@ -290,13 +272,29 @@ export default function Chat({
 
     // Cleanup
     return () => {
-      window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('contextmenu', handleContextMenu);
     };
   }, []);
+
+  // ANDROID BACK BUTTON / GESTURE: closes the open chat instead of exiting
+  // the app or being blocked outright — mirrors the in-app back-arrow button.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const listenerPromise = CapacitorApp.addListener('backButton', () => {
+      if (selectedUserIdRef.current) {
+        setSelectedUserId(null);
+      } else {
+        CapacitorApp.exitApp();
+      }
+    });
+
+    return () => {
+      listenerPromise.then((listener) => listener.remove());
+    };
+  }, [setSelectedUserId]);
 
   //  FETCH ONLY FRIENDS (not all users)
   const fetchFriends = useCallback(async () => {
@@ -1343,9 +1341,6 @@ export default function Chat({
 
   const handleDeleteMessage = useCallback(
     async (messageId) => {
-      const confirmed = window.confirm("Are you sure you want to delete this message?");
-      if (!confirmed) return;
-
       try {
         console.log("🗑️ [DELETE] Deleting message:", messageId);
 
@@ -1409,6 +1404,22 @@ export default function Chat({
         }}
       />
 
+      {/* Delete Message Confirm */}
+      <ConfirmDialog
+        isOpen={!!pendingDeleteMessageId}
+        onCancel={() => setPendingDeleteMessageId(null)}
+        onConfirm={() => {
+          const messageId = pendingDeleteMessageId;
+          setPendingDeleteMessageId(null);
+          handleDeleteMessage(messageId);
+        }}
+        title="Delete message?"
+        message="This will delete the message for everyone in this chat. This action cannot be undone."
+        confirmLabel="Delete"
+        danger
+        dialogLabel="Delete message confirmation"
+      />
+
       {/*  SOCKET STATUS BAR */}
       {socketStatus !== 'connected' && (
         <div className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium flex items-center gap-2 ${
@@ -1445,7 +1456,7 @@ export default function Chat({
           } bg-[rgb(var(--bg-secondary))] sm:glass-effect border-r border-[rgb(var(--border-secondary))] flex flex-col transition-all duration-300 overflow-hidden absolute md:relative md:z-0 z-40 h-full min-h-0`}
         >
           {/* Sidebar Header */}
-          <div className="p-3 sm:p-4 bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2">
+          <div className="p-3 sm:p-4 safe-ptop bg-[rgb(var(--bg-secondary))]/80 border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-2">
             <h2 className="text-base sm:text-lg md:text-xl font-bold text-[rgb(var(--text-primary))] whitespace-nowrap">
               {loadingFriends ? 'Loading...' : 'Friends'}
             </h2>
@@ -1461,7 +1472,7 @@ export default function Chat({
                 placeholder="Search friends..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 sm:py-2.5 bg-[rgb(var(--bg-tertiary))]/50 backdrop-blur-sm border border-[rgb(var(--border-secondary))]/60 rounded-xl text-xs sm:text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))]/70 focus:outline-none focus:ring-2 focus:ring-green-500/60 focus:border-green-500/40 transition-all duration-200 hover:bg-[rgb(var(--bg-tertiary))]/60 hover:border-[rgb(var(--border-secondary))]/80"
+                className="w-full pl-10 pr-4 py-2 sm:py-2.5 bg-[rgb(var(--bg-tertiary))]/50 backdrop-blur-sm border border-[rgb(var(--border-secondary))]/60 rounded-xl text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))]/70 focus:outline-none focus:ring-2 focus:ring-green-500/60 focus:border-green-500/40 transition-all duration-200 hover:bg-[rgb(var(--bg-tertiary))]/60 hover:border-[rgb(var(--border-secondary))]/80"
               />
             </div>
           </div>
@@ -1572,13 +1583,13 @@ export default function Chat({
                         }}
                         title={isPinned ? "Unpin chat" : "Pin chat"}
                         aria-label={isPinned ? "Unpin chat" : "Pin chat"}
-                        className={`absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-all ${
+                        className={`absolute top-1 right-1 p-2.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-all ${
                           isPinned
                             ? "text-green-400 bg-green-500/20"
                             : "text-[rgb(var(--text-muted))] hover:bg-[rgb(var(--bg-hover))] hover:text-green-400"
                         }`}
                       >
-                        <Pin className="w-3 h-3" />
+                        <Pin className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   );
@@ -1593,7 +1604,7 @@ export default function Chat({
           {selectedUserId ? (
             <>
               {/* Chat Header - Mobile Optimized */}
-              <div className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-1 sm:gap-2 md:gap-3 flex-shrink-0">
+              <div className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 safe-ptop bg-[rgb(var(--bg-secondary))] sm:glass-effect border-b border-[rgb(var(--border-secondary))] flex items-center justify-between gap-1 sm:gap-2 md:gap-3 flex-shrink-0">
                 <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                   <button
                     onClick={() => {
@@ -1604,9 +1615,9 @@ export default function Chat({
                     }}
                     title="Back to friends list"
                     aria-label="Back to friends list"
-                    className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
+                    className="p-2.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] active:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
                   >
-                    <ChevronLeft className="w-4 sm:w-5 h-4 sm:h-5" />
+                    <ChevronLeft className="w-5 h-5" />
                   </button>
 
                   {/* User Avatar & Info - Mobile Safe */}
@@ -1642,31 +1653,23 @@ export default function Chat({
                         disabled={!canCall}
                         title="Voice call"
                         aria-label="Voice call"
-                        className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 disabled:opacity-40 disabled:pointer-events-none"
+                        className="p-2.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] active:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 disabled:opacity-40 disabled:pointer-events-none"
                       >
-                        <Phone className="w-4 sm:w-5 h-4 sm:h-5" />
+                        <Phone className="w-5 h-5" />
                       </button>
                       <button
                         onClick={() => canCall && onStartCall?.(selectedUserId, getDisplayName(selectedUserId), 'video')}
                         disabled={!canCall}
                         title="Video call"
                         aria-label="Video call"
-                        className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 disabled:opacity-40 disabled:pointer-events-none"
+                        className="p-2.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] active:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 disabled:opacity-40 disabled:pointer-events-none"
                       >
-                        <Video className="w-4 sm:w-5 h-4 sm:h-5" />
+                        <Video className="w-5 h-5" />
                       </button>
                     </div>
                   );
                 })()}
 
-                {/* More Options Button */}
-                <button
-                  title="More options"
-                  aria-label="More options"
-                  className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
-                >
-                  <MoreVertical className="w-4 sm:w-5 h-4 sm:h-5" />
-                </button>
               </div>
 
               {/* ✅ E2EE: Security key changed warning */}
@@ -1749,7 +1752,7 @@ export default function Chat({
                                 className="max-w-[220px] xs:max-w-[260px] sm:max-w-xs rounded-2xl shadow-lg object-cover"
                               />
                             ) : (
-                              <div className="px-3 xs:px-3.5 sm:px-4 py-1.5 xs:py-2 sm:py-2.5 rounded-2xl shadow-lg text-xs sm:text-sm leading-relaxed bg-[rgb(var(--bg-tertiary))] text-red-400 border border-[rgb(var(--border-secondary))]">
+                              <div className="px-3.5 xs:px-4 sm:px-4 py-2 xs:py-2.5 sm:py-3 rounded-2xl shadow-lg text-sm sm:text-base leading-relaxed bg-[rgb(var(--bg-tertiary))] text-red-400 border border-[rgb(var(--border-secondary))]">
                                 [Image could not be decrypted]
                               </div>
                             )
@@ -1761,13 +1764,13 @@ export default function Chat({
                                 className="max-w-[220px] xs:max-w-[260px] sm:max-w-xs rounded-2xl shadow-lg"
                               />
                             ) : (
-                              <div className="px-3 xs:px-3.5 sm:px-4 py-1.5 xs:py-2 sm:py-2.5 rounded-2xl shadow-lg text-xs sm:text-sm leading-relaxed bg-[rgb(var(--bg-tertiary))] text-red-400 border border-[rgb(var(--border-secondary))]">
+                              <div className="px-3.5 xs:px-4 sm:px-4 py-2 xs:py-2.5 sm:py-3 rounded-2xl shadow-lg text-sm sm:text-base leading-relaxed bg-[rgb(var(--bg-tertiary))] text-red-400 border border-[rgb(var(--border-secondary))]">
                                 [Video could not be decrypted]
                               </div>
                             )
                           ) : (
                             <div
-                              className={`px-3 xs:px-3.5 sm:px-4 py-1.5 xs:py-2 sm:py-2.5 rounded-2xl shadow-lg transition-all group/message hover:shadow-xl text-xs sm:text-sm leading-relaxed break-words overflow-wrap-break-word ${
+                              className={`px-3.5 xs:px-4 sm:px-4 py-2 xs:py-2.5 sm:py-3 rounded-2xl shadow-lg transition-all group/message hover:shadow-xl text-sm sm:text-base leading-relaxed break-words overflow-wrap-break-word ${
                                 isOwn
                                   ? "bg-linear-to-br from-green-600 to-emerald-700 text-white rounded-tr-sm"
                                   : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-primary))] rounded-tl-sm border border-[rgb(var(--border-secondary))]"
@@ -1807,7 +1810,7 @@ export default function Chat({
 
                             {isOwn && (
                               <button
-                                onClick={() => handleDeleteMessage(m._id)}
+                                onClick={() => setPendingDeleteMessageId(m._id)}
                                 className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity duration-200 p-1 hover:bg-red-500/20 rounded-md text-red-400 hover:text-red-300 flex-shrink-0"
                                 title="Delete"
                                 aria-label="Delete message"
@@ -1842,7 +1845,7 @@ export default function Chat({
               </div>
 
               {/* Input Area - Mobile Optimized */}
-              <div className="px-2 xs:px-2.5 sm:px-3 md:px-4 py-2 xs:py-2.5 sm:py-3 bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))] flex-shrink-0">
+              <div className="px-2 xs:px-2.5 sm:px-3 md:px-4 py-2 xs:py-2.5 sm:py-3 safe-pbottom bg-[rgb(var(--bg-secondary))] sm:glass-effect border-t border-[rgb(var(--border-secondary))] flex-shrink-0">
                 {/*  ACTION ERRORS */}
                 {error && (
                   <div className="mb-1.5 sm:mb-2 p-2 sm:p-2.5 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-xs flex items-center gap-1.5 animate-in fade-in slide-in-from-top duration-200">
@@ -1862,9 +1865,9 @@ export default function Chat({
                       onClick={() => setShowEmojiPicker((v) => !v)}
                       title="Emoji picker"
                       aria-label="Emoji picker"
-                      className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
+                      className="p-2.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] active:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0"
                     >
-                      <Smile className="w-4 sm:w-5 h-4 sm:h-5" />
+                      <Smile className="w-5 h-5" />
                     </button>
                     {showEmojiPicker && (
                       <EmojiPicker
@@ -1878,12 +1881,12 @@ export default function Chat({
                     disabled={sendingImage || sendingVideo || !selectedUserId}
                     title="Attach image or video"
                     aria-label="Attach image or video"
-                    className="p-1.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
+                    className="p-2.5 sm:p-2 hover:bg-[rgb(var(--bg-hover))] active:bg-[rgb(var(--bg-hover))] rounded-lg transition-all text-[rgb(var(--text-muted))] hover:text-green-400 flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[rgb(var(--text-muted))]"
                   >
                     {sendingImage || sendingVideo ? (
-                      <Loader className="w-4 sm:w-5 h-4 sm:h-5 animate-spin" />
+                      <Loader className="w-5 h-5 animate-spin" />
                     ) : (
-                      <Paperclip className="w-4 sm:w-5 h-4 sm:h-5" />
+                      <Paperclip className="w-5 h-5" />
                     )}
                   </button>
                   <input
@@ -1914,7 +1917,7 @@ export default function Chat({
                       onPaste={handlePaste}
                       placeholder="Type a message..."
                       rows={1}
-                      className="w-full px-2.5 sm:px-3.5 md:px-4 py-2 sm:py-2.5 md:py-3 bg-transparent text-xs sm:text-sm md:text-base text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))]/70 resize-none focus:outline-none max-h-32 custom-scrollbar transition-colors"
+                      className="w-full px-2.5 sm:px-3.5 md:px-4 py-2 sm:py-2.5 md:py-3 bg-transparent text-base text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-muted))]/70 resize-none focus:outline-none max-h-32 custom-scrollbar transition-colors"
                       style={{ minHeight: "44px" }}
                     />
                   </div>
@@ -1922,19 +1925,20 @@ export default function Chat({
                   {/* Send Button */}
                   <button
                     onClick={() => {
+                      hapticLight();
                       handleSendMessage();
                       handleChatTyping(false);
                     }}
                     disabled={!messageInput.trim()}
                     title="Send message"
                     aria-label="Send message"
-                    className={`p-1.5 sm:p-2 md:p-3 rounded-lg transition-all shadow-lg flex-shrink-0 ${
+                    className={`p-3 sm:p-2 md:p-3 rounded-lg transition-all shadow-lg flex-shrink-0 ${
                       messageInput.trim()
                         ? "bg-linear-to-br from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-white glow-green"
                         : "bg-[rgb(var(--bg-tertiary))] text-[rgb(var(--text-muted))] cursor-not-allowed"
                     }`}
                   >
-                    <Send className="w-3.5 sm:w-4 md:w-5 h-3.5 sm:h-4 md:h-5" />
+                    <Send className="w-4 sm:w-4 md:w-5 h-4 sm:h-4 md:h-5" />
                   </button>
                 </div>
               </div>

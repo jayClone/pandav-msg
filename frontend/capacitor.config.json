@@ -1,5 +1,11 @@
 {
   "appId": "me.jaychaudhari.pandavmsg",
   "appName": "Pandav MSG",
-  "webDir": "dist"
+  "webDir": "dist",
+  "plugins": {
+    "Keyboard": {
+      "resize": "body",
+      "resizeOnFullScreen": true
+    }
+  }
 }

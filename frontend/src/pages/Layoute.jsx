@@ -18,6 +18,7 @@ import UnlockEncryptionModal from "@components/UnlockEncryptionModal";
 import CallModal from "@components/CallModal";
 import Avatar from "@components/Avatar";
 import { useCall } from "@hooks/useCall.js";
+import { hapticLight } from "@utils/haptics.js";
 import Chat from "./Chat";
 import GroupChat from "./GroupChat";
 import GroupChatErrorBoundary from '@components/GroupChatErrorBoundary';
@@ -362,7 +363,10 @@ export default function Layoute({ initialTab = "chats" }) {
       }`}>
         {/* Chats Tab */}
         <button
-          onClick={() => setActiveTab("chats")}
+          onClick={() => {
+            hapticLight();
+            setActiveTab("chats");
+          }}
           className={`flex-1 flex flex-col items-center justify-center py-2 rounded-lg transition-all ${
             activeTab === "chats"
               ? "text-green-400 glow-green bg-[rgb(var(--bg-hover))]"
@@ -376,7 +380,10 @@ export default function Layoute({ initialTab = "chats" }) {
 
         {/* Groups Tab */}
         <button
-          onClick={() => setActiveTab("groups")}
+          onClick={() => {
+            hapticLight();
+            setActiveTab("groups");
+          }}
           className={`flex-1 flex flex-col items-center justify-center py-2 rounded-lg transition-all ${
             activeTab === "groups"
               ? "text-green-400 glow-green bg-[rgb(var(--bg-hover))]"
@@ -390,7 +397,10 @@ export default function Layoute({ initialTab = "chats" }) {
 
         {/* Add Friend Tab */}
         <button
-          onClick={() => setShowFriendModal(true)}
+          onClick={() => {
+            hapticLight();
+            setShowFriendModal(true);
+          }}
           className="flex-1 flex flex-col items-center justify-center py-2 rounded-lg text-[rgb(var(--text-muted))] hover:text-green-400 hover:bg-[rgb(var(--bg-hover))] transition-all"
           title="Add Contact"
         >
@@ -400,7 +410,10 @@ export default function Layoute({ initialTab = "chats" }) {
 
         {/* Settings/Theme Tab */}
         <button
-          onClick={() => setMobileBottomSheetOpen(!mobileBottomSheetOpen)}
+          onClick={() => {
+            hapticLight();
+            setMobileBottomSheetOpen(!mobileBottomSheetOpen);
+          }}
           className={`flex-1 flex flex-col items-center justify-center py-2 rounded-lg transition-all ${
             mobileBottomSheetOpen
               ? "text-green-400 glow-green bg-[rgb(var(--bg-hover))]"
